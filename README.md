@@ -160,6 +160,8 @@ cp claude_desktop_config.example.json claude_desktop_config.json
 
 For example configurations, see [`claude_desktop_config.example.json`](claude_desktop_config.example.json).
 
+![Claude Desktop Integration](claude.png)
+
 ## Usage Examples
 
 Once configured with Claude Desktop, you can use natural language to interact with your Forward Networks environment:
@@ -168,28 +170,33 @@ Once configured with Claude Desktop, you can use natural language to interact wi
 ```
 "List all networks in my Forward platform"
 "Create a new network called 'Production-East'"
-"Show me the details of network ID abc123"
+"Show me the details of network ID 101"
+"Delete network 102"
+"Update network 103 to add a description"
 ```
 
 ### Path Analysis
 ```
-"Search for paths from 10.1.1.1 to 10.2.2.2 in network xyz789"
-"Find all violation paths for traffic to 192.168.1.100"
+"Search for paths from 10.1.1.1 to 10.2.2.2 in network 101"
+"Find all violation paths for traffic to 192.168.1.100 in network 101"
 "Trace HTTP traffic from device router1 to 10.0.0.50"
+"Show paths with violations only in network 102"
 ```
 
 ### Network Queries
 ```
-"Run an NQE query to show all BGP sessions in network abc123"
+"Run an NQE query to show all BGP sessions in network 101"
 "List available NQE queries in the L3 directory"
-"Show me all devices with OSPF enabled"
+"Show me all devices with OSPF enabled in network 102"
+"Query network 103 for interface utilization data"
 ```
 
 ### Device and Location Management
 ```
-"List all devices in network xyz789"
-"Show device locations for network abc123"
+"List all devices in network 101"
+"Show device locations for network 102"
 "Create a new location called 'Data Center East' at coordinates 40.7128, -74.0060"
+"Get the latest snapshot for network 101"
 ```
 
 ## Architecture
@@ -230,7 +237,7 @@ forward-mcp/
 1. Define argument struct in `internal/service/tools.go`:
 ```go
 type MyNewToolArgs struct {
-    NetworkID string `json:"network_id" jsonschema:"required,description=Network ID"`
+    NetworkID string `json:"network_id" jsonschema:"required,description=Network ID (e.g., '101')"`
     // ... other fields
 }
 ```
