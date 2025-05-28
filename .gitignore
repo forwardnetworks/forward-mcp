@@ -1,0 +1,35 @@
+# Environment variables
+.env
+
+# Build output
+/build/
+/bin/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# Test coverage
+coverage.out
+coverage.html
+
+# Dependency directories
+vendor/ 
+
+claude_desktop_config.json
