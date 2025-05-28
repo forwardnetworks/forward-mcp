@@ -119,29 +119,46 @@ FORWARD_TIMEOUT=30
 
 ### Claude Desktop Integration
 
-Add the following to your Claude Desktop configuration file:
+To integrate with Claude Desktop, you need to configure the MCP server in Claude's configuration file.
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
+**Configuration File Locations:**
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
+
+**Step 1**: Copy the example configuration:
+```bash
+cp claude_desktop_config.example.json claude_desktop_config.json
+```
+
+**Step 2**: Edit the configuration file with your details:
 
 ```json
 {
   "mcpServers": {
     "forward-networks": {
-      "command": "/path/to/forward-mcp/bin/forward-mcp-server",
-      "args": [],
+      "command": "/absolute/path/to/forward-mcp/bin/forward-mcp-server",
       "env": {
-        "FORWARD_API_KEY": "your-api-key-here",
-        "FORWARD_API_SECRET": "your-api-secret-here",
-        "FORWARD_API_BASE_URL": "https://your-forward-instance.com"
+        "FORWARD_API_KEY": "your-actual-api-key",
+        "FORWARD_API_SECRET": "your-actual-api-secret",
+        "FORWARD_API_BASE_URL": "https://your-forward-instance.com",
+        "FORWARD_INSECURE_SKIP_VERIFY": "true",
+        "FORWARD_TIMEOUT": "30"
       }
     }
   }
 }
 ```
 
-![Claude Desktop Integration](claude.png)
+**Step 3**: Update the paths and credentials:
+- Replace `/absolute/path/to/forward-mcp/bin/forward-mcp-server` with the actual path to your binary
+- Replace the placeholder credentials with your real Forward Networks API credentials
+- Set `FORWARD_INSECURE_SKIP_VERIFY` to `"false"` if using valid TLS certificates
 
+**Step 4**: Restart Claude Desktop to load the new configuration.
+
+**💡 Tip**: You can also use environment variables instead of hardcoding credentials in the config file by omitting the `env` section and setting the variables in your shell before starting Claude Desktop.
+
+For example configurations, see [`claude_desktop_config.example.json`](claude_desktop_config.example.json).
 
 ## Usage Examples
 
