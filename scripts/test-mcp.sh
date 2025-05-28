@@ -8,19 +8,35 @@ set -e
 echo "🚀 Forward Networks MCP Server Test Script"
 echo "=========================================="
 
-# Check if .env file exists
-if [ ! -f ".env" ]; then
-    echo "❌ .env file not found. Please create one with your Forward Networks credentials."
+# Check if .env file exists and load it if present
+if [ -f ".env" ]; then
+    echo "✅ Found .env configuration file, loading environment variables..."
+    # Source the .env file
+    export $(cat .env | grep -v '^#' | xargs)
+else
+    echo "ℹ️  No .env file found, using existing environment variables..."
+fi
+
+# Check if required environment variables are set
+if [ -z "$FORWARD_API_KEY" ] || [ -z "$FORWARD_API_SECRET" ] || [ -z "$FORWARD_API_BASE_URL" ]; then
+    echo "❌ Required environment variables not found."
     echo ""
-    echo "Example .env file:"
-    echo "FORWARD_API_KEY=your-api-key"
-    echo "FORWARD_API_SECRET=your-api-secret"
-    echo "FORWARD_API_BASE_URL=https://your-instance.forwardnetworks.com"
-    echo "FORWARD_INSECURE_SKIP_VERIFY=true"
+    echo "Please either:"
+    echo "1. Create a .env file with your Forward Networks credentials:"
+    echo "   FORWARD_API_KEY=your-api-key"
+    echo "   FORWARD_API_SECRET=your-api-secret"
+    echo "   FORWARD_API_BASE_URL=https://your-instance.forwardnetworks.com"
+    echo "   FORWARD_INSECURE_SKIP_VERIFY=true"
+    echo ""
+    echo "2. Or set the environment variables directly:"
+    echo "   export FORWARD_API_KEY=your-api-key"
+    echo "   export FORWARD_API_SECRET=your-api-secret"
+    echo "   export FORWARD_API_BASE_URL=https://your-instance.forwardnetworks.com"
     exit 1
 fi
 
-echo "✅ Found .env configuration file"
+echo "✅ Environment variables configured"
+echo "🔗 Connecting to: $FORWARD_API_BASE_URL"
 
 # Build the server and test client
 echo "🔨 Building MCP server and test client..."
@@ -37,11 +53,6 @@ if [ ! -f "bin/forward-mcp-test-client" ]; then
 fi
 
 echo "✅ Build successful"
-
-# Source the .env file
-export $(cat .env | grep -v '^#' | xargs)
-
-echo "🔗 Connecting to: $FORWARD_API_BASE_URL"
 
 # Test 1: Run unit tests
 echo ""

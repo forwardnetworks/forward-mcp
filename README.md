@@ -288,6 +288,6 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## Support
 
 For issues and questions:
-- GitHub Issues: [Create an issue](https://github.com/your-org/forward-mcp/issues)
+- GitHub Issues: [Create an issue](https://github.com/forwardnetworks/forward-mcp/issues)
 - Forward Networks Documentation: [Forward Networks Docs](https://docs.forwardnetworks.com/)
 - MCP Specification: [Model Context Protocol](https://modelcontextprotocol.io/) 
