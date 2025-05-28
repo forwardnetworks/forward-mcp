@@ -140,6 +140,9 @@ Add the following to your Claude Desktop configuration file:
 }
 ```
 
+![Claude Desktop Integration](claude.png)
+
+
 ## Usage Examples
 
 Once configured with Claude Desktop, you can use natural language to interact with your Forward Networks environment:
