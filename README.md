@@ -1,320 +1,52 @@
-# Forward Networks MCP Server
+# Forward MCP
 
-A Model Context Protocol (MCP) server that provides access to Forward Networks API functionality through Claude Desktop and other MCP-compatible clients.
+**Version 2.0.0**
 
-Built using [mcp-golang](https://github.com/metoro-io/mcp-golang) for type-safe, low-boilerplate MCP tool implementation.
+Forward MCP is an open-source server that provides a set of tools and APIs for interacting with Forward Networks' platform. It enables automation, analysis, and integration with network data using the MCP protocol.
 
 ## Features
+- Exposes Forward Networks tools via the MCP protocol
+- Supports prompt workflows and contextual resources
+- Designed for easy integration and automation
 
-### 🌐 Network Management
-- **list_networks** - List all networks in the Forward platform
-- **create_network** - Create a new network
-- **delete_network** - Delete a network
-- **update_network** - Update network properties
+## High-Level Architecture
+- **cmd/server/main.go**: Entry point for the server. Initializes configuration, logging, and registers tools, prompts, and resources.
+- **internal/service**: Implements the core Forward MCP service logic.
+- **internal/config**: Handles configuration loading (API URL, credentials, etc).
+- **internal/logger**: Provides logging utilities.
 
-### 🔍 Path Search
-- **search_paths** - Search for network paths by tracing packets through the network
-  - Support for source/destination IPs, ports, protocols
-  - Intent-based search (delivered, violations, violations-only)
-  - Configurable result limits and timeouts
+## Prerequisites
+- Go 1.20 or later
+- Access to Forward Networks API (API URL and API Key)
 
-### 🔧 Network Query Engine (NQE)
-- **run_nqe_query** - Execute NQE queries on network snapshots
-- **list_nqe_queries** - Browse available queries from the NQE library
-
-### 📱 Device Management
-- **list_devices** - List devices in a network
-- **get_device_locations** - Get device location mappings
-
-### 📸 Snapshot Management
-- **list_snapshots** - List network snapshots
-- **get_latest_snapshot** - Get the latest processed snapshot
-
-### 📍 Location Management
-- **list_locations** - List network locations
-- **create_location** - Create new locations with coordinates
-
-## Installation
-
-### Prerequisites
-- Go 1.21 or later
-- Forward Networks API credentials
-- Claude Desktop (for MCP integration)
-
-### Build from Source
-
-```bash
-git clone https://github.com/forwardnetworks/forward-mcp.git
+## Build Instructions
+```sh
+git clone https://github.com/forward-mcp/forward-mcp.git
 cd forward-mcp
-go build -o bin/forward-mcp-server cmd/server/main.go
+go build -o forward-mcp ./cmd/server
 ```
 
-## Configuration
+## Run Instructions
+Set the following environment variables before running:
+- `FORWARD_API_BASE_URL` – Base URL for the Forward Networks API
+- `FORWARD_API_KEY` – Your Forward Networks API key
+- `FORWARD_DEFAULT_NETWORK_ID` – (Optional) Default network ID
+- `FORWARD_INSECURE_SKIP_VERIFY` – (Optional, default: false) Set to true to skip TLS verification
 
-### Environment Variables
-
-Create a `.env` file in the project root:
-
-```env
-FORWARD_API_KEY=your-api-key
-FORWARD_API_SECRET=your-api-secret
-FORWARD_API_BASE_URL=https://your-forward-instance.com
+Run the server:
+```sh
+./forward-mcp
 ```
 
-### TLS Configuration
+The server will start and listen for MCP protocol messages via stdio (compatible with Claude Desktop and other MCP clients).
 
-The Forward Networks MCP server supports comprehensive TLS configuration for different deployment scenarios:
-
-#### Skip Certificate Verification (Development/Self-Signed Certificates)
-
-For development environments or Forward instances with self-signed certificates:
-
-```env
-FORWARD_INSECURE_SKIP_VERIFY=true
-```
-
-**⚠️ Security Warning**: Only use this in development or controlled environments. Never use in production with untrusted networks.
-
-#### Custom CA Certificate
-
-For Forward instances using internal CA or custom certificate authorities:
-
-```env
-FORWARD_CA_CERT_PATH=/path/to/ca-certificate.pem
-```
-
-#### Mutual TLS Authentication
-
-For environments requiring client certificate authentication:
-
-```env
-FORWARD_CLIENT_CERT_PATH=/path/to/client-certificate.pem
-FORWARD_CLIENT_KEY_PATH=/path/to/client-private-key.pem
-```
-
-#### Complete TLS Configuration Example
-
-```env
-# Basic API Configuration
-FORWARD_API_KEY=your-api-key
-FORWARD_API_SECRET=your-api-secret
-FORWARD_API_BASE_URL=https://forward.internal.company.com
-
-# TLS Configuration
-FORWARD_INSECURE_SKIP_VERIFY=false
-FORWARD_CA_CERT_PATH=/etc/ssl/certs/company-ca.pem
-FORWARD_CLIENT_CERT_PATH=/etc/ssl/certs/forward-client.pem
-FORWARD_CLIENT_KEY_PATH=/etc/ssl/private/forward-client.key
-FORWARD_TIMEOUT=30
-```
-
-### Common TLS Scenarios
-
-| Scenario | Configuration | Use Case |
-|----------|---------------|----------|
-| **Development/Testing** | `FORWARD_INSECURE_SKIP_VERIFY=true` | Self-signed certs, local testing |
-| **Internal CA** | `FORWARD_CA_CERT_PATH=/path/to/ca.pem` | Corporate/internal certificate authority |
-| **Mutual TLS** | Client cert + key paths | High-security environments |
-| **Public CA** | No extra config needed | Standard HTTPS with public CA |
-
-### Claude Desktop Integration
-
-To integrate with Claude Desktop, you need to configure the MCP server in Claude's configuration file.
-
-**Configuration File Locations:**
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
-
-**Step 1**: Copy the example configuration:
-```bash
-cp claude_desktop_config.example.json claude_desktop_config.json
-```
-
-**Step 2**: Edit the configuration file with your details:
-
-```json
-{
-  "mcpServers": {
-    "forward-networks": {
-      "command": "/absolute/path/to/forward-mcp/bin/forward-mcp-server",
-      "env": {
-        "FORWARD_API_KEY": "your-actual-api-key",
-        "FORWARD_API_SECRET": "your-actual-api-secret",
-        "FORWARD_API_BASE_URL": "https://your-forward-instance.com",
-        "FORWARD_INSECURE_SKIP_VERIFY": "true",
-        "FORWARD_TIMEOUT": "30"
-      }
-    }
-  }
-}
-```
-
-**Step 3**: Update the paths and credentials:
-- Replace `/absolute/path/to/forward-mcp/bin/forward-mcp-server` with the actual path to your binary
-- Replace the placeholder credentials with your real Forward Networks API credentials
-- Set `FORWARD_INSECURE_SKIP_VERIFY` to `"false"` if using valid TLS certificates
-
-**Step 4**: Restart Claude Desktop to load the new configuration.
-
-**💡 Tip**: You can also use environment variables instead of hardcoding credentials in the config file by omitting the `env` section and setting the variables in your shell before starting Claude Desktop.
-
-For example configurations, see [`claude_desktop_config.example.json`](claude_desktop_config.example.json).
-
-![Claude Desktop Integration](claude.png)
-
-## Usage Examples
-
-Once configured with Claude Desktop, you can use natural language to interact with your Forward Networks environment:
-
-### Network Management
-```
-"List all networks in my Forward platform"
-"Create a new network called 'Production-East'"
-"Show me the details of network ID 101"
-"Delete network 102"
-"Update network 103 to add a description"
-```
-
-### Path Analysis
-```
-"Search for paths from 10.1.1.1 to 10.2.2.2 in network 101"
-"Find all violation paths for traffic to 192.168.1.100 in network 101"
-"Trace HTTP traffic from device router1 to 10.0.0.50"
-"Show paths with violations only in network 102"
-```
-
-### Network Queries
-```
-"Run an NQE query to show all BGP sessions in network 101"
-"List available NQE queries in the L3 directory"
-"Show me all devices with OSPF enabled in network 102"
-"Query network 103 for interface utilization data"
-```
-
-### Device and Location Management
-```
-"List all devices in network 101"
-"Show device locations for network 102"
-"Create a new location called 'Data Center East' at coordinates 40.7128, -74.0060"
-"Get the latest snapshot for network 101"
-```
-
-## Architecture
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────────┐
-│   Claude        │    │   Forward MCP    │    │   Forward Networks  │
-│   Desktop       │◄──►│   Server         │◄──►│   API               │
-│                 │    │                  │    │                     │
-│   (MCP Client)  │    │   (mcp-golang)   │    │   (REST API)        │
-└─────────────────┘    └──────────────────┘    └─────────────────────┘
-```
-
-### Key Components
-
-- **MCP Server**: Built with [mcp-golang](https://github.com/metoro-io/mcp-golang) for type-safe tool definitions
-- **Forward Client**: HTTP client for Forward Networks API with comprehensive endpoint coverage
-- **Tool Handlers**: Type-safe functions that map MCP tool calls to Forward API operations
-- **Transport**: stdio transport for full MCP compatibility with Claude Desktop
-
-## Development
-
-### Project Structure
-
-```
-forward-mcp/
-├── cmd/server/           # Main server application
-├── internal/
-│   ├── config/          # Configuration management
-│   ├── forward/         # Forward Networks API client
-│   └── service/         # MCP service implementation
-├── spec/                # API specifications
-└── bin/                 # Built binaries
-```
-
-### Adding New Tools
-
-1. Define argument struct in `internal/service/tools.go`:
-```go
-type MyNewToolArgs struct {
-    NetworkID string `json:"network_id" jsonschema:"required,description=Network ID (e.g., '101')"`
-    // ... other fields
-}
-```
-
-2. Implement the tool function in `internal/service/mcp_service.go`:
-```go
-func (s *ForwardMCPService) myNewTool(args MyNewToolArgs) (*mcp.ToolResponse, error) {
-    // Implementation
-}
-```
-
-3. Register the tool in `RegisterTools()`:
-```go
-server.RegisterTool("my_new_tool", "Description", s.myNewTool)
-```
-
-### Testing
-
-The Forward Networks MCP Server includes a comprehensive testing framework with unit tests, integration tests, and performance benchmarks.
-
-### Quick Test Commands
-
-```bash
-# Run unit tests with mock client
-./scripts/test.sh unit -v
-
-# Run tests with coverage report
-./scripts/test.sh unit -c
-
-# Run performance benchmarks
-./scripts/test.sh bench
-
-# Run integration tests (requires .env with API credentials)
-./scripts/test.sh integration
-```
-
-### Test Coverage
-
-- ✅ **13/13 MCP Tools** - Complete coverage of all Forward Networks tools
-- ✅ **Mock Client** - Full Forward Networks API simulation for fast, reliable tests
-- ✅ **Integration Tests** - Real API validation when credentials are available
-- ✅ **Error Handling** - Comprehensive error scenario testing
-- ✅ **Performance Benchmarks** - ~2.4μs per tool operation
-- ✅ **76.4% Code Coverage** - With detailed HTML coverage reports
-
-For detailed testing documentation, see [TESTING.md](TESTING.md).
-
-## Troubleshooting
-
-### TLS Certificate Issues
-
-If you encounter TLS certificate verification errors (common with self-signed certificates or internal CA):
-
-```env
-# Quick fix for development/testing
-FORWARD_INSECURE_SKIP_VERIFY=true
-```
-
-⚠️ **Security Warning**: Only use `FORWARD_INSECURE_SKIP_VERIFY=true` in development environments.
-
-For comprehensive troubleshooting including TLS configuration, authentication issues, and debugging tips, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+## Documentation
+- See the `docs/` folder for troubleshooting, architecture, and advanced guides.
 
 ## Contributing
+Contributions are welcome! Please open issues or pull requests for bug fixes, features, or documentation improvements. 
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
 
-## License
+## AI Attribution
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## Support
-
-For issues and questions:
-- GitHub Issues: [Create an issue](https://github.com/forwardnetworks/forward-mcp/issues)
-- Forward Networks Documentation: [Forward Networks Docs](https://docs.forwardnetworks.com/)
-- MCP Specification: [Model Context Protocol](https://modelcontextprotocol.io/) 
+Portions of this project were generated or assisted by AI tools, including OpenAI GPT-4, Cursor, and Claude. All AI-generated content was reviewed and, where necessary, modified by human contributors.

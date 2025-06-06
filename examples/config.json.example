@@ -1,0 +1,16 @@
+{
+  "forward": {
+    "apiKey": "your-api-key",
+    "apiSecret": "your-api-secret",
+    "apiBaseUrl": "https://api.forwardnetworks.com",
+    "insecureSkipVerify": false,
+    "timeout": 30,
+    "caCertPath": "",
+    "clientCertPath": "",
+    "clientKeyPath": "",
+    
+    "defaultNetworkId": "101",
+    "defaultSnapshotId": "latest",
+    "defaultQueryLimit": 100
+  }
+} 

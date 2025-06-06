@@ -65,7 +65,12 @@ func main() {
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("Failed to start MCP server: %v", err)
 	}
-	defer cmd.Process.Kill()
+	defer func() {
+		err := cmd.Process.Kill()
+		if err != nil {
+			log.Printf("Failed to kill MCP server process: %v", err)
+		}
+	}()
 
 	fmt.Println("📡 MCP Server started. Available commands:")
 	fmt.Println()
@@ -85,29 +90,110 @@ func main() {
 		},
 		{
 			name:        "list_devices",
-			description: "List devices in network 101",
+			description: "List devices in network 162112",
 			tool:        "list_devices",
 			args: map[string]interface{}{
-				"network_id": "101",
+				"network_id": "162112",
 				"limit":      5,
 			},
 		},
 		{
 			name:        "list_snapshots",
-			description: "List snapshots for network 101",
+			description: "List snapshots for network 162112",
 			tool:        "list_snapshots",
 			args: map[string]interface{}{
-				"network_id": "101",
+				"network_id": "162112",
 			},
 		},
 		{
 			name:        "search_paths",
-			description: "Search paths to 8.8.8.8 in network 101",
+			description: "Search paths to 8.8.8.8 in network 162112",
 			tool:        "search_paths",
 			args: map[string]interface{}{
-				"network_id":  "101",
+				"network_id":  "162112",
 				"dst_ip":      "8.8.8.8",
 				"max_results": 1,
+			},
+		},
+		{
+			name:        "customer_path_search_basic",
+			description: "Customer path search: 10.0.0.1 → 10.1.0.1 (network 162112) - Cloud infrastructure",
+			tool:        "search_paths",
+			args: map[string]interface{}{
+				"network_id":  "162112",
+				"src_ip":      "10.0.0.1",
+				"dst_ip":      "10.1.0.1",
+				"max_results": 5,
+			},
+		},
+		{
+			name:        "customer_path_search_with_intent",
+			description: "Customer path search with PREFER_DELIVERED intent - AWS/GCP cloud",
+			tool:        "search_paths",
+			args: map[string]interface{}{
+				"network_id":  "162112",
+				"src_ip":      "10.0.0.1",
+				"dst_ip":      "10.1.0.1",
+				"intent":      "PREFER_DELIVERED",
+				"max_results": 10,
+			},
+		},
+		{
+			name:        "customer_path_search_tcp_443",
+			description: "Customer path search for HTTPS (TCP 443) - Cloud infrastructure",
+			tool:        "search_paths",
+			args: map[string]interface{}{
+				"network_id":  "162112",
+				"src_ip":      "10.0.0.1",
+				"dst_ip":      "10.1.0.1",
+				"ip_proto":    6,
+				"dst_port":    "443",
+				"max_results": 5,
+			},
+		},
+		{
+			name:        "customer_path_search_with_functions",
+			description: "Customer path search with network functions - AWS/GCP infrastructure",
+			tool:        "search_paths",
+			args: map[string]interface{}{
+				"network_id":                "162112",
+				"src_ip":                    "10.0.0.1",
+				"dst_ip":                    "10.1.0.1",
+				"include_network_functions": true,
+				"max_results":               3,
+			},
+		},
+		{
+			name:        "customer_reverse_path_search",
+			description: "Customer reverse path: 10.1.0.1 → 10.0.0.1 - Cloud reverse path",
+			tool:        "search_paths",
+			args: map[string]interface{}{
+				"network_id":  "162112",
+				"src_ip":      "10.1.0.1",
+				"dst_ip":      "10.0.0.1",
+				"max_results": 5,
+			},
+		},
+		{
+			name:        "diagnostic_path_search_dst_only",
+			description: "Diagnostic: Any path to external IP (8.8.8.8) from cloud",
+			tool:        "search_paths",
+			args: map[string]interface{}{
+				"network_id":  "162112",
+				"src_ip":      "10.0.0.1",
+				"dst_ip":      "8.8.8.8",
+				"max_results": 3,
+			},
+		},
+		{
+			name:        "diagnostic_path_search_src_only",
+			description: "Diagnostic: Path from cloud to internet destination",
+			tool:        "search_paths",
+			args: map[string]interface{}{
+				"network_id":  "162112",
+				"src_ip":      "10.0.0.1",
+				"dst_ip":      "1.1.1.1",
+				"max_results": 3,
 			},
 		},
 	}
@@ -181,9 +267,35 @@ func main() {
 
 		// Read response
 		responseScanner := bufio.NewScanner(stdout)
+		responseScanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+			// Look for complete JSON objects
+			start := 0
+			for i := 0; i < len(data); i++ {
+				if data[i] == '{' {
+					start = i
+					// Find matching closing brace
+					braceCount := 1
+					for j := i + 1; j < len(data); j++ {
+						if data[j] == '{' {
+							braceCount++
+						} else if data[j] == '}' {
+							braceCount--
+							if braceCount == 0 {
+								// Found complete JSON object
+								return j + 1, data[start : j+1], nil
+							}
+						}
+					}
+				}
+			}
+			// Need more data
+			return 0, nil, nil
+		})
+
 		if responseScanner.Scan() {
 			responseText := responseScanner.Text()
 
+			// Try to parse as JSON-RPC response
 			var response MCPResponse
 			if err := json.Unmarshal([]byte(responseText), &response); err != nil {
 				fmt.Printf("❌ Failed to parse response: %v\n", err)

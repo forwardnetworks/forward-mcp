@@ -63,7 +63,10 @@ func TestClient_SendChatRequest(t *testing.T) {
 				// Set response
 				w.WriteHeader(tt.serverStatus)
 				if tt.serverResponse != nil {
-					json.NewEncoder(w).Encode(tt.serverResponse)
+					err := json.NewEncoder(w).Encode(tt.serverResponse)
+					if err != nil {
+						t.Errorf("Failed to encode server response: %v", err)
+					}
 				}
 			}))
 			defer server.Close()
@@ -125,7 +128,10 @@ func TestClient_GetAvailableModels(t *testing.T) {
 				// Set response
 				w.WriteHeader(tt.serverStatus)
 				if tt.serverResponse != nil {
-					json.NewEncoder(w).Encode(tt.serverResponse)
+					err := json.NewEncoder(w).Encode(tt.serverResponse)
+					if err != nil {
+						t.Errorf("Failed to encode server response: %v", err)
+					}
 				}
 			}))
 			defer server.Close()

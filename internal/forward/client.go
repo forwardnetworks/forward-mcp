@@ -7,11 +7,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/forward-mcp/internal/config"
+	"github.com/forward-mcp/internal/logger"
 )
 
 // ClientInterface defines the interface for Forward platform client operations
@@ -31,7 +33,8 @@ type ClientInterface interface {
 	SearchPathsBulk(networkID string, requests []PathSearchParams) ([]PathSearchResponse, error)
 
 	// NQE operations
-	RunNQEQuery(params *NQEQueryParams) (*NQERunResult, error)
+	RunNQEQueryByString(params *NQEQueryParams) (*NQERunResult, error)
+	RunNQEQueryByID(params *NQEQueryParams) (*NQERunResult, error)
 	GetNQEQueries(dir string) ([]NQEQuery, error)
 	DiffNQEQuery(before, after string, request *NQEDiffRequest) (*NQEDiffResult, error)
 
@@ -190,7 +193,7 @@ type NQESortBy struct {
 
 type NQEColumnFilter struct {
 	ColumnName string `json:"columnName"`
-	FilterText string `json:"filterText"`
+	Value      string `json:"value"`
 }
 
 type NQERunResult struct {
@@ -199,11 +202,10 @@ type NQERunResult struct {
 }
 
 type NQEQuery struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Directory   string `json:"directory"`
-	Description string `json:"description,omitempty"`
-	Query       string `json:"query"`
+	QueryID    string `json:"queryId"`
+	Path       string `json:"path"`
+	Intent     string `json:"intent"`
+	Repository string `json:"repository"`
 }
 
 type NQEDiffRequest struct {
@@ -336,8 +338,23 @@ func (c *Client) makeRequest(method, endpoint string, body interface{}) (*http.R
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		defer resp.Body.Close()
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		// Read the response body for error details
+		errorBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		errorMsg := fmt.Sprintf("unexpected status code: %d", resp.StatusCode)
+		if readErr == nil && len(errorBody) > 0 {
+			errorMsg += fmt.Sprintf(", response: %s", string(errorBody))
+		}
+
+		// Log additional debugging information for 400 errors
+		if resp.StatusCode == 400 {
+			debugLogger := logger.New()
+			debugLogger.Debug("400 Bad Request - URL: %s%s, Method: %s, Request Body: %s",
+				c.config.APIBaseURL, endpoint, method, string(reqBody))
+		}
+
+		return nil, fmt.Errorf("%s", errorMsg)
 	}
 
 	return resp, nil
@@ -510,7 +527,7 @@ func (c *Client) SearchPathsBulk(networkID string, requests []PathSearchParams) 
 }
 
 // NQE operations
-func (c *Client) RunNQEQuery(params *NQEQueryParams) (*NQERunResult, error) {
+func (c *Client) RunNQEQueryByString(params *NQEQueryParams) (*NQERunResult, error) {
 	endpoint := "/api/nqe"
 
 	// Build query parameters
@@ -527,7 +544,66 @@ func (c *Client) RunNQEQuery(params *NQEQueryParams) (*NQERunResult, error) {
 		query += fmt.Sprintf("snapshotId=%s", params.SnapshotID)
 	}
 
-	resp, err := c.makeRequest("POST", endpoint+query, params)
+	// For string-based queries, format the request body properly
+	requestBody := map[string]interface{}{
+		"query": params.Query,
+	}
+	if params.Parameters != nil {
+		requestBody["parameters"] = params.Parameters
+	}
+	if params.Options != nil {
+		requestBody["queryOptions"] = params.Options
+	}
+
+	// Debug logging
+	debugLogger := logger.New()
+	if requestBodyJSON, err := json.Marshal(requestBody); err == nil {
+		debugLogger.Debug("NQE String Query Request - URL: %s%s, Body: %s", endpoint, query, string(requestBodyJSON))
+	}
+
+	resp, err := c.makeRequest("POST", endpoint+query, requestBody)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result NQERunResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (c *Client) RunNQEQueryByID(params *NQEQueryParams) (*NQERunResult, error) {
+	endpoint := "/api/nqe"
+
+	// Build query parameters
+	query := ""
+	if params.NetworkID != "" {
+		query += fmt.Sprintf("?networkId=%s", params.NetworkID)
+	}
+	if params.SnapshotID != "" {
+		if query == "" {
+			query += "?"
+		} else {
+			query += "&"
+		}
+		query += fmt.Sprintf("snapshotId=%s", params.SnapshotID)
+	}
+
+	// For query ID based execution, we only need to send the query ID and parameters
+	requestBody := map[string]interface{}{
+		"queryId": params.QueryID,
+	}
+	if params.Parameters != nil {
+		requestBody["parameters"] = params.Parameters
+	}
+	if params.Options != nil {
+		requestBody["queryOptions"] = params.Options
+	}
+
+	resp, err := c.makeRequest("POST", endpoint+query, requestBody)
 	if err != nil {
 		return nil, err
 	}
@@ -549,16 +625,59 @@ func (c *Client) GetNQEQueries(dir string) ([]NQEQuery, error) {
 
 	resp, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get NQE queries: %w", err)
 	}
 	defer resp.Body.Close()
 
-	var queries []NQEQuery
-	if err := json.NewDecoder(resp.Body).Decode(&queries); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	// Read the raw response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	return queries, nil
+	// Log the raw response for debugging
+	debugLogger := logger.New()
+	debugLogger.Debug("Raw API response: %s", string(body))
+
+	// Check if the response is empty
+	if len(body) == 0 {
+		debugLogger.Warn("API returned empty response")
+		return []NQEQuery{}, nil
+	}
+
+	// Try to parse the response as JSON
+	var queries []NQEQuery
+	if err := json.Unmarshal(body, &queries); err != nil {
+		// If the first attempt fails, try to parse as a single object
+		var singleQuery NQEQuery
+		if err := json.Unmarshal(body, &singleQuery); err != nil {
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		queries = []NQEQuery{singleQuery}
+	}
+
+	// Validate the queries
+	validQueries := make([]NQEQuery, 0)
+	for _, q := range queries {
+		if q.QueryID == "" || q.Path == "" {
+			debugLogger.Debug("Skipping invalid query: %+v", q)
+			continue
+		}
+		validQueries = append(validQueries, q)
+	}
+
+	// Log the results
+	if len(validQueries) == 0 {
+		debugLogger.Debug("No valid queries found in response")
+	} else {
+		debugLogger.Debug("Found %d valid queries", len(validQueries))
+		// Log first query as sample
+		if sample, err := json.Marshal(validQueries[0]); err == nil {
+			debugLogger.Debug("Sample query: %s", string(sample))
+		}
+	}
+
+	return validQueries, nil
 }
 
 func (c *Client) DiffNQEQuery(before, after string, request *NQEDiffRequest) (*NQEDiffResult, error) {
