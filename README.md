@@ -30,6 +30,7 @@ go build -o forward-mcp ./cmd/server
 Set the following environment variables before running:
 - `FORWARD_API_BASE_URL` – Base URL for the Forward Networks API
 - `FORWARD_API_KEY` – Your Forward Networks API key
+- `FORWARD_API_SECRET` - Your Forward Networs API Secret
 - `FORWARD_DEFAULT_NETWORK_ID` – (Optional) Default network ID
 - `FORWARD_INSECURE_SKIP_VERIFY` – (Optional, default: false) Set to true to skip TLS verification
 
