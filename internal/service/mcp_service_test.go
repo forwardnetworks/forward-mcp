@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -376,18 +377,30 @@ func createTestService() *ForwardMCPService {
 	// Initialize mock embedding service and semantic cache
 	embeddingService := NewMockEmbeddingService()
 	logger := logger.New()
-	semanticCache := NewSemanticCache(embeddingService, logger)
+	semanticCache := NewSemanticCache(embeddingService, logger, "test")
+
+	// Initialize query index with mock embedding service
+	queryIndex := NewNQEQueryIndex(embeddingService, logger)
+
+	// Initialize query index for tests with mock data instead of spec file
+	if err := queryIndex.LoadFromMockData(); err != nil {
+		logger.Error("Failed to load mock query index in test: %v", err)
+	}
 
 	service := &ForwardMCPService{
 		forwardClient: NewMockForwardClient(),
 		config:        cfg,
 		logger:        logger,
+		instanceID:    "test", // Add instance ID for test service
 		defaults: &ServiceDefaults{
 			NetworkID:  "162112",
 			SnapshotID: "",
 			QueryLimit: 100,
 		},
-		semanticCache: semanticCache,
+		workflowManager: NewWorkflowManager(),
+		semanticCache:   semanticCache,
+		queryIndex:      queryIndex,
+		database:        nil, // No database for tests
 	}
 
 	return service
@@ -834,4 +847,150 @@ func (m *MockForwardClient) RunNQEQueryByString(params *forward.NQEQueryParams) 
 		return nil, &MockError{m.errorMessage}
 	}
 	return m.nqeResult, nil
+}
+
+// Add missing NQE methods required by ClientInterface
+func (m *MockForwardClient) GetNQEOrgQueries() ([]forward.NQEQuery, error) {
+	if m.shouldError {
+		return nil, &MockError{m.errorMessage}
+	}
+	return m.nqeQueries, nil
+}
+
+func (m *MockForwardClient) GetNQEOrgQueriesEnhanced() ([]forward.NQEQueryDetail, error) {
+	if m.shouldError {
+		return nil, &MockError{m.errorMessage}
+	}
+	// Convert NQEQuery to NQEQueryDetail for testing
+	var details []forward.NQEQueryDetail
+	for _, query := range m.nqeQueries {
+		detail := forward.NQEQueryDetail{
+			QueryID:     query.QueryID,
+			Path:        query.Path,
+			Intent:      query.Intent,
+			Repository:  query.Repository,
+			SourceCode:  "SELECT * FROM test_table",
+			Description: "Mock test query",
+		}
+		details = append(details, detail)
+	}
+	return details, nil
+}
+
+func (m *MockForwardClient) GetNQEFwdQueries() ([]forward.NQEQuery, error) {
+	if m.shouldError {
+		return nil, &MockError{m.errorMessage}
+	}
+	return m.nqeQueries, nil
+}
+
+func (m *MockForwardClient) GetNQEFwdQueriesEnhanced() ([]forward.NQEQueryDetail, error) {
+	if m.shouldError {
+		return nil, &MockError{m.errorMessage}
+	}
+	// Convert NQEQuery to NQEQueryDetail for testing
+	var details []forward.NQEQueryDetail
+	for _, query := range m.nqeQueries {
+		detail := forward.NQEQueryDetail{
+			QueryID:     query.QueryID,
+			Path:        query.Path,
+			Intent:      query.Intent,
+			Repository:  query.Repository,
+			SourceCode:  "SELECT * FROM test_table",
+			Description: "Mock test query",
+		}
+		details = append(details, detail)
+	}
+	return details, nil
+}
+
+func (m *MockForwardClient) GetNQEAllQueriesEnhanced() ([]forward.NQEQueryDetail, error) {
+	if m.shouldError {
+		return nil, &MockError{m.errorMessage}
+	}
+	// Convert NQEQuery to NQEQueryDetail for testing
+	var details []forward.NQEQueryDetail
+	for _, query := range m.nqeQueries {
+		detail := forward.NQEQueryDetail{
+			QueryID:     query.QueryID,
+			Path:        query.Path,
+			Intent:      query.Intent,
+			Repository:  query.Repository,
+			SourceCode:  "SELECT * FROM test_table",
+			Description: "Mock test query",
+		}
+		details = append(details, detail)
+	}
+	return details, nil
+}
+
+func (m *MockForwardClient) GetNQEAllQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
+	if m.shouldError {
+		return nil, &MockError{m.errorMessage}
+	}
+	return m.GetNQEAllQueriesEnhanced()
+}
+
+func (m *MockForwardClient) GetNQEQueryByCommit(commitID string, path string, repository string) (*forward.NQEQueryDetail, error) {
+	if m.shouldError {
+		return nil, &MockError{m.errorMessage}
+	}
+	return &forward.NQEQueryDetail{
+		QueryID:     "test_query_id",
+		Path:        path,
+		SourceCode:  "test source code",
+		Intent:      "Test intent",
+		Description: "Test description",
+		Repository:  repository,
+	}, nil
+}
+
+// Add missing cache-related methods to complete the interface implementation
+func (m *MockForwardClient) GetNQEOrgQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
+	if m.shouldError {
+		return nil, &MockError{m.errorMessage}
+	}
+	// Return enhanced org queries with mock data
+	return []forward.NQEQueryDetail{
+		{
+			QueryID:     "FQ_org_test_query",
+			Path:        "/Test/Org/Query",
+			Intent:      "Test org query intent",
+			Repository:  "ORG",
+			SourceCode:  "test org source code",
+			Description: "Test org description",
+		},
+	}, nil
+}
+
+func (m *MockForwardClient) GetNQEOrgQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
+	// Just delegate to the non-context version for the mock
+	return m.GetNQEOrgQueriesEnhancedWithCache(existingCommitIDs)
+}
+
+func (m *MockForwardClient) GetNQEFwdQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
+	if m.shouldError {
+		return nil, &MockError{m.errorMessage}
+	}
+	// Return enhanced fwd queries with mock data
+	return []forward.NQEQueryDetail{
+		{
+			QueryID:     "FQ_fwd_test_query",
+			Path:        "/Test/Fwd/Query",
+			Intent:      "Test fwd query intent",
+			Repository:  "FWD",
+			SourceCode:  "test fwd source code",
+			Description: "Test fwd description",
+		},
+	}, nil
+}
+
+func (m *MockForwardClient) GetNQEFwdQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
+	// Just delegate to the non-context version for the mock
+	return m.GetNQEFwdQueriesEnhancedWithCache(existingCommitIDs)
+}
+
+func (m *MockForwardClient) GetNQEAllQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
+	// Just delegate to the non-context version for the mock
+	return m.GetNQEAllQueriesEnhancedWithCache(existingCommitIDs)
 }

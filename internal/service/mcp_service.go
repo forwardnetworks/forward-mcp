@@ -1,12 +1,14 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/forward"
@@ -61,10 +63,16 @@ type ForwardMCPService struct {
 	forwardClient   forward.ClientInterface
 	config          *config.Config
 	logger          *logger.Logger
+	instanceID      string // Unique identifier for this Forward Networks instance
 	defaults        *ServiceDefaults
 	workflowManager *WorkflowManager
 	semanticCache   *SemanticCache
 	queryIndex      *NQEQueryIndex
+	database        *NQEDatabase
+	// Context cancellation for graceful shutdown
+	ctx        context.Context
+	cancelFunc context.CancelFunc
+	wg         sync.WaitGroup // Track background goroutines
 }
 
 // ServiceDefaults holds default values for the MCP service
@@ -76,6 +84,10 @@ type ServiceDefaults struct {
 
 // NewForwardMCPService creates a new Forward MCP service
 func NewForwardMCPService(cfg *config.Config, logger *logger.Logger) *ForwardMCPService {
+	// Generate instance ID for partitioning database and cache by Forward Networks instance
+	instanceID := GenerateInstanceID(cfg.Forward.APIBaseURL)
+	logger.Info("Using instance ID '%s' for partitioning (based on %s)", instanceID, cfg.Forward.APIBaseURL)
+
 	// Create Forward Networks client
 	forwardClient := forward.NewClient(&cfg.Forward)
 
@@ -92,21 +104,28 @@ func NewForwardMCPService(cfg *config.Config, logger *logger.Logger) *ForwardMCP
 		embeddingService = NewKeywordEmbeddingService()
 	}
 
-	// Create semantic cache
-	semanticCache := NewSemanticCache(embeddingService, logger)
+	// Create semantic cache with instance partitioning
+	semanticCache := NewSemanticCache(embeddingService, logger, instanceID)
+
+	// Create database with instance partitioning
+	database, err := NewNQEDatabase(logger, instanceID)
+	if err != nil {
+		logger.Error("Failed to create database: %v", err)
+		// Continue without database - will fall back to spec file
+		database = nil
+	}
 
 	// Create query index
 	queryIndex := NewNQEQueryIndex(embeddingService, logger)
 
-	// Initialize query index
-	if err := queryIndex.LoadFromSpec(); err != nil {
-		logger.Warn("Failed to initialize query index: %v", err)
-	}
+	// Create context for cancellation
+	ctx, cancelFunc := context.WithCancel(context.Background())
 
-	return &ForwardMCPService{
+	service := &ForwardMCPService{
 		forwardClient: forwardClient,
 		config:        cfg,
 		logger:        logger,
+		instanceID:    instanceID,
 		defaults: &ServiceDefaults{
 			NetworkID:  cfg.Forward.DefaultNetworkID,
 			SnapshotID: cfg.Forward.DefaultSnapshotID,
@@ -115,7 +134,153 @@ func NewForwardMCPService(cfg *config.Config, logger *logger.Logger) *ForwardMCP
 		workflowManager: NewWorkflowManager(),
 		semanticCache:   semanticCache,
 		queryIndex:      queryIndex,
+		database:        database,
+		ctx:             ctx,
+		cancelFunc:      cancelFunc,
+		wg:              sync.WaitGroup{},
 	}
+
+	// Initialize query index with smart caching
+	if database != nil {
+		// Register callback to reload query index when database is updated
+		database.AddUpdateCallback(func() {
+			logger.Info("🔄 Database updated, reloading query index with enhanced metadata...")
+			queries, err := database.LoadQueries()
+			if err != nil {
+				logger.Error("🔄 Failed to reload queries from updated database: %v", err)
+				return
+			}
+
+			if err := queryIndex.LoadFromQueries(queries); err != nil {
+				logger.Error("🔄 Failed to reload query index: %v", err)
+			} else {
+				logger.Info("🔄 Query index reloaded with %d queries (enhanced metadata available)", len(queries))
+			}
+		})
+
+		// Start database loading asynchronously to avoid blocking Claude startup
+		service.wg.Add(1)
+		go func() {
+			defer service.wg.Done()
+
+			queryIndex.SetLoading(true)
+			logger.Info("🚀 Starting asynchronous query index initialization...")
+
+			// Check for cancellation before starting
+			select {
+			case <-service.ctx.Done():
+				logger.Info("🚀 Query index initialization cancelled")
+				queryIndex.SetLoading(false)
+				return
+			default:
+			}
+
+			queries, err := database.loadWithSmartCachingContext(service.ctx, forwardClient, logger)
+			if err != nil {
+				// Check if we were cancelled
+				select {
+				case <-service.ctx.Done():
+					logger.Info("🚀 Query index initialization cancelled during loading")
+					queryIndex.SetLoading(false)
+					return
+				default:
+				}
+
+				logger.Warn("🚀 Smart caching failed, falling back to spec file: %v", err)
+				if err := queryIndex.LoadFromSpec(); err != nil {
+					logger.Warn("🚀 Failed to initialize query index from spec: %v", err)
+					queryIndex.SetLoading(false)
+				} else {
+					logger.Info("🚀 Query index initialized from spec file as fallback")
+					queryIndex.SetLoading(false)
+				}
+			} else {
+				// Check for cancellation before final step
+				select {
+				case <-service.ctx.Done():
+					logger.Info("🚀 Query index initialization cancelled before loading queries")
+					queryIndex.SetLoading(false)
+					return
+				default:
+				}
+
+				// Load queries into the index
+				if err := queryIndex.LoadFromQueries(queries); err != nil {
+					logger.Error("🚀 Failed to load queries into index: %v", err)
+					queryIndex.SetLoading(false)
+				} else {
+					logger.Info("🚀 Query index initialized with %d queries from database", len(queries))
+					queryIndex.SetLoading(false)
+				}
+			}
+
+			// Final cancellation check
+			select {
+			case <-service.ctx.Done():
+				logger.Info("🚀 Query index initialization completed but service shutting down")
+			default:
+				// Normal completion
+			}
+		}()
+	} else {
+		// Fallback to spec file loading (also async to be consistent)
+		service.wg.Add(1)
+		go func() {
+			defer service.wg.Done()
+
+			logger.Info("🚀 Starting asynchronous spec file loading...")
+
+			// Check for cancellation before starting
+			select {
+			case <-service.ctx.Done():
+				logger.Info("🚀 Spec file loading cancelled")
+				return
+			default:
+			}
+
+			if err := queryIndex.LoadFromSpec(); err != nil {
+				logger.Warn("🚀 Failed to initialize query index from spec: %v", err)
+			} else {
+				logger.Info("🚀 Query index initialized from spec file")
+			}
+		}()
+	}
+
+	return service
+}
+
+// Shutdown gracefully shuts down the ForwardMCPService and waits for background goroutines to complete
+func (s *ForwardMCPService) Shutdown(timeout time.Duration) error {
+	s.logger.Info("Shutting down ForwardMCPService...")
+
+	// Cancel the context to signal all goroutines to stop
+	s.cancelFunc()
+
+	// Wait for all goroutines to complete with timeout
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		s.logger.Info("All background goroutines stopped successfully")
+	case <-time.After(timeout):
+		s.logger.Warn("Timeout waiting for background goroutines to stop")
+		return fmt.Errorf("shutdown timeout after %v", timeout)
+	}
+
+	// Close database connection if it exists
+	if s.database != nil {
+		if err := s.database.Close(); err != nil {
+			s.logger.Error("Failed to close database: %v", err)
+			return fmt.Errorf("failed to close database: %w", err)
+		}
+	}
+
+	s.logger.Info("ForwardMCPService shutdown complete")
+	return nil
 }
 
 // Helper function to get network ID with fallback to default
@@ -151,14 +316,24 @@ func (s *ForwardMCPService) getQueryLimit(limit int) int {
 	return 1000 // Default fallback if no defaults are set
 }
 
-// Helper function to log tool calls with detailed information
+// Helper function to log tool calls with detailed information (legacy compatibility)
 func (s *ForwardMCPService) logToolCall(toolName string, args interface{}, err error) {
-	argsJSON, _ := json.MarshalIndent(args, "", "  ")
-	if err != nil {
-		s.logger.Error("Tool %s failed with args: %s\nError: %v", toolName, string(argsJSON), err)
-	} else {
-		s.logger.Debug("Tool %s called with args: %s", toolName, string(argsJSON))
-	}
+	// Use zero duration for legacy calls - timing will be handled at a higher level
+	s.logger.LogToolCall(toolName, args, 0, err)
+}
+
+// Enhanced function to log tool calls with performance metrics
+func (s *ForwardMCPService) logToolCallWithTiming(toolName string, args interface{}, duration time.Duration, err error) {
+	s.logger.LogToolCall(toolName, args, duration, err)
+}
+
+// Wrapper function to time and log tool execution
+func (s *ForwardMCPService) timeAndLogTool(toolName string, args interface{}, fn func() error) error {
+	start := time.Now()
+	err := fn()
+	duration := time.Since(start)
+	s.logToolCallWithTiming(toolName, args, duration, err)
+	return err
 }
 
 // RegisterTools registers all Forward Networks tools with the MCP server
@@ -559,8 +734,8 @@ func (s *ForwardMCPService) listNetworks(args ListNetworksArgs) (*mcp.ToolRespon
 		return nil, fmt.Errorf("failed to list networks: %w", err)
 	}
 
-	result, _ := json.MarshalIndent(networks, "", "  ")
-	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Found %d networks:\n%s", len(networks), string(result)))), nil
+	result := MarshalCompactJSONString(networks)
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Found %d networks:\n%s", len(networks), result))), nil
 }
 
 func (s *ForwardMCPService) createNetwork(args CreateNetworkArgs) (*mcp.ToolResponse, error) {
@@ -659,7 +834,7 @@ func (s *ForwardMCPService) searchPaths(args SearchPathsArgs) (*mcp.ToolResponse
 	s.logger.Debug("Path search completed: found %d paths, searchTime=%dms, candidates=%d, snapshotID=%s",
 		len(response.Paths), response.SearchTimeMs, response.NumCandidatesFound, response.SnapshotID)
 
-	result, _ := json.MarshalIndent(response, "", "  ")
+	result := MarshalCompactJSONString(response)
 
 	// Enhanced response with debugging info
 	debugInfo := ""
@@ -673,7 +848,7 @@ func (s *ForwardMCPService) searchPaths(args SearchPathsArgs) (*mcp.ToolResponse
 		debugInfo += fmt.Sprintf("\n💡 No candidates found for source IP %s - this IP might not exist in the network topology\n", args.SrcIP)
 	}
 
-	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Path search completed. Found %d paths:%s\n%s", len(response.Paths), debugInfo, string(result)))), nil
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Path search completed. Found %d paths:%s\n%s", len(response.Paths), debugInfo, result))), nil
 }
 
 // Helper function to convert service NQEQueryOptions to forward NQEQueryOptions
@@ -721,6 +896,18 @@ func (s *ForwardMCPService) convertNQEQueryOptions(options *NQEQueryOptions) *fo
 func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.ToolResponse, error) {
 	s.logToolCall("run_nqe_query_by_id", args, nil)
 
+	// Validate query ID against database index if available
+	stats := s.queryIndex.GetStatistics()
+	totalQueries := stats["total_queries"].(int)
+	if totalQueries > 0 {
+		if entry, err := s.queryIndex.GetQueryByID(args.QueryID); err != nil {
+			s.logger.Warn("Query ID %s not found in database index - may be deprecated or invalid", args.QueryID)
+			// Continue execution anyway in case it's a newer query not yet in the database
+		} else {
+			s.logger.Debug("Executing validated query: %s (Path: %s)", entry.QueryID, entry.Path)
+		}
+	}
+
 	// Use defaults if not specified
 	networkID := s.getNetworkID(args.NetworkID)
 	snapshotID := s.getSnapshotID(args.SnapshotID)
@@ -743,13 +930,22 @@ func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.Tool
 	result, err := s.forwardClient.RunNQEQueryByID(params)
 	if err != nil {
 		s.logToolCall("run_nqe_query_by_id", args, err)
+
+		// Check for specific NQE query errors and provide helpful messages
+		errorStr := err.Error()
+		if strings.Contains(errorStr, "Invalid module path") {
+			return nil, fmt.Errorf("query contains outdated module imports (this is a data quality issue in the Forward Networks repository) - query ID: %s. Try using find_executable_query to discover alternative queries", args.QueryID)
+		}
+		if strings.Contains(errorStr, "NQE_RUNTIME_ERROR") {
+			return nil, fmt.Errorf("query execution failed due to code issues (this may be a data quality issue) - query ID: %s. Try using find_executable_query to find working alternatives. Error: %w", args.QueryID, err)
+		}
 		return nil, fmt.Errorf("failed to run NQE query: %w", err)
 	}
 
-	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	resultJSON := MarshalCompactJSONString(result)
 	s.logger.Debug("NQE query completed with %d items", len(result.Items))
 
-	response := fmt.Sprintf("NQE query completed. Found %d items:\n%s\n\n", len(result.Items), string(resultJSON))
+	response := fmt.Sprintf("NQE query completed. Found %d items:\n%s\n\n", len(result.Items), resultJSON)
 
 	// Add helpful suggestions for predefined queries
 	response += "Would you like to:\n" +
@@ -763,23 +959,54 @@ func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.Tool
 func (s *ForwardMCPService) listNQEQueries(args ListNQEQueriesArgs) (*mcp.ToolResponse, error) {
 	s.logToolCall("list_nqe_queries", args, nil)
 
-	queries, err := s.forwardClient.GetNQEQueries(args.Directory)
-	if err != nil {
-		s.logToolCall("list_nqe_queries", args, err)
-		return nil, fmt.Errorf("failed to list NQE queries: %w", err)
+	// Check if query index is ready
+	if err := s.checkQueryIndexReady("list_nqe_queries"); err != nil {
+		return nil, err
+	}
+
+	// Check if query index is initialized
+	stats := s.queryIndex.GetStatistics()
+	totalQueries := stats["total_queries"].(int)
+	if totalQueries == 0 {
+		s.logger.Info("Query index empty, initializing from database...")
+
+		// Try to initialize from database first, then fallback to spec
+		if s.database != nil {
+			queries, err := s.database.loadWithSmartCachingContext(s.ctx, s.forwardClient, s.logger)
+			if err != nil {
+				s.logger.Warn("Database loading failed, falling back to spec file: %v", err)
+				if err := s.queryIndex.LoadFromSpec(); err != nil {
+					return nil, fmt.Errorf("failed to initialize query index: %w", err)
+				}
+			} else {
+				if err := s.queryIndex.LoadFromQueries(queries); err != nil {
+					return nil, fmt.Errorf("failed to load queries into index: %w", err)
+				}
+			}
+		} else {
+			if err := s.queryIndex.LoadFromSpec(); err != nil {
+				return nil, fmt.Errorf("failed to initialize query index: %w", err)
+			}
+		}
+		s.logger.Info("Query index initialized successfully")
+	}
+
+	// Use database-backed query index instead of direct API calls
+	filteredEntries := s.queryIndex.FilterQueriesByDirectory(args.Directory)
+
+	// Convert NQEQueryIndexEntry to forward.NQEQuery for compatibility
+	var queries []forward.NQEQuery
+	for _, entry := range filteredEntries {
+		queries = append(queries, entry.ConvertToNQEQuery())
 	}
 
 	// Format the response with proper JSON structure
-	result, err := json.MarshalIndent(queries, "", "  ")
-	if err != nil {
-		s.logger.Error("Failed to marshal queries: %v", err)
-		return nil, fmt.Errorf("failed to format query results: %w", err)
-	}
+	result := MarshalCompactJSONString(queries)
 
-	s.logger.Debug("Found %d valid NQE queries", len(queries))
+	s.logger.Debug("Found %d valid NQE queries from database index", len(queries))
 
 	// Build a helpful response message
-	response := fmt.Sprintf("Found %d NQE queries:\n%s\n\n", len(queries), string(result))
+	response := fmt.Sprintf("Found %d NQE queries (from database cache):\n%s\n\n", len(queries), result)
 
 	// Add helpful suggestions based on the results
 	if len(queries) == 0 {
@@ -826,8 +1053,8 @@ func (s *ForwardMCPService) listDevices(args ListDevicesArgs) (*mcp.ToolResponse
 		return nil, fmt.Errorf("failed to list devices: %w", err)
 	}
 
-	result, _ := json.MarshalIndent(response, "", "  ")
-	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Found %d devices (total: %d):\n%s", len(response.Devices), response.TotalCount, string(result)))), nil
+	result := MarshalCompactJSONString(response)
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Found %d devices (total: %d):\n%s", len(response.Devices), response.TotalCount, result))), nil
 }
 
 func (s *ForwardMCPService) getDeviceLocations(args GetDeviceLocationsArgs) (*mcp.ToolResponse, error) {
@@ -1031,9 +1258,9 @@ func (s *ForwardMCPService) getDefaultSettings(args GetDefaultSettingsArgs) (*mc
 		"environment_source":   "Loaded from environment variables and config files",
 	}
 
-	result, _ := json.MarshalIndent(settings, "", "  ")
+	result := MarshalCompactJSONString(settings)
 
-	response := fmt.Sprintf("Current default settings:\n%s\n\n", string(result))
+	response := fmt.Sprintf("Current default settings:\n%s\n\n", result)
 	response += "To change defaults:\n"
 	response += "• Use set_default_network to change the default network\n"
 	response += "• Update environment variables (FORWARD_DEFAULT_NETWORK_ID, etc.)\n"
@@ -1116,9 +1343,9 @@ func (s *ForwardMCPService) getCacheStats(args GetCacheStatsArgs) (*mcp.ToolResp
 
 	stats := s.semanticCache.GetStats()
 
-	statsJSON, _ := json.MarshalIndent(stats, "", "  ")
+	statsJSON := MarshalCompactJSONString(stats)
 
-	summary := fmt.Sprintf("Semantic Cache Performance Statistics:\n%s\n\nCache Summary:\n", string(statsJSON))
+	summary := fmt.Sprintf("Semantic Cache Performance Statistics:\n%s\n\nCache Summary:\n", statsJSON)
 	summary += fmt.Sprintf("• Total Queries: %v\n", stats["total_queries"])
 	summary += fmt.Sprintf("• Hit Rate: %v\n", stats["hit_rate_percent"])
 	summary += fmt.Sprintf("• Active Entries: %v/%v\n", stats["total_entries"], stats["max_entries"])
@@ -1193,7 +1420,7 @@ func (s *ForwardMCPService) clearCache(args ClearCacheArgs) (*mcp.ToolResponse, 
 		} else {
 			embeddingService = NewMockEmbeddingService()
 		}
-		s.semanticCache = NewSemanticCache(embeddingService, s.logger)
+		s.semanticCache = NewSemanticCache(embeddingService, s.logger, s.instanceID)
 
 		removed = totalEntries
 		operation = "Cleared all cache entries"
@@ -1218,6 +1445,11 @@ func (s *ForwardMCPService) clearCache(args ClearCacheArgs) (*mcp.ToolResponse, 
 // searchNQEQueries performs AI-powered search through the NQE query library
 func (s *ForwardMCPService) searchNQEQueries(args SearchNQEQueriesArgs) (*mcp.ToolResponse, error) {
 	s.logToolCall("search_nqe_queries", args, nil)
+
+	// Check if query index is ready
+	if err := s.checkQueryIndexReady("search_nqe_queries"); err != nil {
+		return nil, err
+	}
 
 	if args.Query == "" {
 		return mcp.NewToolResponse(mcp.NewTextContent("Please provide a search query describing what you want to analyze (e.g., 'AWS security vulnerabilities', 'BGP routing issues', 'interface statistics')")), nil
@@ -1815,4 +2047,15 @@ func (s *ForwardMCPService) promptForParameter(sessionID, paramName string) (*mc
 		promptText = "Please provide a value for " + paramName + ":"
 	}
 	return mcp.NewToolResponse(mcp.NewTextContent(promptText)), nil
+}
+
+// Helper function to check if query index is ready and provide helpful feedback
+func (s *ForwardMCPService) checkQueryIndexReady(toolName string) error {
+	if !s.queryIndex.IsReady() {
+		if s.queryIndex.IsLoading() {
+			return fmt.Errorf("🚀 Query index is currently loading in the background. Please wait a moment and try again. This usually takes 10-30 seconds for initial startup")
+		}
+		return fmt.Errorf("❌ Query index is not initialized. This may indicate a startup issue. Try running 'initialize_query_index' tool to manually initialize")
+	}
+	return nil
 }

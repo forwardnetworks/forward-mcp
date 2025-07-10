@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -208,13 +207,10 @@ func assessComplexity(result *QuerySearchResult) string {
 	return "advanced"
 }
 
-// Format as clean JSON for LLM consumption
+// Format as clean JSON for LLM consumption (compact for token efficiency)
 func (response *LLMOptimizedSearchResponse) ToJSON() (string, error) {
-	jsonBytes, err := json.MarshalIndent(response, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(jsonBytes), nil
+	// Use compact JSON to minimize token usage
+	return OptimizeJSONForLLM(response)
 }
 
 // Create a concise summary for quick LLM understanding

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/forward-mcp/internal/forward"
 	"github.com/forward-mcp/internal/logger"
 )
 
@@ -21,6 +22,7 @@ type NQEQueryIndexEntry struct {
 	Code        string    `json:"code"`
 	Category    string    `json:"category"`
 	Subcategory string    `json:"subcategory"`
+	Repository  string    `json:"repository"` // Track which repository this query comes from
 	Embedding   []float32 `json:"embedding,omitempty"`
 	LastUpdated time.Time `json:"lastUpdated"`
 }
@@ -35,6 +37,32 @@ type NQEQueryIndex struct {
 	indexPath           string
 	embeddingsCachePath string // Path to save/load embeddings
 	offlineMode         bool   // Whether to work with cached embeddings only
+	isLoading           bool   // Whether the index is currently loading
+	isReady             bool   // Whether the index is ready for use
+}
+
+// IsReady returns true if the query index is ready for use
+func (idx *NQEQueryIndex) IsReady() bool {
+	idx.mutex.RLock()
+	defer idx.mutex.RUnlock()
+	return idx.isReady && len(idx.queries) > 0
+}
+
+// IsLoading returns true if the query index is currently loading
+func (idx *NQEQueryIndex) IsLoading() bool {
+	idx.mutex.RLock()
+	defer idx.mutex.RUnlock()
+	return idx.isLoading
+}
+
+// SetLoading sets the loading state
+func (idx *NQEQueryIndex) SetLoading(loading bool) {
+	idx.mutex.Lock()
+	defer idx.mutex.Unlock()
+	idx.isLoading = loading
+	if !loading {
+		idx.isReady = true
+	}
 }
 
 // QuerySearchResult represents a search result with similarity score
@@ -69,6 +97,8 @@ func NewNQEQueryIndex(embeddingService EmbeddingService, logger *logger.Logger) 
 		indexPath:           specPath,
 		embeddingsCachePath: embeddingsCachePath,
 		offlineMode:         false,
+		isLoading:           false,
+		isReady:             false,
 	}
 }
 
@@ -136,6 +166,106 @@ func (idx *NQEQueryIndex) LoadFromSpec() error {
 		}
 		idx.logger.Info("Loaded %d cached embeddings for offline AI search", embeddedCount)
 	}
+
+	return nil
+}
+
+// LoadFromQueries loads queries from a provided slice of NQEQueryDetail
+func (idx *NQEQueryIndex) LoadFromQueries(queries []forward.NQEQueryDetail) error {
+	idx.mutex.Lock()
+	defer idx.mutex.Unlock()
+
+	idx.isLoading = true
+	defer func() {
+		idx.isLoading = false
+		idx.isReady = true
+	}()
+
+	// Convert NQEQueryDetail to NQEQueryIndexEntry
+	idx.queries = make([]*NQEQueryIndexEntry, 0, len(queries))
+
+	for _, query := range queries {
+		// Parse path into category, subcategory, and intent
+		segments := strings.Split(strings.Trim(query.Path, "/"), "/")
+		category := ""
+		subcategory := ""
+		intent := ""
+
+		if len(segments) > 0 {
+			category = segments[0]
+		}
+		if len(segments) > 1 {
+			subcategory = segments[1]
+		}
+		if len(segments) > 0 {
+			intent = segments[len(segments)-1]
+		}
+
+		entry := &NQEQueryIndexEntry{
+			QueryID:     query.QueryID,
+			Path:        query.Path,
+			Intent:      intent,
+			Code:        query.SourceCode,
+			Category:    category,
+			Subcategory: subcategory,
+			Repository:  query.Repository, // Use the actual repository from API
+			LastUpdated: time.Now(),
+		}
+
+		idx.queries = append(idx.queries, entry)
+	}
+
+	idx.logger.Info("Loaded %d NQE queries into search index from database", len(idx.queries))
+
+	// Skip loading old embeddings cache - we're using database data now
+	// Embeddings can be generated on-demand if needed for semantic search
+	idx.logger.Debug("Using database-first approach - embeddings will be generated on-demand if needed")
+
+	return nil
+}
+
+// LoadFromMockData loads mock data for testing (bypasses spec file requirement)
+func (idx *NQEQueryIndex) LoadFromMockData() error {
+	idx.mutex.Lock()
+	defer idx.mutex.Unlock()
+
+	// Create mock queries for testing
+	mockQueries := []*NQEQueryIndexEntry{
+		{
+			QueryID:     "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029",
+			Path:        "/L3/Basic/All Devices",
+			Intent:      "List all devices in the network",
+			Code:        "SELECT device_name, platform FROM devices",
+			Category:    "L3",
+			Subcategory: "Basic",
+			Repository:  "ORG",
+			LastUpdated: time.Now(),
+		},
+		{
+			QueryID:     "FQ_test_hardware_query",
+			Path:        "/Hardware/Basic/Device Hardware",
+			Intent:      "Show device hardware information",
+			Code:        "SELECT device_name, model, serial_number FROM device_hardware",
+			Category:    "Hardware",
+			Subcategory: "Basic",
+			Repository:  "FWD",
+			LastUpdated: time.Now(),
+		},
+		{
+			QueryID:     "FQ_test_security_query",
+			Path:        "/Security/Basic/ACL Analysis",
+			Intent:      "Analyze access control lists",
+			Code:        "SELECT device_name, acl_name, rule_count FROM acls",
+			Category:    "Security",
+			Subcategory: "Basic",
+			Repository:  "ORG",
+			LastUpdated: time.Now(),
+		},
+	}
+
+	idx.queries = mockQueries
+	idx.isReady = true
+	idx.logger.Debug("Loaded %d mock NQE queries for testing", len(mockQueries))
 
 	return nil
 }
@@ -722,4 +852,47 @@ func (idx *NQEQueryIndex) Queries() []*NQEQueryIndexEntry {
 	idx.mutex.RLock()
 	defer idx.mutex.RUnlock()
 	return idx.queries
+}
+
+// FilterQueriesByDirectory returns queries that match the specified directory path
+func (idx *NQEQueryIndex) FilterQueriesByDirectory(directory string) []*NQEQueryIndexEntry {
+	idx.mutex.RLock()
+	defer idx.mutex.RUnlock()
+
+	if directory == "" {
+		// Return all queries if no directory filter
+		return idx.queries
+	}
+
+	// Normalize the directory path
+	normalizedDir := strings.Trim(directory, "/")
+	var filteredQueries []*NQEQueryIndexEntry
+
+	for _, query := range idx.queries {
+		// Normalize the query path for comparison
+		normalizedPath := strings.Trim(query.Path, "/")
+
+		// Check if the query path starts with the directory
+		if strings.HasPrefix(normalizedPath, normalizedDir) {
+			// Additional check: ensure it's actually in this directory level
+			// (not just a path that starts with the same string)
+			remaining := strings.TrimPrefix(normalizedPath, normalizedDir)
+			if remaining == "" || strings.HasPrefix(remaining, "/") {
+				filteredQueries = append(filteredQueries, query)
+			}
+		}
+	}
+
+	return filteredQueries
+}
+
+// ConvertToNQEQuery converts NQEQueryIndexEntry to forward.NQEQuery for compatibility
+func (entry *NQEQueryIndexEntry) ConvertToNQEQuery() forward.NQEQuery {
+	// Use the actual repository information from the API instead of inferring from path
+	return forward.NQEQuery{
+		QueryID:    entry.QueryID,
+		Path:       entry.Path,
+		Intent:     entry.Intent,
+		Repository: entry.Repository, // Use the stored repository from API
+	}
 }

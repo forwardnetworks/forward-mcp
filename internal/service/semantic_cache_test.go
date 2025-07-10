@@ -13,7 +13,7 @@ import (
 func TestSemanticCache(t *testing.T) {
 	// Create a semantic cache with mock embedding service
 	embeddingService := NewMockEmbeddingService()
-	cache := NewSemanticCache(embeddingService, createTestLogger())
+	cache := NewSemanticCache(embeddingService, createTestLogger(), "test")
 
 	// Test basic Put and Get operations
 	t.Run("basic_put_and_get", func(t *testing.T) {
@@ -114,7 +114,7 @@ func TestSemanticCache(t *testing.T) {
 
 	t.Run("ttl_expiration", func(t *testing.T) {
 		// Create cache with short TTL for testing
-		shortTTLCache := NewSemanticCache(embeddingService, createTestLogger())
+		shortTTLCache := NewSemanticCache(embeddingService, createTestLogger(), "test")
 		shortTTLCache.ttl = 1 * time.Millisecond // Very short TTL
 
 		query := "test query"
@@ -137,7 +137,7 @@ func TestSemanticCache(t *testing.T) {
 
 	t.Run("eviction_policy", func(t *testing.T) {
 		// Create cache with small capacity
-		smallCache := NewSemanticCache(embeddingService, createTestLogger())
+		smallCache := NewSemanticCache(embeddingService, createTestLogger(), "test")
 		smallCache.maxEntries = 2 // Only 2 entries
 
 		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
@@ -175,7 +175,7 @@ func TestSemanticCache(t *testing.T) {
 
 func TestSemanticCacheStats(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
-	cache := NewSemanticCache(embeddingService, createTestLogger())
+	cache := NewSemanticCache(embeddingService, createTestLogger(), "test")
 
 	stats := cache.GetStats()
 
@@ -221,7 +221,7 @@ func TestSemanticCacheStats(t *testing.T) {
 
 func TestSemanticCacheSimilarQueries(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
-	cache := NewSemanticCache(embeddingService, createTestLogger())
+	cache := NewSemanticCache(embeddingService, createTestLogger(), "test")
 
 	// Add some queries to the cache
 	queries := []string{
@@ -269,7 +269,7 @@ func TestSemanticCacheSimilarQueries(t *testing.T) {
 
 func TestSemanticCacheClearExpired(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
-	cache := NewSemanticCache(embeddingService, createTestLogger())
+	cache := NewSemanticCache(embeddingService, createTestLogger(), "test")
 
 	// Set short TTL for testing
 	cache.ttl = 1 * time.Millisecond

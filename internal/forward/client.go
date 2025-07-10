@@ -2,6 +2,7 @@ package forward
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -36,6 +38,18 @@ type ClientInterface interface {
 	RunNQEQueryByString(params *NQEQueryParams) (*NQERunResult, error)
 	RunNQEQueryByID(params *NQEQueryParams) (*NQERunResult, error)
 	GetNQEQueries(dir string) ([]NQEQuery, error)
+	GetNQEOrgQueries() ([]NQEQuery, error)
+	GetNQEOrgQueriesEnhanced() ([]NQEQueryDetail, error)
+	GetNQEOrgQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]NQEQueryDetail, error)
+	GetNQEOrgQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]NQEQueryDetail, error)
+	GetNQEFwdQueries() ([]NQEQuery, error)
+	GetNQEFwdQueriesEnhanced() ([]NQEQueryDetail, error)
+	GetNQEFwdQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]NQEQueryDetail, error)
+	GetNQEFwdQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]NQEQueryDetail, error)
+	GetNQEAllQueriesEnhanced() ([]NQEQueryDetail, error)
+	GetNQEAllQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]NQEQueryDetail, error)
+	GetNQEAllQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]NQEQueryDetail, error)
+	GetNQEQueryByCommit(commitID string, path string, repository string) (*NQEQueryDetail, error)
 	DiffNQEQuery(before, after string, request *NQEDiffRequest) (*NQEDiffResult, error)
 
 	// Device operations
@@ -206,6 +220,43 @@ type NQEQuery struct {
 	Path       string `json:"path"`
 	Intent     string `json:"intent"`
 	Repository string `json:"repository"`
+}
+
+// NQEOrgQuerySummary represents a query summary from the org repository
+type NQEOrgQuerySummary struct {
+	Path          string `json:"path"`
+	LastCommitId  string `json:"lastCommitId"`
+	QueryID       string `json:"queryId"`
+	SourceCodeSha string `json:"sourceCodeSha"`
+}
+
+// NQEOrgQueriesResponse represents the response from /api/nqe/repos/org/commits/head/queries
+type NQEOrgQueriesResponse struct {
+	Queries        []NQEOrgQuerySummary `json:"queries"`
+	AccessSettings []interface{}        `json:"accessSettings"`
+}
+
+// NQECommitInfo represents commit information
+type NQECommitInfo struct {
+	ID          string `json:"id"`
+	AuthorEmail string `json:"authorEmail"`
+	CommittedAt int64  `json:"committedAt"`
+	Title       string `json:"title"`
+	Body        string `json:"body"`
+}
+
+// NQEQueryDetail represents detailed query information from commit endpoint
+type NQEQueryDetail struct {
+	QueryID       string        `json:"queryId"`
+	Path          string        `json:"path"` // Added from org queries response
+	SourceCode    string        `json:"sourceCode"`
+	Intent        string        `json:"intent"`
+	Description   string        `json:"description"`
+	SourceCodeSha string        `json:"sourceCodeSha"`
+	CommitCount   int           `json:"commitCount"`
+	LastCommit    NQECommitInfo `json:"lastCommit"`
+	FirstCommit   NQECommitInfo `json:"firstCommit"`
+	Repository    string        `json:"repository"` // Added to track repository source
 }
 
 type NQEDiffRequest struct {
@@ -618,6 +669,11 @@ func (c *Client) RunNQEQueryByID(params *NQEQueryParams) (*NQERunResult, error) 
 }
 
 func (c *Client) GetNQEQueries(dir string) ([]NQEQuery, error) {
+	// DEPRECATED: This method uses the legacy static API endpoint.
+	// Use GetNQEAllQueriesEnhanced() for the new database-backed approach.
+	warnLogger := logger.New()
+	warnLogger.Warn("DEPRECATED: GetNQEQueries() uses legacy static API. Consider using database-backed query discovery instead.")
+
 	endpoint := "/api/nqe/queries"
 	if dir != "" {
 		endpoint += fmt.Sprintf("?dir=%s", dir)
@@ -678,6 +734,459 @@ func (c *Client) GetNQEQueries(dir string) ([]NQEQuery, error) {
 	}
 
 	return validQueries, nil
+}
+
+func (c *Client) GetNQEOrgQueries() ([]NQEQuery, error) {
+	endpoint := "/api/nqe/repos/org/commits/head/queries"
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get NQE org queries: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Parse the response using the new structure
+	var orgResponse NQEOrgQueriesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&orgResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Convert to simplified NQEQuery format for backward compatibility
+	queries := make([]NQEQuery, len(orgResponse.Queries))
+	for i, q := range orgResponse.Queries {
+		queries[i] = NQEQuery{
+			QueryID:    q.QueryID,
+			Path:       q.Path,
+			Intent:     "", // Will be filled in when fetching detailed metadata
+			Repository: "org",
+		}
+	}
+
+	// Log the results
+	debugLogger := logger.New()
+	debugLogger.Debug("Found %d NQE org queries", len(queries))
+	if len(queries) > 0 {
+		// Log first query as sample
+		if sample, err := json.Marshal(queries[0]); err == nil {
+			debugLogger.Debug("Sample query: %s", string(sample))
+		}
+	}
+
+	return queries, nil
+}
+
+func (c *Client) GetNQEOrgQueriesEnhanced() ([]NQEQueryDetail, error) {
+	return c.GetNQEOrgQueriesEnhancedWithCache(nil)
+}
+
+func (c *Client) GetNQEOrgQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]NQEQueryDetail, error) {
+	return c.GetNQEOrgQueriesEnhancedWithCacheContext(context.Background(), existingCommitIDs)
+}
+
+func (c *Client) GetNQEOrgQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]NQEQueryDetail, error) {
+	// First, get the list of queries with commit IDs
+	endpoint := "/api/nqe/repos/org/commits/head/queries"
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get NQE org queries: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Parse the response to get query summaries
+	var orgResponse NQEOrgQueriesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&orgResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode org queries response: %w", err)
+	}
+
+	debugLogger := logger.New()
+	debugLogger.Info("Found %d queries, checking for changes...", len(orgResponse.Queries))
+
+	// Filter queries that need updating
+	queriesToFetch := make([]NQEOrgQuerySummary, 0)
+	unchangedCount := 0
+
+	for _, querySummary := range orgResponse.Queries {
+		// Check if this query has changed
+		if existingCommitIDs != nil {
+			if existingCommitID, exists := existingCommitIDs[querySummary.Path]; exists {
+				if existingCommitID == querySummary.LastCommitId {
+					unchangedCount++
+					continue // Skip unchanged queries
+				}
+			}
+		}
+		queriesToFetch = append(queriesToFetch, querySummary)
+	}
+
+	debugLogger.Info("📊 Commit comparison results: %d unchanged, %d to fetch", unchangedCount, len(queriesToFetch))
+
+	// For each query that needs updating, fetch the detailed metadata
+	enhancedQueries := make([]NQEQueryDetail, 0, len(queriesToFetch))
+	failedQueries := 0
+	var firstFailureExample string
+
+	for i, querySummary := range queriesToFetch {
+		// Check for context cancellation before processing each query
+		select {
+		case <-ctx.Done():
+			debugLogger.Info("🚫 Org query loading cancelled after processing %d/%d queries", i, len(queriesToFetch))
+			return nil, fmt.Errorf("org query loading cancelled: %w", ctx.Err())
+		default:
+			// Continue processing
+		}
+
+		queryDetail, err := c.GetNQEQueryByCommit(querySummary.LastCommitId, querySummary.Path, "org")
+		if err != nil {
+			failedQueries++
+			// Log only the first failure as an example, not every single one
+			if firstFailureExample == "" {
+				firstFailureExample = fmt.Sprintf("Example failure: query %s (commit %s): %v", querySummary.Path, querySummary.LastCommitId, err)
+			}
+			// Continue with other queries instead of failing completely
+			continue
+		}
+
+		// Enhance the query detail with path and commit information from the summary
+		queryDetail.QueryID = querySummary.QueryID // Ensure consistency
+		queryDetail.Path = querySummary.Path       // Add path from org summary
+
+		// Add commit tracking information
+		if queryDetail.LastCommit.ID == "" {
+			queryDetail.LastCommit.ID = querySummary.LastCommitId
+		}
+
+		enhancedQueries = append(enhancedQueries, *queryDetail)
+
+		// Log progress for large numbers of queries (every 100 queries) with cancellation check
+		if (i+1)%100 == 0 {
+			// Check for cancellation before logging progress
+			select {
+			case <-ctx.Done():
+				debugLogger.Info("🚫 Org query loading cancelled during progress logging at %d/%d queries", i+1, len(queriesToFetch))
+				return nil, fmt.Errorf("org query loading cancelled: %w", ctx.Err())
+			default:
+				debugLogger.Info("Progress: %d/%d queries processed (%d successful, %d failed)",
+					i+1, len(queriesToFetch), len(enhancedQueries), failedQueries)
+			}
+		}
+	}
+
+	// Final summary with meaningful statistics
+	debugLogger.Info("✅ Enhanced metadata loading complete:")
+	debugLogger.Info("  📊 Total queries found: %d", len(orgResponse.Queries))
+	debugLogger.Info("  ✅ Successfully loaded: %d", len(enhancedQueries))
+	if failedQueries > 0 {
+		debugLogger.Info("  ⚠️  Queries with path issues: %d (skipped, this is normal)", failedQueries)
+		if firstFailureExample != "" {
+			debugLogger.Debug("  %s", firstFailureExample)
+		}
+	}
+	if existingCommitIDs != nil {
+		debugLogger.Info("  🚀 Optimization: Skipped %d unchanged queries", unchangedCount)
+	}
+
+	return enhancedQueries, nil
+}
+
+func (c *Client) GetNQEFwdQueries() ([]NQEQuery, error) {
+	endpoint := "/api/nqe/repos/fwd/commits/head/queries"
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get NQE fwd queries: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Parse the response using the new structure
+	var orgResponse NQEOrgQueriesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&orgResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Convert to simplified NQEQuery format for backward compatibility
+	queries := make([]NQEQuery, len(orgResponse.Queries))
+	for i, q := range orgResponse.Queries {
+		queries[i] = NQEQuery{
+			QueryID:    q.QueryID,
+			Path:       q.Path,
+			Intent:     "", // Will be filled in when fetching detailed metadata
+			Repository: "fwd",
+		}
+	}
+
+	// Log the results
+	debugLogger := logger.New()
+	debugLogger.Debug("Found %d NQE fwd queries", len(queries))
+	if len(queries) > 0 {
+		// Log first query as sample
+		if sample, err := json.Marshal(queries[0]); err == nil {
+			debugLogger.Debug("Sample query: %s", string(sample))
+		}
+	}
+
+	return queries, nil
+}
+
+func (c *Client) GetNQEFwdQueriesEnhanced() ([]NQEQueryDetail, error) {
+	return c.GetNQEFwdQueriesEnhancedWithCache(nil)
+}
+
+func (c *Client) GetNQEFwdQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]NQEQueryDetail, error) {
+	return c.GetNQEFwdQueriesEnhancedWithCacheContext(context.Background(), existingCommitIDs)
+}
+
+func (c *Client) GetNQEFwdQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]NQEQueryDetail, error) {
+	// First, get the list of queries with commit IDs
+	endpoint := "/api/nqe/repos/fwd/commits/head/queries"
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get NQE fwd queries: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Parse the response to get query summaries
+	var orgResponse NQEOrgQueriesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&orgResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode fwd queries response: %w", err)
+	}
+
+	debugLogger := logger.New()
+	debugLogger.Info("Found %d fwd queries, checking for changes...", len(orgResponse.Queries))
+
+	// Filter queries that need updating
+	queriesToFetch := make([]NQEOrgQuerySummary, 0)
+	unchangedCount := 0
+
+	for _, querySummary := range orgResponse.Queries {
+		// Check if this query has changed
+		if existingCommitIDs != nil {
+			if existingCommitID, exists := existingCommitIDs[querySummary.Path]; exists {
+				if existingCommitID == querySummary.LastCommitId {
+					unchangedCount++
+					continue // Skip unchanged queries
+				}
+			}
+		}
+		queriesToFetch = append(queriesToFetch, querySummary)
+	}
+
+	debugLogger.Info("📊 Fwd commit comparison results: %d unchanged, %d to fetch", unchangedCount, len(queriesToFetch))
+
+	// For each query that needs updating, fetch the detailed metadata
+	enhancedQueries := make([]NQEQueryDetail, 0, len(queriesToFetch))
+	failedQueries := 0
+	var firstFailureExample string
+
+	for i, querySummary := range queriesToFetch {
+		// Check for context cancellation before processing each query
+		select {
+		case <-ctx.Done():
+			debugLogger.Info("🚫 Fwd query loading cancelled after processing %d/%d queries", i, len(queriesToFetch))
+			return nil, fmt.Errorf("fwd query loading cancelled: %w", ctx.Err())
+		default:
+			// Continue processing
+		}
+
+		queryDetail, err := c.GetNQEQueryByCommit(querySummary.LastCommitId, querySummary.Path, "fwd")
+		if err != nil {
+			failedQueries++
+			// Log only the first failure as an example, not every single one
+			if firstFailureExample == "" {
+				firstFailureExample = fmt.Sprintf("Example failure: query %s (commit %s): %v", querySummary.Path, querySummary.LastCommitId, err)
+			}
+			// Continue with other queries instead of failing completely
+			continue
+		}
+
+		// Enhance the query detail with path and commit information from the summary
+		queryDetail.QueryID = querySummary.QueryID // Ensure consistency
+		queryDetail.Path = querySummary.Path       // Add path from fwd summary
+
+		// Add commit tracking information
+		if queryDetail.LastCommit.ID == "" {
+			queryDetail.LastCommit.ID = querySummary.LastCommitId
+		}
+
+		enhancedQueries = append(enhancedQueries, *queryDetail)
+
+		// Log progress for large numbers of queries (every 100 queries) with cancellation check
+		if (i+1)%100 == 0 {
+			// Check for cancellation before logging progress
+			select {
+			case <-ctx.Done():
+				debugLogger.Info("🚫 Fwd query loading cancelled during progress logging at %d/%d queries", i+1, len(queriesToFetch))
+				return nil, fmt.Errorf("fwd query loading cancelled: %w", ctx.Err())
+			default:
+				debugLogger.Info("Progress: %d/%d fwd queries processed (%d successful, %d failed)",
+					i+1, len(queriesToFetch), len(enhancedQueries), failedQueries)
+			}
+		}
+	}
+
+	// Final summary with meaningful statistics
+	debugLogger.Info("✅ Enhanced fwd metadata loading complete:")
+	debugLogger.Info("  📊 Total fwd queries found: %d", len(orgResponse.Queries))
+	debugLogger.Info("  ✅ Successfully loaded: %d", len(enhancedQueries))
+	if failedQueries > 0 {
+		debugLogger.Info("  ⚠️  Queries with path issues: %d (skipped, this is normal)", failedQueries)
+		if firstFailureExample != "" {
+			debugLogger.Debug("  %s", firstFailureExample)
+		}
+	}
+	if existingCommitIDs != nil {
+		debugLogger.Info("  🚀 Optimization: Skipped %d unchanged fwd queries", unchangedCount)
+	}
+
+	return enhancedQueries, nil
+}
+
+func (c *Client) GetNQEAllQueriesEnhanced() ([]NQEQueryDetail, error) {
+	return c.GetNQEAllQueriesEnhancedWithCache(nil)
+}
+
+func (c *Client) GetNQEAllQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]NQEQueryDetail, error) {
+	debugLogger := logger.New()
+	debugLogger.Info("🔄 Loading queries from BOTH repositories (org + fwd)...")
+
+	// Load from org repository
+	debugLogger.Info("📡 Fetching org repository queries...")
+	orgQueries, err := c.GetNQEOrgQueriesEnhancedWithCacheContext(context.Background(), existingCommitIDs)
+	if err != nil {
+		// Check if we were cancelled
+		select {
+		case <-context.Background().Done():
+			debugLogger.Info("🚫 Org query loading cancelled")
+			return nil, fmt.Errorf("org query loading cancelled: %w", context.Background().Err())
+		default:
+		}
+		debugLogger.Warn("⚠️  Failed to load org queries: %v", err)
+		orgQueries = []NQEQueryDetail{} // Continue with empty org queries
+	}
+
+	// Load from fwd repository
+	debugLogger.Info("📡 Fetching fwd repository queries...")
+	fwdQueries, err := c.GetNQEFwdQueriesEnhancedWithCacheContext(context.Background(), existingCommitIDs)
+	if err != nil {
+		// Check if we were cancelled
+		select {
+		case <-context.Background().Done():
+			debugLogger.Info("🚫 Fwd query loading cancelled")
+			return nil, fmt.Errorf("fwd query loading cancelled: %w", context.Background().Err())
+		default:
+		}
+		debugLogger.Warn("⚠️  Failed to load fwd queries: %v", err)
+		fwdQueries = []NQEQueryDetail{} // Continue with empty fwd queries
+	}
+
+	// Combine results (org takes precedence for duplicates)
+	allQueries := make(map[string]NQEQueryDetail)
+
+	// Add fwd queries first
+	for _, q := range fwdQueries {
+		q.Repository = "fwd" // Track repository source
+		allQueries[q.QueryID] = q
+	}
+
+	// Add org queries (will override fwd if same QueryID)
+	for _, q := range orgQueries {
+		q.Repository = "org" // Track repository source
+		allQueries[q.QueryID] = q
+	}
+
+	// Convert back to slice
+	result := make([]NQEQueryDetail, 0, len(allQueries))
+	for _, q := range allQueries {
+		result = append(result, q)
+	}
+
+	debugLogger.Info("✅ Combined repository loading complete:")
+	debugLogger.Info("  📊 Org queries: %d", len(orgQueries))
+	debugLogger.Info("  📊 Fwd queries: %d", len(fwdQueries))
+	debugLogger.Info("  📊 Total unique queries: %d", len(result))
+
+	return result, nil
+}
+
+func (c *Client) GetNQEAllQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]NQEQueryDetail, error) {
+	debugLogger := logger.New()
+	debugLogger.Info("🔄 Loading queries from BOTH repositories (org + fwd)...")
+
+	// Load from org repository
+	debugLogger.Info("📡 Fetching org repository queries...")
+	orgQueries, err := c.GetNQEOrgQueriesEnhancedWithCacheContext(ctx, existingCommitIDs)
+	if err != nil {
+		// Check if we were cancelled
+		select {
+		case <-ctx.Done():
+			debugLogger.Info("🚫 Org query loading cancelled")
+			return nil, fmt.Errorf("org query loading cancelled: %w", ctx.Err())
+		default:
+		}
+		debugLogger.Warn("⚠️  Failed to load org queries: %v", err)
+		orgQueries = []NQEQueryDetail{} // Continue with empty org queries
+	}
+
+	// Load from fwd repository
+	debugLogger.Info("📡 Fetching fwd repository queries...")
+	fwdQueries, err := c.GetNQEFwdQueriesEnhancedWithCacheContext(ctx, existingCommitIDs)
+	if err != nil {
+		// Check if we were cancelled
+		select {
+		case <-ctx.Done():
+			debugLogger.Info("🚫 Fwd query loading cancelled")
+			return nil, fmt.Errorf("fwd query loading cancelled: %w", ctx.Err())
+		default:
+		}
+		debugLogger.Warn("⚠️  Failed to load fwd queries: %v", err)
+		fwdQueries = []NQEQueryDetail{} // Continue with empty fwd queries
+	}
+
+	// Combine results (org takes precedence for duplicates)
+	allQueries := make(map[string]NQEQueryDetail)
+
+	// Add fwd queries first
+	for _, q := range fwdQueries {
+		q.Repository = "fwd" // Track repository source
+		allQueries[q.QueryID] = q
+	}
+
+	// Add org queries (will override fwd if same QueryID)
+	for _, q := range orgQueries {
+		q.Repository = "org" // Track repository source
+		allQueries[q.QueryID] = q
+	}
+
+	// Convert back to slice
+	result := make([]NQEQueryDetail, 0, len(allQueries))
+	for _, q := range allQueries {
+		result = append(result, q)
+	}
+
+	debugLogger.Info("✅ Combined repository loading complete:")
+	debugLogger.Info("  📊 Org queries: %d", len(orgQueries))
+	debugLogger.Info("  📊 Fwd queries: %d", len(fwdQueries))
+	debugLogger.Info("  📊 Total unique queries: %d", len(result))
+
+	return result, nil
+}
+
+func (c *Client) GetNQEQueryByCommit(commitID string, path string, repository string) (*NQEQueryDetail, error) {
+	endpoint := fmt.Sprintf("/api/nqe/repos/%s/commits/%s/queries?path=%s", repository, commitID, url.QueryEscape(path))
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get NQE query by commit: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var queryDetail NQEQueryDetail
+	if err := json.NewDecoder(resp.Body).Decode(&queryDetail); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &queryDetail, nil
 }
 
 func (c *Client) DiffNQEQuery(before, after string, request *NQEDiffRequest) (*NQEDiffResult, error) {

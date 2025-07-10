@@ -2,6 +2,9 @@ package main
 
 import (
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/logger"
@@ -83,15 +86,39 @@ func main() {
 		logger.Debug("Running in pipe mode (stdin redirected)")
 	}
 
-	// Start the server
+	// Setup graceful shutdown
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start the server in a goroutine
 	logger.Debug("Starting Forward Networks MCP server...")
-	if err := server.Serve(); err != nil {
-		logger.Fatalf("Server error: %v", err)
-	}
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := server.Serve(); err != nil {
+			serverErr <- err
+		}
+	}()
 
 	logger.Debug("MCP server is now running and waiting for connections...")
 
-	// Block forever to keep the server running (for Claude Desktop compatibility)
-	done := make(chan struct{})
-	<-done
+	// Wait for shutdown signal or server error
+	select {
+	case err := <-serverErr:
+		logger.Fatalf("Server error: %v", err)
+	case sig := <-shutdown:
+		logger.Info("Received signal %v, shutting down gracefully...", sig)
+
+		// Shutdown the ForwardMCPService first to stop background goroutines
+		if err := forwardService.Shutdown(30 * time.Second); err != nil {
+			logger.Error("Error during service shutdown: %v", err)
+		}
+
+		// Close logger file if it exists
+		if err := logger.Close(); err != nil {
+			logger.Error("Error closing logger: %v", err)
+		}
+
+		logger.Info("Server shutdown complete")
+		os.Exit(0)
+	}
 }

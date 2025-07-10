@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **SQLite Persistence for NQE Query Index**: Added SQLite database persistence to store NQE queries and embeddings locally for faster startup times between MCP runs
+  - Queries are automatically cached in `data/nqe_queries.db` after first load
+  - Loading strategy: Database → API → Spec file (with fallback)
+  - Database statistics available in `get_cache_stats` tool
+  - Enhanced `GetNQEOrgQueriesEnhanced()` method to fetch full query metadata including source code from commit IDs
+  - Automatic synchronization when loading from API or spec file
+
+### Changed
+- Updated NQE query loading to use dynamic API calls to `/api/nqe/repos/org/commits/head/queries` instead of static spec file
+- Enhanced query metadata with commit information, source code, and descriptions
+- Improved cache statistics to include database status and sync information
+
+### Fixed
+- Better error handling for database initialization failures
+- Improved fallback strategy when database is not available
+
 ## [2.0.0] - 2025-06-01 - AI-Powered Query Discovery System
 
 ### 🎯 **MAJOR FEATURE: AI-Powered NQE Query Discovery**

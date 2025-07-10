@@ -39,6 +39,7 @@ type SemanticCache struct {
 	mutex            sync.RWMutex
 	embeddingService EmbeddingService
 	logger           *logger.Logger
+	instanceID       string // Unique identifier for this Forward Networks instance
 
 	// Configuration
 	maxEntries          int
@@ -60,22 +61,23 @@ func truncateString(s string, maxLen int) string {
 }
 
 // NewSemanticCache creates a new semantic cache
-func NewSemanticCache(embeddingService EmbeddingService, logger *logger.Logger) *SemanticCache {
+func NewSemanticCache(embeddingService EmbeddingService, logger *logger.Logger, instanceID string) *SemanticCache {
 	return &SemanticCache{
 		entries:             make(map[string]*CacheEntry),
 		embeddingIndex:      make([]*CacheEntry, 0),
 		embeddingService:    embeddingService,
 		logger:              logger,
+		instanceID:          instanceID,
 		maxEntries:          1000,
 		ttl:                 24 * time.Hour,
 		similarityThreshold: 0.85, // 85% similarity threshold
 	}
 }
 
-// generateCacheKey creates a consistent cache key
+// generateCacheKey creates a consistent cache key including instance partitioning
 func (sc *SemanticCache) generateCacheKey(query, networkID, snapshotID string) string {
 	hasher := md5.New()
-	hasher.Write([]byte(fmt.Sprintf("%s|%s|%s", query, networkID, snapshotID)))
+	hasher.Write([]byte(fmt.Sprintf("%s|%s|%s|%s", sc.instanceID, query, networkID, snapshotID)))
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 

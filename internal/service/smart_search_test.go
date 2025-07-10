@@ -7,7 +7,7 @@ import (
 	"github.com/forward-mcp/internal/logger"
 )
 
-// Test helper to create a service with mocked dependencies for smart search testing
+// setupSmartSearchTestService creates a service for smart search testing
 func setupSmartSearchTestService() *ForwardMCPService {
 	cfg := &config.Config{
 		Forward: config.ForwardConfig{
@@ -15,26 +15,29 @@ func setupSmartSearchTestService() *ForwardMCPService {
 			APISecret:  "test-secret",
 			APIBaseURL: "https://test.example.com",
 			Timeout:    10,
-			SemanticCache: config.SemanticCacheConfig{
-				Enabled:           true,
-				MaxEntries:        1000,
-				TTLHours:          24,
-				EmbeddingProvider: "keyword", // Use keyword for fast testing
-			},
 		},
 	}
 
 	testLogger := logger.New()
-	embeddingService := NewKeywordEmbeddingService()
+	embeddingService := NewMockEmbeddingService()
+
+	// Initialize query index
+	queryIndex := NewNQEQueryIndex(embeddingService, testLogger)
+
+	// Initialize query index for tests with mock data instead of spec file
+	if err := queryIndex.LoadFromMockData(); err != nil {
+		testLogger.Error("Failed to load mock query index in smart search test: %v", err)
+	}
 
 	service := &ForwardMCPService{
 		forwardClient:   NewMockForwardClient(),
 		config:          cfg,
 		logger:          testLogger,
+		instanceID:      "test", // Add instance ID for test service
 		defaults:        &ServiceDefaults{},
 		workflowManager: NewWorkflowManager(),
-		semanticCache:   NewSemanticCache(embeddingService, testLogger),
-		queryIndex:      NewNQEQueryIndex(embeddingService, testLogger),
+		semanticCache:   NewSemanticCache(embeddingService, testLogger, "test"),
+		queryIndex:      queryIndex,
 	}
 
 	return service
