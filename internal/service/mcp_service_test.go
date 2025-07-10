@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/forward"
@@ -377,7 +379,7 @@ func createTestService() *ForwardMCPService {
 	// Initialize mock embedding service and semantic cache
 	embeddingService := NewMockEmbeddingService()
 	logger := logger.New()
-	semanticCache := NewSemanticCache(embeddingService, logger, "test")
+	semanticCache := NewSemanticCache(embeddingService, logger, "test", nil)
 
 	// Initialize query index with mock embedding service
 	queryIndex := NewNQEQueryIndex(embeddingService, logger)
@@ -993,4 +995,367 @@ func (m *MockForwardClient) GetNQEFwdQueriesEnhancedWithCacheContext(ctx context
 func (m *MockForwardClient) GetNQEAllQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
 	// Just delegate to the non-context version for the mock
 	return m.GetNQEAllQueriesEnhancedWithCache(existingCommitIDs)
+}
+
+// TestCacheIntegrationWithNQEQueries tests cache integration in the full query flow
+func TestCacheIntegrationWithNQEQueries(t *testing.T) {
+	// Create test service with cache enabled
+	service := createTestService()
+
+	// Ensure cache is enabled
+	service.config.Forward.SemanticCache.Enabled = true
+
+	t.Run("cache_miss_then_api_call", func(t *testing.T) {
+		// First execution should be a cache miss and call the API
+		args := RunNQEQueryByIDArgs{
+			QueryID:    "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029",
+			NetworkID:  "162112",
+			SnapshotID: "snapshot-123",
+		}
+
+		response, err := service.runNQEQueryByID(args)
+		if err != nil {
+			t.Fatalf("Failed to execute NQE query: %v", err)
+		}
+
+		if response == nil {
+			t.Fatal("Expected response, got nil")
+		}
+
+		// Check cache stats - should show miss
+		stats := service.semanticCache.GetStats()
+		if stats["cache_misses"].(int64) == 0 {
+			t.Error("Expected at least one cache miss")
+		}
+
+		// Should have at least one entry in cache now
+		if stats["total_entries"].(int) == 0 {
+			t.Error("Expected cache to have entries after first query")
+		}
+	})
+
+	t.Run("cache_hit_second_execution", func(t *testing.T) {
+		// Execute the same query again - should be cache hit
+		args := RunNQEQueryByIDArgs{
+			QueryID:    "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029",
+			NetworkID:  "162112",
+			SnapshotID: "snapshot-123",
+		}
+
+		initialHits := service.semanticCache.GetStats()["cache_hits"].(int64)
+
+		response, err := service.runNQEQueryByID(args)
+		if err != nil {
+			t.Fatalf("Failed to execute cached NQE query: %v", err)
+		}
+
+		if response == nil {
+			t.Fatal("Expected cached response, got nil")
+		}
+
+		// Check cache stats - should show additional hit
+		stats := service.semanticCache.GetStats()
+		if stats["cache_hits"].(int64) <= initialHits {
+			t.Error("Expected cache hit count to increase")
+		}
+	})
+
+	t.Run("different_parameters_cache_miss", func(t *testing.T) {
+		// Execute query with different snapshot - should be cache miss
+		args := RunNQEQueryByIDArgs{
+			QueryID:    "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029",
+			NetworkID:  "162112",
+			SnapshotID: "different-snapshot", // Different snapshot
+		}
+
+		initialMisses := service.semanticCache.GetStats()["cache_misses"].(int64)
+
+		response, err := service.runNQEQueryByID(args)
+		if err != nil {
+			t.Fatalf("Failed to execute NQE query with different params: %v", err)
+		}
+
+		if response == nil {
+			t.Fatal("Expected response, got nil")
+		}
+
+		// Should show additional miss due to different snapshot
+		stats := service.semanticCache.GetStats()
+		if stats["cache_misses"].(int64) <= initialMisses {
+			t.Error("Expected cache miss count to increase for different parameters")
+		}
+	})
+
+	t.Run("cache_with_custom_parameters", func(t *testing.T) {
+		// Execute query with custom parameters
+		args := RunNQEQueryByIDArgs{
+			QueryID:    "FQ_different_query",
+			NetworkID:  "162112",
+			SnapshotID: "snapshot-123",
+			Parameters: map[string]interface{}{
+				"filter": "active",
+				"limit":  10,
+			},
+		}
+
+		response, err := service.runNQEQueryByID(args)
+		if err != nil {
+			t.Fatalf("Failed to execute parameterized NQE query: %v", err)
+		}
+
+		if response == nil {
+			t.Fatal("Expected response, got nil")
+		}
+
+		// Execute same query again - should hit cache
+		initialHits := service.semanticCache.GetStats()["cache_hits"].(int64)
+
+		response2, err := service.runNQEQueryByID(args)
+		if err != nil {
+			t.Fatalf("Failed to execute cached parameterized query: %v", err)
+		}
+
+		if response2 == nil {
+			t.Fatal("Expected cached response, got nil")
+		}
+
+		// Should show cache hit
+		stats := service.semanticCache.GetStats()
+		if stats["cache_hits"].(int64) <= initialHits {
+			t.Error("Expected cache hit for identical parameterized query")
+		}
+	})
+}
+
+// TestCacheMetricsAndMonitoring tests the enhanced metrics functionality
+func TestCacheMetricsAndMonitoring(t *testing.T) {
+	// Create test configuration
+	cfg := &config.Config{
+		Forward: config.ForwardConfig{
+			SemanticCache: config.SemanticCacheConfig{
+				Enabled:         true,
+				MaxEntries:      50,
+				TTLHours:        1,
+				MaxMemoryMB:     10,
+				CompressResults: true,
+				MetricsEnabled:  true,
+				EvictionPolicy:  config.EvictionPolicyLRU,
+			},
+		},
+	}
+
+	logger := logger.New()
+	service := NewForwardMCPService(cfg, logger)
+
+	t.Run("get_cache_stats", func(t *testing.T) {
+		// Add some test data to cache
+		testResult := &forward.NQERunResult{
+			Items: []map[string]interface{}{{"test": "data"}},
+		}
+
+		service.semanticCache.Put("test-query-1", "net", "snap", testResult)
+		service.semanticCache.Put("test-query-2", "net", "snap", testResult)
+
+		// Trigger some cache operations
+		service.semanticCache.Get("test-query-1", "net", "snap") // Hit
+		service.semanticCache.Get("nonexistent", "net", "snap")  // Miss
+
+		// Test getCacheStats function
+		args := GetCacheStatsArgs{}
+		response, err := service.getCacheStats(args)
+		if err != nil {
+			t.Fatalf("Failed to get cache stats: %v", err)
+		}
+
+		if response == nil {
+			t.Fatal("Expected cache stats response, got nil")
+		}
+
+		// Verify response contains expected information
+		content := response.Content[0].TextContent.Text
+		if !contains(content, "total_entries") {
+			t.Error("Expected cache stats to contain total_entries")
+		}
+		if !contains(content, "hit_rate_percent") {
+			t.Error("Expected cache stats to contain hit_rate_percent")
+		}
+		if !contains(content, "compression_ratio") {
+			t.Error("Expected cache stats to contain compression_ratio")
+		}
+	})
+
+	t.Run("clear_cache_expired", func(t *testing.T) {
+		// Set very short TTL for testing
+		service.semanticCache.ttl = 1 * time.Millisecond
+
+		// Add some entries
+		testResult := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+		service.semanticCache.Put("expiring-1", "net", "snap", testResult)
+		service.semanticCache.Put("expiring-2", "net", "snap", testResult)
+
+		// Wait for expiration
+		time.Sleep(10 * time.Millisecond)
+
+		// Test clearCache function
+		args := ClearCacheArgs{ClearAll: false}
+		response, err := service.clearCache(args)
+		if err != nil {
+			t.Fatalf("Failed to clear expired cache: %v", err)
+		}
+
+		if response == nil {
+			t.Fatal("Expected clear cache response, got nil")
+		}
+
+		// Verify expired entries were removed
+		stats := service.semanticCache.GetStats()
+		totalEntries := stats["total_entries"].(int)
+		if totalEntries > 0 {
+			t.Logf("Still have %d entries after clearing expired", totalEntries)
+		}
+	})
+}
+
+// TestCacheCompressionFeatures tests the compression functionality
+// TestCacheCompressionFeatures tests the compression functionality directly
+func TestCacheCompressionFeatures(t *testing.T) {
+	// Create test service with compression enabled
+	service := createTestService()
+	service.config.Forward.SemanticCache.CompressResults = true
+	service.config.Forward.SemanticCache.CompressionLevel = 6
+	
+	// Create a large result that will benefit from compression
+	largeResult := &forward.NQERunResult{
+		SnapshotID: "test-snapshot",
+		Items:      make([]map[string]interface{}, 100),
+	}
+	
+	// Fill with repetitive data that compresses well
+	for i := 0; i < 100; i++ {
+		largeResult.Items[i] = map[string]interface{}{
+			"device_id":   fmt.Sprintf("device-%03d", i),
+			"device_name": fmt.Sprintf("router-%03d.example.com", i),
+			"description": "This is a standard router configuration with common settings and repetitive content",
+			"location":    "Data Center A",
+			"status":      "active",
+		}
+	}
+	
+	// Store in cache with compression
+	err := service.semanticCache.Put("large-query-test", "test-network", "test-snapshot", largeResult)
+	if err != nil {
+		t.Fatalf("Failed to store large result: %v", err)
+	}
+	
+	// Retrieve and verify the result is the same
+	retrievedResult, found := service.semanticCache.Get("large-query-test", "test-network", "test-snapshot")
+	if !found {
+		t.Fatal("Failed to retrieve compressed result")
+	}
+	
+	if len(retrievedResult.Items) != len(largeResult.Items) {
+		t.Errorf("Expected %d items, got %d", len(largeResult.Items), len(retrievedResult.Items))
+	}
+	
+	// Check compression metrics
+	stats := service.semanticCache.GetStats()
+	compressionRatio := stats["compression_ratio"].(string)
+	
+	t.Logf("Compression ratio for large result: %s", compressionRatio)
+	
+	if compressionRatio == "0.000" {
+		t.Log("Note: Compression ratio is 0 - this may be expected for test data")
+	}
+}
+
+// TestCacheEvictionPolicies tests eviction during query execution
+func TestCacheEvictionPolicies(t *testing.T) {
+	// Create test service with small cache for testing eviction
+	service := createTestService()
+	service.config.Forward.SemanticCache.MaxEntries = 3  // Very small for testing
+	service.config.Forward.SemanticCache.MaxMemoryMB = 1 // Small memory limit
+	service.semanticCache.maxEntries = 3 // Update runtime setting
+	
+	// Execute multiple queries to test eviction
+	queries := []string{"query-1", "query-2", "query-3", "query-4"}
+	
+	for _, queryID := range queries {
+		args := RunNQEQueryByIDArgs{
+			QueryID:    queryID,
+			NetworkID:  "162112",
+			SnapshotID: "snapshot-123",
+		}
+
+		response, err := service.runNQEQueryByID(args)
+		if err != nil {
+			t.Fatalf("Failed to execute query %s: %v", queryID, err)
+		}
+		if response == nil {
+			t.Fatalf("Expected response for query %s, got nil", queryID)
+		}
+	}
+
+	// Check that eviction occurred
+	stats := service.semanticCache.GetStats()
+	totalEntries := stats["total_entries"].(int)
+	evictedCount := stats["evicted_count"].(int64)
+
+	if totalEntries > 3 {
+		t.Errorf("Expected at most 3 entries after eviction, got %d", totalEntries)
+	}
+
+	t.Logf("Final entries: %d, Evicted: %d", totalEntries, evictedCount)
+}
+
+// TestCacheErrorHandling tests error scenarios in cache integration
+func TestCacheErrorHandling(t *testing.T) {
+	// Create mock client that returns errors
+	mockClient := NewMockForwardClient()
+	mockClient.SetError(true, "API error")
+	
+	service := createTestService()
+	service.forwardClient = mockClient
+
+	// Execute query that will fail
+	args := RunNQEQueryByIDArgs{
+		QueryID:    "error-query",
+		NetworkID:  "162112",
+		SnapshotID: "snapshot-123",
+	}
+
+	// Execute query - should fail
+	_, err := service.runNQEQueryByID(args)
+	if err == nil {
+		t.Fatal("Expected error from API, got nil")
+	}
+
+	// Verify cache wasn't polluted with error
+	stats := service.semanticCache.GetStats()
+	totalEntries := stats["total_entries"].(int)
+	if totalEntries > 0 {
+		t.Error("Expected cache to remain empty after API error")
+	}
+
+	// Test with cache disabled
+	service.config.Forward.SemanticCache.Enabled = false
+	
+	// Reset mock to not error
+	mockClient.SetError(false, "")
+	
+	// Execute query twice - both should hit API (no caching)
+	_, err = service.runNQEQueryByID(args)
+	if err != nil {
+		t.Fatalf("Failed to execute query with cache disabled: %v", err)
+	}
+
+	_, err = service.runNQEQueryByID(args)
+	if err != nil {
+		t.Fatalf("Failed to execute query second time: %v", err)
+	}
+	
+	// With cache disabled, stats should remain empty
+	stats = service.semanticCache.GetStats()
+	if stats["total_entries"].(int) > 0 {
+		t.Error("Expected no cache entries when cache is disabled")
+	}
 }

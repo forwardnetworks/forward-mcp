@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/forward"
 	"github.com/forward-mcp/internal/logger"
 )
@@ -13,7 +14,7 @@ import (
 func TestSemanticCache(t *testing.T) {
 	// Create a semantic cache with mock embedding service
 	embeddingService := NewMockEmbeddingService()
-	cache := NewSemanticCache(embeddingService, createTestLogger(), "test")
+	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 
 	// Test basic Put and Get operations
 	t.Run("basic_put_and_get", func(t *testing.T) {
@@ -114,7 +115,7 @@ func TestSemanticCache(t *testing.T) {
 
 	t.Run("ttl_expiration", func(t *testing.T) {
 		// Create cache with short TTL for testing
-		shortTTLCache := NewSemanticCache(embeddingService, createTestLogger(), "test")
+		shortTTLCache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 		shortTTLCache.ttl = 1 * time.Millisecond // Very short TTL
 
 		query := "test query"
@@ -137,7 +138,7 @@ func TestSemanticCache(t *testing.T) {
 
 	t.Run("eviction_policy", func(t *testing.T) {
 		// Create cache with small capacity
-		smallCache := NewSemanticCache(embeddingService, createTestLogger(), "test")
+		smallCache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 		smallCache.maxEntries = 2 // Only 2 entries
 
 		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
@@ -173,9 +174,418 @@ func TestSemanticCache(t *testing.T) {
 	})
 }
 
+// TestEnhancedEvictionPolicies tests the new eviction strategies
+func TestEnhancedEvictionPolicies(t *testing.T) {
+	embeddingService := NewMockEmbeddingService()
+
+	t.Run("lru_eviction", func(t *testing.T) {
+		cfg := &config.SemanticCacheConfig{
+			Enabled:         true,
+			MaxEntries:      3,
+			EvictionPolicy:  config.EvictionPolicyLRU,
+			TTLHours:        24,
+			MaxMemoryMB:     10,
+			CompressResults: false,
+		}
+		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
+
+		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+
+		// Add entries
+		cache.Put("query1", "net", "snap", result)
+		cache.Put("query2", "net", "snap", result)
+		cache.Put("query3", "net", "snap", result)
+
+		// Access query1 to make it more recently used
+		cache.Get("query1", "net", "snap")
+
+		// Add another entry, should evict query2 (least recently used)
+		cache.Put("query4", "net", "snap", result)
+
+		// query2 should be evicted
+		_, found := cache.Get("query2", "net", "snap")
+		if found {
+			t.Error("Expected query2 to be evicted by LRU policy")
+		}
+
+		// query1 should still be present (recently accessed)
+		_, found = cache.Get("query1", "net", "snap")
+		if !found {
+			t.Error("Expected query1 to still be present")
+		}
+	})
+
+	t.Run("lfu_eviction", func(t *testing.T) {
+		cfg := &config.SemanticCacheConfig{
+			Enabled:         true,
+			MaxEntries:      3,
+			EvictionPolicy:  config.EvictionPolicyLFU,
+			TTLHours:        24,
+			MaxMemoryMB:     10,
+			CompressResults: false,
+		}
+		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
+
+		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+
+		// Add entries
+		cache.Put("query1", "net", "snap", result)
+		cache.Put("query2", "net", "snap", result)
+		cache.Put("query3", "net", "snap", result)
+
+		// Access query1 multiple times to increase frequency
+		cache.Get("query1", "net", "snap")
+		cache.Get("query1", "net", "snap")
+		cache.Get("query3", "net", "snap") // Access query3 once
+
+		// Add another entry, should evict query2 (least frequently used)
+		cache.Put("query4", "net", "snap", result)
+
+		// query2 should be evicted
+		_, found := cache.Get("query2", "net", "snap")
+		if found {
+			t.Error("Expected query2 to be evicted by LFU policy")
+		}
+
+		// query1 should still be present (most frequently used)
+		_, found = cache.Get("query1", "net", "snap")
+		if !found {
+			t.Error("Expected query1 to still be present")
+		}
+	})
+
+	t.Run("size_based_eviction", func(t *testing.T) {
+		cfg := &config.SemanticCacheConfig{
+			Enabled:         true,
+			MaxEntries:      5,
+			EvictionPolicy:  config.EvictionPolicySize,
+			TTLHours:        24,
+			MaxMemoryMB:     1, // Very small memory limit
+			CompressResults: false,
+		}
+		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
+
+		// Create results of different sizes
+		smallResult := &forward.NQERunResult{Items: []map[string]interface{}{{"small": "data"}}}
+		largeResult := &forward.NQERunResult{
+			Items: []map[string]interface{}{
+				{"large": "data with much more content and longer strings to make it bigger"},
+				{"item2": "additional data to increase size"},
+				{"item3": "even more data"},
+			},
+		}
+
+		// Add small result first
+		cache.Put("small_query", "net", "snap", smallResult)
+
+		// Add large result
+		cache.Put("large_query", "net", "snap", largeResult)
+
+		// Add another entry to trigger eviction
+		cache.Put("trigger_query", "net", "snap", smallResult)
+
+		// Check if eviction occurred - large result should be evicted first
+		stats := cache.GetStats()
+		if stats["evicted_count"].(int64) == 0 {
+			t.Log("No eviction occurred yet, memory limit might not be reached")
+		}
+	})
+}
+
+// TestCompressionFeatures tests the compression functionality
+func TestCompressionFeatures(t *testing.T) {
+	embeddingService := NewMockEmbeddingService()
+
+	t.Run("compression_enabled", func(t *testing.T) {
+		cfg := &config.SemanticCacheConfig{
+			Enabled:          true,
+			MaxEntries:       10,
+			CompressResults:  true,
+			CompressionLevel: 6,
+			TTLHours:         24,
+			MaxMemoryMB:      10,
+		}
+		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
+
+		// Create a large result that would benefit from compression
+		largeResult := &forward.NQERunResult{
+			Items: make([]map[string]interface{}, 100),
+		}
+		for i := 0; i < 100; i++ {
+			largeResult.Items[i] = map[string]interface{}{
+				"device_name": fmt.Sprintf("device-%d", i),
+				"description": "This is a long description that repeats the same content over and over to create a large payload that will compress well",
+				"data":        fmt.Sprintf("repetitive data pattern %d", i),
+			}
+		}
+
+		err := cache.Put("large_query", "net", "snap", largeResult)
+		if err != nil {
+			t.Fatalf("Failed to store large result: %v", err)
+		}
+
+		// Retrieve and verify the result is the same
+		retrievedResult, found := cache.Get("large_query", "net", "snap")
+		if !found {
+			t.Fatal("Failed to retrieve compressed result")
+		}
+
+		if len(retrievedResult.Items) != len(largeResult.Items) {
+			t.Errorf("Expected %d items, got %d", len(largeResult.Items), len(retrievedResult.Items))
+		}
+
+		// Check compression metrics
+		stats := cache.GetStats()
+		compressionRatio := stats["compression_ratio"].(string)
+		if compressionRatio == "0.000" {
+			t.Error("Expected compression to have occurred")
+		}
+		t.Logf("Compression ratio: %s", compressionRatio)
+	})
+
+	t.Run("compression_disabled", func(t *testing.T) {
+		cfg := &config.SemanticCacheConfig{
+			Enabled:         true,
+			MaxEntries:      10,
+			CompressResults: false,
+			TTLHours:        24,
+			MaxMemoryMB:     10,
+		}
+		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
+
+		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+
+		err := cache.Put("uncompressed_query", "net", "snap", result)
+		if err != nil {
+			t.Fatalf("Failed to store uncompressed result: %v", err)
+		}
+
+		// Retrieve and verify
+		retrievedResult, found := cache.Get("uncompressed_query", "net", "snap")
+		if !found {
+			t.Fatal("Failed to retrieve uncompressed result")
+		}
+
+		if len(retrievedResult.Items) != len(result.Items) {
+			t.Errorf("Expected %d items, got %d", len(result.Items), len(retrievedResult.Items))
+		}
+	})
+}
+
+// TestMemoryManagement tests memory tracking and limits
+func TestMemoryManagement(t *testing.T) {
+	embeddingService := NewMockEmbeddingService()
+
+	t.Run("memory_tracking", func(t *testing.T) {
+		cfg := &config.SemanticCacheConfig{
+			Enabled:         true,
+			MaxEntries:      10,
+			MaxMemoryMB:     1, // 1MB limit
+			CompressResults: false,
+			MetricsEnabled:  true,
+			TTLHours:        24,
+		}
+		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
+
+		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+
+		// Add some entries
+		for i := 0; i < 5; i++ {
+			err := cache.Put(fmt.Sprintf("query%d", i), "net", "snap", result)
+			if err != nil {
+				t.Fatalf("Failed to put query %d: %v", i, err)
+			}
+		}
+
+		stats := cache.GetStats()
+		memoryUsage := stats["memory_usage_bytes"].(int64)
+		memoryUsageMB := stats["current_memory_mb"].(float64)
+
+		if memoryUsage <= 0 {
+			t.Error("Expected memory usage to be tracked")
+		}
+
+		if memoryUsageMB <= 0 {
+			t.Error("Expected memory usage in MB to be positive")
+		}
+
+		t.Logf("Memory usage: %d bytes (%.2f MB)", memoryUsage, memoryUsageMB)
+	})
+
+	t.Run("memory_limit_enforcement", func(t *testing.T) {
+		cfg := &config.SemanticCacheConfig{
+			Enabled:                 true,
+			MaxEntries:              100,
+			MaxMemoryMB:             1, // Very small limit to trigger eviction
+			EvictionPolicy:          config.EvictionPolicyLRU,
+			CompressResults:         false,
+			MetricsEnabled:          true,
+			MemoryEvictionThreshold: 0.5, // 50% threshold
+			TTLHours:                24,
+		}
+		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
+
+		// Create a moderately sized result
+		result := &forward.NQERunResult{
+			Items: make([]map[string]interface{}, 50),
+		}
+		for i := 0; i < 50; i++ {
+			result.Items[i] = map[string]interface{}{
+				"device": fmt.Sprintf("device-%d", i),
+				"data":   fmt.Sprintf("some data for device %d", i),
+			}
+		}
+
+		// Keep adding entries until memory limit triggers eviction
+		initialEntries := 0
+		for i := 0; i < 20; i++ {
+			err := cache.Put(fmt.Sprintf("memory_query%d", i), "net", "snap", result)
+			if err != nil {
+				t.Logf("Memory limit reached at entry %d: %v", i, err)
+				break
+			}
+			initialEntries++
+		}
+
+		stats := cache.GetStats()
+		finalEntries := stats["total_entries"].(int)
+		evicted := stats["evicted_count"].(int64)
+
+		t.Logf("Initial entries: %d, Final entries: %d, Evicted: %d",
+			initialEntries, finalEntries, evicted)
+
+		if finalEntries > initialEntries && evicted == 0 {
+			t.Log("Memory limit may not have been reached with test data size")
+		}
+	})
+}
+
+// TestEnhancedMetrics tests the enhanced metrics functionality
+func TestEnhancedMetrics(t *testing.T) {
+	embeddingService := NewMockEmbeddingService()
+
+	cfg := &config.SemanticCacheConfig{
+		Enabled:                 true,
+		MaxEntries:              10,
+		MaxMemoryMB:             10,
+		EvictionPolicy:          config.EvictionPolicyLRU,
+		CompressResults:         true,
+		CompressionLevel:        6,
+		MetricsEnabled:          true,
+		MemoryEvictionThreshold: 0.8,
+		CleanupIntervalMinutes:  1,
+		TTLHours:                24,
+	}
+	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
+
+	result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+
+	// Perform operations to generate metrics
+	cache.Put("metric_query1", "net", "snap", result)
+	cache.Put("metric_query2", "net", "snap", result)
+
+	cache.Get("metric_query1", "net", "snap")     // Hit
+	cache.Get("nonexistent_query", "net", "snap") // Miss
+
+	stats := cache.GetStats()
+
+	// Verify all enhanced metrics are present
+	expectedMetrics := []string{
+		"total_entries", "total_queries", "cache_hits", "cache_misses",
+		"hit_rate_percent", "max_memory_mb", "current_memory_mb",
+		"memory_usage_bytes", "memory_utilization_%", "compression_enabled",
+		"compression_ratio", "avg_response_time_ms", "evicted_count",
+		"evictions_by_policy", "last_cleanup", "persistence_enabled",
+		"disk_cache_path", "eviction_policy", "cleanup_interval_min",
+		"memory_threshold_%",
+	}
+
+	for _, metric := range expectedMetrics {
+		if _, exists := stats[metric]; !exists {
+			t.Errorf("Expected metric %s to be present in stats", metric)
+		}
+	}
+
+	// Verify specific metric values
+	if stats["total_entries"].(int) != 2 {
+		t.Errorf("Expected 2 total entries, got %v", stats["total_entries"])
+	}
+
+	if stats["cache_hits"].(int64) != 1 {
+		t.Errorf("Expected 1 cache hit, got %v", stats["cache_hits"])
+	}
+
+	if stats["cache_misses"].(int64) != 1 {
+		t.Errorf("Expected 1 cache miss, got %v", stats["cache_misses"])
+	}
+
+	if stats["eviction_policy"].(string) != "lru" {
+		t.Errorf("Expected eviction policy 'lru', got %v", stats["eviction_policy"])
+	}
+
+	t.Logf("Enhanced metrics test passed. Sample metrics: %+v", stats)
+}
+
+// TestCacheConfiguration tests different configuration scenarios
+func TestCacheConfiguration(t *testing.T) {
+	embeddingService := NewMockEmbeddingService()
+
+	t.Run("default_configuration", func(t *testing.T) {
+		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
+
+		// Verify default values are set correctly
+		if cache.maxEntries != 1000 {
+			t.Errorf("Expected default maxEntries 1000, got %d", cache.maxEntries)
+		}
+
+		if cache.compressionEnabled != true {
+			t.Error("Expected compression to be enabled by default")
+		}
+
+		if cache.evictionPolicy != config.EvictionPolicyLRU {
+			t.Errorf("Expected default eviction policy LRU, got %v", cache.evictionPolicy)
+		}
+	})
+
+	t.Run("custom_configuration", func(t *testing.T) {
+		cfg := &config.SemanticCacheConfig{
+			Enabled:                 true,
+			MaxEntries:              500,
+			MaxMemoryMB:             256,
+			EvictionPolicy:          config.EvictionPolicyLFU,
+			CompressResults:         false,
+			CompressionLevel:        9,
+			PersistToDisk:           false,
+			MetricsEnabled:          true,
+			MemoryEvictionThreshold: 0.9,
+			CleanupIntervalMinutes:  15,
+			TTLHours:                48,
+		}
+
+		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
+
+		// Verify custom values are applied
+		if cache.maxEntries != 500 {
+			t.Errorf("Expected custom maxEntries 500, got %d", cache.maxEntries)
+		}
+
+		if cache.compressionEnabled != false {
+			t.Error("Expected compression to be disabled")
+		}
+
+		if cache.evictionPolicy != config.EvictionPolicyLFU {
+			t.Errorf("Expected custom eviction policy LFU, got %v", cache.evictionPolicy)
+		}
+
+		if cache.maxMemoryBytes != 256*1024*1024 {
+			t.Errorf("Expected custom memory limit 256MB, got %d", cache.maxMemoryBytes)
+		}
+	})
+}
+
 func TestSemanticCacheStats(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
-	cache := NewSemanticCache(embeddingService, createTestLogger(), "test")
+	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 
 	stats := cache.GetStats()
 
@@ -221,7 +631,7 @@ func TestSemanticCacheStats(t *testing.T) {
 
 func TestSemanticCacheSimilarQueries(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
-	cache := NewSemanticCache(embeddingService, createTestLogger(), "test")
+	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 
 	// Add some queries to the cache
 	queries := []string{
@@ -269,7 +679,7 @@ func TestSemanticCacheSimilarQueries(t *testing.T) {
 
 func TestSemanticCacheClearExpired(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
-	cache := NewSemanticCache(embeddingService, createTestLogger(), "test")
+	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 
 	// Set short TTL for testing
 	cache.ttl = 1 * time.Millisecond

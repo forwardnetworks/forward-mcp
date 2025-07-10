@@ -36,7 +36,7 @@ func setupSmartSearchTestService() *ForwardMCPService {
 		instanceID:      "test", // Add instance ID for test service
 		defaults:        &ServiceDefaults{},
 		workflowManager: NewWorkflowManager(),
-		semanticCache:   NewSemanticCache(embeddingService, testLogger, "test"),
+		semanticCache:   NewSemanticCache(embeddingService, testLogger, "test", nil),
 		queryIndex:      queryIndex,
 	}
 

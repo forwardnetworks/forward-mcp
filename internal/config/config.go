@@ -44,13 +44,38 @@ type ForwardConfig struct {
 	SemanticCache SemanticCacheConfig `json:"semanticCache"`
 }
 
+// CacheEvictionPolicy defines the eviction strategy
+type CacheEvictionPolicy string
+
+const (
+	EvictionPolicyLRU        CacheEvictionPolicy = "lru"        // Least Recently Used
+	EvictionPolicyLFU        CacheEvictionPolicy = "lfu"        // Least Frequently Used  
+	EvictionPolicyTTL        CacheEvictionPolicy = "ttl"        // Time To Live based
+	EvictionPolicySize       CacheEvictionPolicy = "size"       // Size-based eviction
+	EvictionPolicyOldest     CacheEvictionPolicy = "oldest"     // Oldest first (default)
+	EvictionPolicyRandom     CacheEvictionPolicy = "random"     // Random eviction
+)
+
 // SemanticCacheConfig holds semantic cache configuration
 type SemanticCacheConfig struct {
-	Enabled             bool    `json:"enabled" env:"FORWARD_SEMANTIC_CACHE_ENABLED"`
-	MaxEntries          int     `json:"maxEntries" env:"FORWARD_SEMANTIC_CACHE_MAX_ENTRIES"`
-	TTLHours            int     `json:"ttlHours" env:"FORWARD_SEMANTIC_CACHE_TTL_HOURS"`
-	SimilarityThreshold float64 `json:"similarityThreshold" env:"FORWARD_SEMANTIC_CACHE_SIMILARITY_THRESHOLD"`
-	EmbeddingProvider   string  `json:"embeddingProvider" env:"FORWARD_EMBEDDING_PROVIDER"`
+	Enabled             bool                 `json:"enabled" env:"FORWARD_SEMANTIC_CACHE_ENABLED"`
+	MaxEntries          int                  `json:"maxEntries" env:"FORWARD_SEMANTIC_CACHE_MAX_ENTRIES"`
+	TTLHours            int                  `json:"ttlHours" env:"FORWARD_SEMANTIC_CACHE_TTL_HOURS"`
+	SimilarityThreshold float64              `json:"similarityThreshold" env:"FORWARD_SEMANTIC_CACHE_SIMILARITY_THRESHOLD"`
+	EmbeddingProvider   string               `json:"embeddingProvider" env:"FORWARD_EMBEDDING_PROVIDER"`
+	
+	// Enhanced cache configuration for large API results
+	MaxMemoryMB         int                  `json:"maxMemoryMB" env:"FORWARD_SEMANTIC_CACHE_MAX_MEMORY_MB"`
+	EvictionPolicy      CacheEvictionPolicy  `json:"evictionPolicy" env:"FORWARD_SEMANTIC_CACHE_EVICTION_POLICY"`
+	CompressResults     bool                 `json:"compressResults" env:"FORWARD_SEMANTIC_CACHE_COMPRESS_RESULTS"`
+	CompressionLevel    int                  `json:"compressionLevel" env:"FORWARD_SEMANTIC_CACHE_COMPRESSION_LEVEL"`
+	PersistToDisk       bool                 `json:"persistToDisk" env:"FORWARD_SEMANTIC_CACHE_PERSIST_TO_DISK"`
+	DiskCachePath       string               `json:"diskCachePath" env:"FORWARD_SEMANTIC_CACHE_DISK_PATH"`
+	MetricsEnabled      bool                 `json:"metricsEnabled" env:"FORWARD_SEMANTIC_CACHE_METRICS_ENABLED"`
+	
+	// Eviction thresholds
+	MemoryEvictionThreshold float64           `json:"memoryEvictionThreshold" env:"FORWARD_SEMANTIC_CACHE_MEMORY_THRESHOLD"`
+	CleanupIntervalMinutes  int              `json:"cleanupIntervalMinutes" env:"FORWARD_SEMANTIC_CACHE_CLEANUP_INTERVAL"`
 }
 
 // MCPConfig holds MCP-specific configuration
@@ -87,6 +112,17 @@ func LoadConfig() *Config {
 				TTLHours:            getEnvAsInt("FORWARD_SEMANTIC_CACHE_TTL_HOURS", 24),
 				SimilarityThreshold: getEnvAsFloat("FORWARD_SEMANTIC_CACHE_SIMILARITY_THRESHOLD", 0.85),
 				EmbeddingProvider:   getEnv("FORWARD_EMBEDDING_PROVIDER", "openai"),
+				
+				// Enhanced cache configuration defaults
+				MaxMemoryMB:             getEnvAsInt("FORWARD_SEMANTIC_CACHE_MAX_MEMORY_MB", 512),  // 512MB default
+				EvictionPolicy:          CacheEvictionPolicy(getEnv("FORWARD_SEMANTIC_CACHE_EVICTION_POLICY", "lru")),
+				CompressResults:         getEnvAsBool("FORWARD_SEMANTIC_CACHE_COMPRESS_RESULTS", true),
+				CompressionLevel:        getEnvAsInt("FORWARD_SEMANTIC_CACHE_COMPRESSION_LEVEL", 6),  // Gzip level 6 (balanced)
+				PersistToDisk:           getEnvAsBool("FORWARD_SEMANTIC_CACHE_PERSIST_TO_DISK", false),
+				DiskCachePath:           getEnv("FORWARD_SEMANTIC_CACHE_DISK_PATH", "/tmp/forward-cache"),
+				MetricsEnabled:          getEnvAsBool("FORWARD_SEMANTIC_CACHE_METRICS_ENABLED", true),
+				MemoryEvictionThreshold: getEnvAsFloat("FORWARD_SEMANTIC_CACHE_MEMORY_THRESHOLD", 0.8),  // 80%
+				CleanupIntervalMinutes:  getEnvAsInt("FORWARD_SEMANTIC_CACHE_CLEANUP_INTERVAL", 30),
 			},
 		},
 		MCP: MCPConfig{

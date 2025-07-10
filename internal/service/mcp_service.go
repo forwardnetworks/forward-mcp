@@ -105,7 +105,7 @@ func NewForwardMCPService(cfg *config.Config, logger *logger.Logger) *ForwardMCP
 	}
 
 	// Create semantic cache with instance partitioning
-	semanticCache := NewSemanticCache(embeddingService, logger, instanceID)
+	semanticCache := NewSemanticCache(embeddingService, logger, instanceID, &cfg.Forward.SemanticCache)
 
 	// Create database with instance partitioning
 	database, err := NewNQEDatabase(logger, instanceID)
@@ -912,6 +912,18 @@ func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.Tool
 	networkID := s.getNetworkID(args.NetworkID)
 	snapshotID := s.getSnapshotID(args.SnapshotID)
 
+	// Create cache key from query parameters
+	cacheKey := fmt.Sprintf("query_id:%s|params:%v", args.QueryID, args.Parameters)
+
+	// Try to get result from cache first
+	if s.config.Forward.SemanticCache.Enabled && s.semanticCache != nil {
+		if cachedResult, found := s.semanticCache.Get(cacheKey, networkID, snapshotID); found {
+			s.logger.Debug("Cache hit for NQE query %s", args.QueryID)
+
+			return mcp.NewToolResponse(mcp.NewTextContent(MarshalCompactJSONString(cachedResult))), nil
+		}
+	}
+
 	params := &forward.NQEQueryParams{
 		NetworkID:  networkID,
 		QueryID:    args.QueryID,
@@ -940,6 +952,15 @@ func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.Tool
 			return nil, fmt.Errorf("query execution failed due to code issues (this may be a data quality issue) - query ID: %s. Try using find_executable_query to find working alternatives. Error: %w", args.QueryID, err)
 		}
 		return nil, fmt.Errorf("failed to run NQE query: %w", err)
+	}
+
+	// Store result in cache for future use
+	if s.config.Forward.SemanticCache.Enabled && s.semanticCache != nil {
+		if cacheErr := s.semanticCache.Put(cacheKey, networkID, snapshotID, result); cacheErr != nil {
+			s.logger.Warn("Failed to cache NQE query result for %s: %v", args.QueryID, cacheErr)
+		} else {
+			s.logger.Debug("Cached result for NQE query %s (items: %d)", args.QueryID, len(result.Items))
+		}
 	}
 
 	resultJSON := MarshalCompactJSONString(result)
@@ -1420,7 +1441,7 @@ func (s *ForwardMCPService) clearCache(args ClearCacheArgs) (*mcp.ToolResponse, 
 		} else {
 			embeddingService = NewMockEmbeddingService()
 		}
-		s.semanticCache = NewSemanticCache(embeddingService, s.logger, s.instanceID)
+		s.semanticCache = NewSemanticCache(embeddingService, s.logger, s.instanceID, &s.config.Forward.SemanticCache)
 
 		removed = totalEntries
 		operation = "Cleared all cache entries"
