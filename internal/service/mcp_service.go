@@ -69,10 +69,11 @@ type ForwardMCPService struct {
 	semanticCache   *SemanticCache
 	queryIndex      *NQEQueryIndex
 	database        *NQEDatabase
+	memorySystem    *MemorySystem     // Knowledge graph memory system
+	apiTracker      *APIMemoryTracker // API result tracking using memory system
 	// Context cancellation for graceful shutdown
 	ctx        context.Context
 	cancelFunc context.CancelFunc
-	wg         sync.WaitGroup // Track background goroutines
 }
 
 // ServiceDefaults holds default values for the MCP service
@@ -118,6 +119,21 @@ func NewForwardMCPService(cfg *config.Config, logger *logger.Logger) *ForwardMCP
 	// Create query index
 	queryIndex := NewNQEQueryIndex(embeddingService, logger)
 
+	// Create memory system
+	memorySystem, err := NewMemorySystem(logger, instanceID)
+	if err != nil {
+		logger.Error("Failed to create memory system: %v", err)
+		// Continue without memory system
+		memorySystem = nil
+	}
+
+	// Create API memory tracker
+	var apiTracker *APIMemoryTracker
+	if memorySystem != nil {
+		apiTracker = NewAPIMemoryTracker(memorySystem, logger, instanceID)
+		logger.Info("API memory tracker initialized for tracking API results and relationships")
+	}
+
 	// Create context for cancellation
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
@@ -135,147 +151,80 @@ func NewForwardMCPService(cfg *config.Config, logger *logger.Logger) *ForwardMCP
 		semanticCache:   semanticCache,
 		queryIndex:      queryIndex,
 		database:        database,
+		memorySystem:    memorySystem,
+		apiTracker:      apiTracker,
 		ctx:             ctx,
 		cancelFunc:      cancelFunc,
-		wg:              sync.WaitGroup{},
 	}
 
-	// Initialize query index with smart caching
+	// Initialize query index with existing data synchronously
 	if database != nil {
-		// Register callback to reload query index when database is updated
-		database.AddUpdateCallback(func() {
-			logger.Info("🔄 Database updated, reloading query index with enhanced metadata...")
-			queries, err := database.LoadQueries()
-			if err != nil {
-				logger.Error("🔄 Failed to reload queries from updated database: %v", err)
-				return
-			}
-
-			if err := queryIndex.LoadFromQueries(queries); err != nil {
-				logger.Error("🔄 Failed to reload query index: %v", err)
-			} else {
-				logger.Info("🔄 Query index reloaded with %d queries (enhanced metadata available)", len(queries))
-			}
-		})
-
-		// Start database loading asynchronously to avoid blocking Claude startup
-		service.wg.Add(1)
-		go func() {
-			defer service.wg.Done()
-
-			queryIndex.SetLoading(true)
-			logger.Info("🚀 Starting asynchronous query index initialization...")
-
-			// Check for cancellation before starting
-			select {
-			case <-service.ctx.Done():
-				logger.Info("🚀 Query index initialization cancelled")
-				queryIndex.SetLoading(false)
-				return
-			default:
-			}
-
-			queries, err := database.loadWithSmartCachingContext(service.ctx, forwardClient, logger)
-			if err != nil {
-				// Check if we were cancelled
-				select {
-				case <-service.ctx.Done():
-					logger.Info("🚀 Query index initialization cancelled during loading")
-					queryIndex.SetLoading(false)
-					return
-				default:
-				}
-
-				logger.Warn("🚀 Smart caching failed, falling back to spec file: %v", err)
-				if err := queryIndex.LoadFromSpec(); err != nil {
-					logger.Warn("🚀 Failed to initialize query index from spec: %v", err)
-					queryIndex.SetLoading(false)
-				} else {
-					logger.Info("🚀 Query index initialized from spec file as fallback")
-					queryIndex.SetLoading(false)
-				}
-			} else {
-				// Check for cancellation before final step
-				select {
-				case <-service.ctx.Done():
-					logger.Info("🚀 Query index initialization cancelled before loading queries")
-					queryIndex.SetLoading(false)
-					return
-				default:
-				}
-
-				// Load queries into the index
-				if err := queryIndex.LoadFromQueries(queries); err != nil {
-					logger.Error("🚀 Failed to load queries into index: %v", err)
-					queryIndex.SetLoading(false)
-				} else {
-					logger.Info("🚀 Query index initialized with %d queries from database", len(queries))
-					queryIndex.SetLoading(false)
-				}
-			}
-
-			// Final cancellation check
-			select {
-			case <-service.ctx.Done():
-				logger.Info("🚀 Query index initialization completed but service shutting down")
-			default:
-				// Normal completion
-			}
-		}()
-	} else {
-		// Fallback to spec file loading (also async to be consistent)
-		service.wg.Add(1)
-		go func() {
-			defer service.wg.Done()
-
-			logger.Info("🚀 Starting asynchronous spec file loading...")
-
-			// Check for cancellation before starting
-			select {
-			case <-service.ctx.Done():
-				logger.Info("🚀 Spec file loading cancelled")
-				return
-			default:
-			}
-
+		// Try to load existing queries from database first
+		logger.Info("🔄 Loading existing queries from database...")
+		queries, err := database.LoadQueries()
+		if err != nil {
+			logger.Warn("🔄 Failed to load queries from database: %v", err)
+			// Fallback to spec file
 			if err := queryIndex.LoadFromSpec(); err != nil {
-				logger.Warn("🚀 Failed to initialize query index from spec: %v", err)
+				logger.Warn("🔄 Failed to initialize query index from spec: %v", err)
 			} else {
-				logger.Info("🚀 Query index initialized from spec file")
+				logger.Info("🔄 Query index initialized from spec file as fallback")
 			}
-		}()
+		} else if len(queries) > 0 {
+			// Load existing queries into index
+			if err := queryIndex.LoadFromQueries(queries); err != nil {
+				logger.Error("🔄 Failed to load queries into index: %v", err)
+				// Fallback to spec file
+				if err := queryIndex.LoadFromSpec(); err != nil {
+					logger.Warn("🔄 Failed to initialize query index from spec: %v", err)
+				} else {
+					logger.Info("🔄 Query index initialized from spec file as fallback")
+				}
+			} else {
+				logger.Info("🔄 Query index initialized with %d existing queries from database", len(queries))
+			}
+		} else {
+			// No existing queries, load from spec file
+			logger.Info("🔄 No existing queries found, loading from spec file...")
+			if err := queryIndex.LoadFromSpec(); err != nil {
+				logger.Warn("🔄 Failed to initialize query index from spec: %v", err)
+			} else {
+				logger.Info("🔄 Query index initialized from spec file")
+			}
+		}
+	} else {
+		// No database, fallback to spec file loading
+		logger.Info("🔄 No database available, loading from spec file...")
+		if err := queryIndex.LoadFromSpec(); err != nil {
+			logger.Warn("🔄 Failed to initialize query index from spec: %v", err)
+		} else {
+			logger.Info("🔄 Query index initialized from spec file")
+		}
 	}
 
 	return service
 }
 
-// Shutdown gracefully shuts down the ForwardMCPService and waits for background goroutines to complete
+// Shutdown gracefully shuts down the ForwardMCPService
 func (s *ForwardMCPService) Shutdown(timeout time.Duration) error {
 	s.logger.Info("Shutting down ForwardMCPService...")
 
-	// Cancel the context to signal all goroutines to stop
+	// Cancel the context
 	s.cancelFunc()
-
-	// Wait for all goroutines to complete with timeout
-	done := make(chan struct{})
-	go func() {
-		s.wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		s.logger.Info("All background goroutines stopped successfully")
-	case <-time.After(timeout):
-		s.logger.Warn("Timeout waiting for background goroutines to stop")
-		return fmt.Errorf("shutdown timeout after %v", timeout)
-	}
 
 	// Close database connection if it exists
 	if s.database != nil {
 		if err := s.database.Close(); err != nil {
 			s.logger.Error("Failed to close database: %v", err)
 			return fmt.Errorf("failed to close database: %w", err)
+		}
+	}
+
+	// Close memory system if it exists
+	if s.memorySystem != nil {
+		if err := s.memorySystem.Close(); err != nil {
+			s.logger.Error("Failed to close memory system: %v", err)
+			return fmt.Errorf("failed to close memory system: %w", err)
 		}
 	}
 
@@ -524,6 +473,99 @@ func (s *ForwardMCPService) RegisterTools(server *mcp.Server) error {
 		"Finds the most relevant NQE query using semantic search and executes it. Provide a natural language description of what you want to analyze.",
 		s.runSemanticNQEQuery); err != nil {
 		return fmt.Errorf("failed to register run_semantic_nqe_query tool: %w", err)
+	}
+
+	// Database Hydration Tools
+	if err := server.RegisterTool("hydrate_database",
+		"Hydrate the NQE database by loading queries from the Forward Networks API. Use this to refresh the database with latest query metadata and ensure optimal performance for search operations.",
+		s.hydrateDatabase); err != nil {
+		return fmt.Errorf("failed to register hydrate_database tool: %w", err)
+	}
+
+	if err := server.RegisterTool("refresh_query_index",
+		"Refresh the query index from the current database content. Use this after hydrating the database to ensure the search index reflects the latest data.",
+		s.refreshQueryIndex); err != nil {
+		return fmt.Errorf("failed to register refresh_query_index tool: %w", err)
+	}
+
+	if err := server.RegisterTool("get_database_status",
+		"Get the current status of the database and query index including query counts, last update times, and performance metrics.",
+		s.getDatabaseStatus); err != nil {
+		return fmt.Errorf("failed to register get_database_status tool: %w", err)
+	}
+
+	// Memory Management Tools
+	if err := server.RegisterTool("create_entity",
+		"Create a new entity in the knowledge graph memory system. Entities represent people, networks, devices, projects, or any other important concept to remember.",
+		s.createEntity); err != nil {
+		return fmt.Errorf("failed to register create_entity tool: %w", err)
+	}
+
+	if err := server.RegisterTool("create_relation",
+		"Create a relation between two entities in the knowledge graph. Relations represent how entities are connected (e.g., 'owns', 'manages', 'depends_on').",
+		s.createRelation); err != nil {
+		return fmt.Errorf("failed to register create_relation tool: %w", err)
+	}
+
+	if err := server.RegisterTool("add_observation",
+		"Add an observation to an entity. Observations are additional facts, notes, preferences, or behaviors associated with an entity.",
+		s.addObservation); err != nil {
+		return fmt.Errorf("failed to register add_observation tool: %w", err)
+	}
+
+	if err := server.RegisterTool("search_entities",
+		"Search for entities in the knowledge graph by name, type, or observation content. Use this to find information you've stored about people, networks, or concepts.",
+		s.searchEntities); err != nil {
+		return fmt.Errorf("failed to register search_entities tool: %w", err)
+	}
+
+	if err := server.RegisterTool("get_entity",
+		"Retrieve a specific entity by ID or name. Use this to get detailed information about a specific person, network, device, or concept.",
+		s.getEntity); err != nil {
+		return fmt.Errorf("failed to register get_entity tool: %w", err)
+	}
+
+	if err := server.RegisterTool("get_relations",
+		"Get all relations for a specific entity. Use this to understand how an entity is connected to others in the knowledge graph.",
+		s.getRelations); err != nil {
+		return fmt.Errorf("failed to register get_relations tool: %w", err)
+	}
+
+	if err := server.RegisterTool("get_observations",
+		"Get all observations for a specific entity. Use this to retrieve all stored facts, notes, and preferences about an entity.",
+		s.getObservations); err != nil {
+		return fmt.Errorf("failed to register get_observations tool: %w", err)
+	}
+
+	if err := server.RegisterTool("delete_entity",
+		"Delete an entity and all its relations and observations. Use with caution as this permanently removes all stored information about the entity.",
+		s.deleteEntity); err != nil {
+		return fmt.Errorf("failed to register delete_entity tool: %w", err)
+	}
+
+	if err := server.RegisterTool("delete_relation",
+		"Delete a specific relation between entities. Use this to remove connections that are no longer relevant.",
+		s.deleteRelation); err != nil {
+		return fmt.Errorf("failed to register delete_relation tool: %w", err)
+	}
+
+	if err := server.RegisterTool("delete_observation",
+		"Delete a specific observation from an entity. Use this to remove outdated or incorrect information.",
+		s.deleteObservation); err != nil {
+		return fmt.Errorf("failed to register delete_observation tool: %w", err)
+	}
+
+	if err := server.RegisterTool("get_memory_stats",
+		"Get statistics about the memory system including counts of entities, relations, and observations by type.",
+		s.getMemoryStats); err != nil {
+		return fmt.Errorf("failed to register get_memory_stats tool: %w", err)
+	}
+
+	// API Analytics Tools
+	if err := server.RegisterTool("get_query_analytics",
+		"Get analytics about query patterns and performance for a specific network. Shows query counts, execution times, result patterns, and usage trends from the memory system.",
+		s.getQueryAnalytics); err != nil {
+		return fmt.Errorf("failed to register get_query_analytics tool: %w", err)
 	}
 
 	return nil
@@ -831,6 +873,13 @@ func (s *ForwardMCPService) searchPaths(args SearchPathsArgs) (*mcp.ToolResponse
 		return nil, fmt.Errorf("failed to search paths: %w", err)
 	}
 
+	// Track path search in memory system
+	if s.apiTracker != nil {
+		if trackErr := s.apiTracker.TrackPathSearch(networkID, args.SrcIP, args.DstIP, response); trackErr != nil {
+			s.logger.Debug("Failed to track path search in memory system: %v", trackErr)
+		}
+	}
+
 	s.logger.Debug("Path search completed: found %d paths, searchTime=%dms, candidates=%d, snapshotID=%s",
 		len(response.Paths), response.SearchTimeMs, response.NumCandidatesFound, response.SnapshotID)
 
@@ -939,7 +988,11 @@ func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.Tool
 		}
 	}
 
+	// Track execution time for API memory tracking
+	start := time.Now()
 	result, err := s.forwardClient.RunNQEQueryByID(params)
+	executionTime := time.Since(start)
+
 	if err != nil {
 		s.logToolCall("run_nqe_query_by_id", args, err)
 
@@ -952,6 +1005,13 @@ func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.Tool
 			return nil, fmt.Errorf("query execution failed due to code issues (this may be a data quality issue) - query ID: %s. Try using find_executable_query to find working alternatives. Error: %w", args.QueryID, err)
 		}
 		return nil, fmt.Errorf("failed to run NQE query: %w", err)
+	}
+
+	// Track the query execution in memory system
+	if s.apiTracker != nil {
+		if trackErr := s.apiTracker.TrackNetworkQuery(args.QueryID, networkID, snapshotID, result, executionTime); trackErr != nil {
+			s.logger.Debug("Failed to track query execution in memory system: %v", trackErr)
+		}
 	}
 
 	// Store result in cache for future use
@@ -1072,6 +1132,13 @@ func (s *ForwardMCPService) listDevices(args ListDevicesArgs) (*mcp.ToolResponse
 	response, err := s.forwardClient.GetDevices(args.NetworkID, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list devices: %w", err)
+	}
+
+	// Track device discovery in memory system
+	if s.apiTracker != nil {
+		if trackErr := s.apiTracker.TrackDeviceDiscovery(args.NetworkID, response.Devices); trackErr != nil {
+			s.logger.Debug("Failed to track device discovery in memory system: %v", trackErr)
+		}
 	}
 
 	result := MarshalCompactJSONString(response)
@@ -2079,4 +2146,389 @@ func (s *ForwardMCPService) checkQueryIndexReady(toolName string) error {
 		return fmt.Errorf("❌ Query index is not initialized. This may indicate a startup issue. Try running 'initialize_query_index' tool to manually initialize")
 	}
 	return nil
+}
+
+// hydrateDatabase hydrates the database by loading queries from the Forward Networks API
+func (s *ForwardMCPService) hydrateDatabase(args HydrateDatabaseArgs) (*mcp.ToolResponse, error) {
+	if s.database == nil {
+		return nil, fmt.Errorf("database is not available")
+	}
+
+	// Set defaults
+	if args.MaxRetries == 0 {
+		args.MaxRetries = 3
+	}
+
+	s.logger.Info("🔄 Starting database hydration...")
+
+	// Check if we need to force refresh or if database is empty
+	existingQueries, err := s.database.LoadQueries()
+	if err != nil {
+		s.logger.Warn("🔄 Failed to load existing queries: %v", err)
+		existingQueries = []forward.NQEQueryDetail{}
+	}
+
+	if len(existingQueries) > 0 && !args.ForceRefresh {
+		return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Database already contains %d queries. Use force_refresh=true to refresh anyway.", len(existingQueries)))), nil
+	}
+
+	// Create context for the operation
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	// Load queries from API
+	var queries []forward.NQEQueryDetail
+	if args.EnhancedMode {
+		// Use enhanced mode with metadata
+		existingCommitIDs := make(map[string]string)
+		for _, query := range existingQueries {
+			if query.LastCommit.ID != "" {
+				existingCommitIDs[query.Path] = query.LastCommit.ID
+			}
+		}
+
+		queries, err = s.forwardClient.GetNQEAllQueriesEnhancedWithCacheContext(ctx, existingCommitIDs)
+		if err != nil {
+			s.logger.Warn("🔄 Enhanced API failed, falling back to basic API: %v", err)
+			queries, err = s.database.loadFromBasicAPI(s.forwardClient, s.logger)
+		}
+	} else {
+		queries, err = s.database.loadFromBasicAPI(s.forwardClient, s.logger)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to load queries from API: %w", err)
+	}
+
+	// Merge with existing queries if not force refresh
+	if !args.ForceRefresh && len(existingQueries) > 0 {
+		queries = s.database.mergeQueries(existingQueries, queries)
+	}
+
+	// Save to database
+	if err := s.database.SaveQueries(queries); err != nil {
+		return nil, fmt.Errorf("failed to save queries to database: %w", err)
+	}
+
+	// Update last sync time
+	if err := s.database.SetMetadata("last_sync", time.Now().Format(time.RFC3339)); err != nil {
+		s.logger.Warn("🔄 Failed to update sync time: %v", err)
+	}
+
+	s.logger.Info("🔄 Database hydration completed with %d queries", len(queries))
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Database hydration completed successfully. Loaded %d queries from API.", len(queries)))), nil
+}
+
+// refreshQueryIndex refreshes the query index from the current database content
+func (s *ForwardMCPService) refreshQueryIndex(args RefreshQueryIndexArgs) (*mcp.ToolResponse, error) {
+	if s.database == nil {
+		return nil, fmt.Errorf("database is not available")
+	}
+
+	if s.queryIndex == nil {
+		return nil, fmt.Errorf("query index is not available")
+	}
+
+	s.logger.Info("🔄 Refreshing query index from database...")
+
+	// Load queries from database
+	queries, err := s.database.LoadQueries()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load queries from database: %w", err)
+	}
+
+	if len(queries) == 0 {
+		return mcp.NewToolResponse(mcp.NewTextContent("No queries found in database. Use hydrate_database to load queries first.")), nil
+	}
+
+	// Load queries into index
+	if err := s.queryIndex.LoadFromQueries(queries); err != nil {
+		return nil, fmt.Errorf("failed to load queries into index: %w", err)
+	}
+
+	s.logger.Info("🔄 Query index refreshed with %d queries", len(queries))
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Query index refreshed successfully with %d queries.", len(queries)))), nil
+}
+
+// getDatabaseStatus returns the current status of the database and query index
+func (s *ForwardMCPService) getDatabaseStatus(args GetDatabaseStatusArgs) (*mcp.ToolResponse, error) {
+	status := map[string]interface{}{
+		"database_available":    s.database != nil,
+		"query_index_available": s.queryIndex != nil,
+		"timestamp":             time.Now().Format(time.RFC3339),
+	}
+
+	if s.database != nil {
+		// Get database stats
+		queries, err := s.database.LoadQueries()
+		if err != nil {
+			status["database_error"] = err.Error()
+			status["query_count"] = 0
+		} else {
+			status["query_count"] = len(queries)
+		}
+
+		// Get last sync time
+		if lastSync, err := s.database.GetMetadata("last_sync"); err == nil {
+			status["last_sync"] = lastSync
+		}
+
+		// Get database path
+		status["database_path"] = s.database.dbPath
+	}
+
+	if s.queryIndex != nil {
+		// Get query index stats
+		status["query_index_empty"] = !s.queryIndex.IsReady()
+		status["query_index_loading"] = s.queryIndex.IsLoading()
+
+		// Get index stats if available
+		indexStats := s.queryIndex.GetStatistics()
+		if indexStats != nil {
+			status["index_stats"] = indexStats
+		}
+	}
+
+	// Marshal to JSON for pretty output
+	statusJSON, err := json.MarshalIndent(status, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal status: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(string(statusJSON))), nil
+}
+
+// Memory Management Tool Implementations
+
+// createEntity creates a new entity in the knowledge graph
+func (s *ForwardMCPService) createEntity(args CreateEntityArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	entity, err := s.memorySystem.CreateEntity(args.Name, args.Type, args.Metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create entity: %w", err)
+	}
+
+	entityJSON, err := json.MarshalIndent(entity, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal entity: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Entity created successfully:\n%s", string(entityJSON)))), nil
+}
+
+// createRelation creates a relation between two entities
+func (s *ForwardMCPService) createRelation(args CreateRelationArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	relation, err := s.memorySystem.CreateRelation(args.FromID, args.ToID, args.Type, args.Properties)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create relation: %w", err)
+	}
+
+	relationJSON, err := json.MarshalIndent(relation, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal relation: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Relation created successfully:\n%s", string(relationJSON)))), nil
+}
+
+// addObservation adds an observation to an entity
+func (s *ForwardMCPService) addObservation(args AddObservationArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	observation, err := s.memorySystem.AddObservation(args.EntityID, args.Content, args.Type, args.Metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add observation: %w", err)
+	}
+
+	observationJSON, err := json.MarshalIndent(observation, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal observation: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Observation added successfully:\n%s", string(observationJSON)))), nil
+}
+
+// searchEntities searches for entities in the knowledge graph
+func (s *ForwardMCPService) searchEntities(args SearchEntitiesArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	entities, err := s.memorySystem.SearchEntities(args.Query, args.EntityType, args.Limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search entities: %w", err)
+	}
+
+	if len(entities) == 0 {
+		return mcp.NewToolResponse(mcp.NewTextContent("No entities found matching the search criteria.")), nil
+	}
+
+	entitiesJSON, err := json.MarshalIndent(entities, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal entities: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Found %d entities:\n%s", len(entities), string(entitiesJSON)))), nil
+}
+
+// getEntity retrieves a specific entity by ID or name
+func (s *ForwardMCPService) getEntity(args GetEntityArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	entity, err := s.memorySystem.GetEntity(args.Identifier)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get entity: %w", err)
+	}
+
+	entityJSON, err := json.MarshalIndent(entity, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal entity: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Entity found:\n%s", string(entityJSON)))), nil
+}
+
+// getRelations retrieves relations for an entity
+func (s *ForwardMCPService) getRelations(args GetRelationsArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	relations, err := s.memorySystem.GetRelations(args.EntityID, args.RelationType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get relations: %w", err)
+	}
+
+	if len(relations) == 0 {
+		return mcp.NewToolResponse(mcp.NewTextContent("No relations found for this entity.")), nil
+	}
+
+	relationsJSON, err := json.MarshalIndent(relations, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal relations: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Found %d relations:\n%s", len(relations), string(relationsJSON)))), nil
+}
+
+// getObservations retrieves observations for an entity
+func (s *ForwardMCPService) getObservations(args GetObservationsArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	observations, err := s.memorySystem.GetObservations(args.EntityID, args.ObservationType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get observations: %w", err)
+	}
+
+	if len(observations) == 0 {
+		return mcp.NewToolResponse(mcp.NewTextContent("No observations found for this entity.")), nil
+	}
+
+	observationsJSON, err := json.MarshalIndent(observations, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal observations: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Found %d observations:\n%s", len(observations), string(observationsJSON)))), nil
+}
+
+// deleteEntity deletes an entity and all its relations and observations
+func (s *ForwardMCPService) deleteEntity(args DeleteEntityArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	// Get entity details before deletion for confirmation
+	entity, err := s.memorySystem.GetEntity(args.EntityID)
+	if err != nil {
+		return nil, fmt.Errorf("entity not found: %w", err)
+	}
+
+	err = s.memorySystem.DeleteEntity(args.EntityID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete entity: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Entity '%s' (%s) deleted successfully, including all its relations and observations.", entity.Name, entity.Type))), nil
+}
+
+// deleteRelation deletes a specific relation
+func (s *ForwardMCPService) deleteRelation(args DeleteRelationArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	err := s.memorySystem.DeleteRelation(args.RelationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete relation: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Relation '%s' deleted successfully.", args.RelationID))), nil
+}
+
+// deleteObservation deletes a specific observation
+func (s *ForwardMCPService) deleteObservation(args DeleteObservationArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	err := s.memorySystem.DeleteObservation(args.ObservationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete observation: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Observation '%s' deleted successfully.", args.ObservationID))), nil
+}
+
+// getMemoryStats returns statistics about the memory system
+func (s *ForwardMCPService) getMemoryStats(args GetMemoryStatsArgs) (*mcp.ToolResponse, error) {
+	if s.memorySystem == nil {
+		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	stats, err := s.memorySystem.GetMemoryStats()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get memory stats: %w", err)
+	}
+
+	statsJSON, err := json.MarshalIndent(stats, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal stats: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Memory system statistics:\n%s", string(statsJSON)))), nil
+}
+
+// getQueryAnalytics gets analytics about query patterns for a network
+func (s *ForwardMCPService) getQueryAnalytics(args GetQueryAnalyticsArgs) (*mcp.ToolResponse, error) {
+	if s.apiTracker == nil {
+		return nil, fmt.Errorf("API memory tracker is not available")
+	}
+
+	analytics, err := s.apiTracker.GetQueryAnalytics(args.NetworkID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get query analytics: %w", err)
+	}
+
+	analyticsJSON, err := json.MarshalIndent(analytics, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal analytics: %w", err)
+	}
+
+	return mcp.NewToolResponse(mcp.NewTextContent(fmt.Sprintf("Query analytics for network %s:\n%s", args.NetworkID, string(analyticsJSON)))), nil
 }

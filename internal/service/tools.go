@@ -230,6 +230,83 @@ type SmartQueryWorkflowArgs struct {
 	// No parameters needed for the workflow guide - it's a static documentation prompt
 }
 
+// Database Hydration Tools Arguments
+type HydrateDatabaseArgs struct {
+	ForceRefresh bool `json:"force_refresh" jsonschema:"description=Force refresh all queries from API even if database has data (default: false)"`
+	EnhancedMode bool `json:"enhanced_mode" jsonschema:"description=Use enhanced API mode for metadata enrichment (default: true)"`
+	MaxRetries   int  `json:"max_retries" jsonschema:"description=Maximum number of retry attempts for API calls (default: 3)"`
+}
+
+type RefreshQueryIndexArgs struct {
+	// No parameters needed - refreshes from current database content
+}
+
+type GetDatabaseStatusArgs struct {
+	// No parameters needed - returns database and query index status
+}
+
+// Memory Management Tools Arguments
+type CreateEntityArgs struct {
+	Name     string                 `json:"name" jsonschema:"required,description=Name of the entity"`
+	Type     string                 `json:"type" jsonschema:"required,description=Type of the entity (e.g., 'user', 'network', 'device', 'project')"`
+	Metadata map[string]interface{} `json:"metadata" jsonschema:"description=Additional metadata for the entity"`
+}
+
+type CreateRelationArgs struct {
+	FromID     string                 `json:"from_id" jsonschema:"required,description=ID of the source entity"`
+	ToID       string                 `json:"to_id" jsonschema:"required,description=ID of the target entity"`
+	Type       string                 `json:"type" jsonschema:"required,description=Type of the relation (e.g., 'owns', 'manages', 'depends_on')"`
+	Properties map[string]interface{} `json:"properties" jsonschema:"description=Properties of the relation"`
+}
+
+type AddObservationArgs struct {
+	EntityID string                 `json:"entity_id" jsonschema:"required,description=ID of the entity to add observation to"`
+	Content  string                 `json:"content" jsonschema:"required,description=Content of the observation"`
+	Type     string                 `json:"type" jsonschema:"required,description=Type of the observation (e.g., 'note', 'preference', 'behavior')"`
+	Metadata map[string]interface{} `json:"metadata" jsonschema:"description=Additional metadata for the observation"`
+}
+
+type SearchEntitiesArgs struct {
+	Query      string `json:"query" jsonschema:"description=Search query to find entities by name or observation content"`
+	EntityType string `json:"entity_type" jsonschema:"description=Filter by entity type"`
+	Limit      int    `json:"limit" jsonschema:"description=Maximum number of results to return (default: 50)"`
+}
+
+type GetEntityArgs struct {
+	Identifier string `json:"identifier" jsonschema:"required,description=Entity ID or name to retrieve"`
+}
+
+type GetRelationsArgs struct {
+	EntityID     string `json:"entity_id" jsonschema:"required,description=ID of the entity to get relations for"`
+	RelationType string `json:"relation_type" jsonschema:"description=Filter by relation type"`
+}
+
+type GetObservationsArgs struct {
+	EntityID         string `json:"entity_id" jsonschema:"required,description=ID of the entity to get observations for"`
+	ObservationType  string `json:"observation_type" jsonschema:"description=Filter by observation type"`
+}
+
+type DeleteEntityArgs struct {
+	EntityID string `json:"entity_id" jsonschema:"required,description=ID of the entity to delete"`
+}
+
+type DeleteRelationArgs struct {
+	RelationID string `json:"relation_id" jsonschema:"required,description=ID of the relation to delete"`
+}
+
+type DeleteObservationArgs struct {
+	ObservationID string `json:"observation_id" jsonschema:"required,description=ID of the observation to delete"`
+}
+
+type GetMemoryStatsArgs struct {
+	// No parameters needed - returns memory system statistics
+}
+
+// API Analytics Tools Arguments
+type GetQueryAnalyticsArgs struct {
+	NetworkID string `json:"network_id" jsonschema:"required,description=Network ID to get analytics for"`
+}
+
 // For the config search tool schema/registration:
 // Update the description or prompt to include:
 //
