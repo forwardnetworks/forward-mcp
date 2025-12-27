@@ -23,11 +23,12 @@ type UpdateNetworkArgs struct {
 
 // NQE Tool Arguments
 type RunNQEQueryByStringArgs struct {
-	NetworkID  string                 `json:"network_id" jsonschema:"required,description=ID of the network to query"`
-	Query      string                 `json:"query" jsonschema:"required,description=NQE query source code"`
+	NetworkID  string                 `json:"network_id" jsonschema:"required,description=Network ID to run the query against"`
+	Query      string                 `json:"query" jsonschema:"required,description=Inline NQE query source code"`
 	SnapshotID string                 `json:"snapshot_id,omitempty" jsonschema:"description=Specific snapshot ID to query (optional)"`
-	Parameters map[string]interface{} `json:"parameters,omitempty" jsonschema:"description=Query parameters to use"`
-	Options    *NQEQueryOptions       `json:"options,omitempty" jsonschema:"description=Query options like limit, offset, sorting, etc."`
+	Parameters map[string]interface{} `json:"parameters,omitempty" jsonschema:"description=Optional parameters for the query"`
+	Options    *NQEQueryOptions       `json:"options,omitempty" jsonschema:"description=Optional query options for sorting and filtering"`
+	AllResults bool                   `json:"all_results,omitempty" jsonschema:"description=If true, fetch all results using pagination (limit/offset) and aggregate them into a single response"`
 }
 
 type RunNQEQueryByIDArgs struct {

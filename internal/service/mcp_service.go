@@ -416,6 +416,11 @@ func (s *ForwardMCPService) RegisterTools(server *mcp.Server) error {
 	}
 
 	// NQE Tools
+	if err := server.RegisterTool("run_nqe_query_by_string",
+		"🧪 **CUSTOM QUERY**: Run an inline NQE query without saving it to the library.\n\nExecute ad-hoc NQE query text against a network. Use this for fast iteration during query development.\n\n**Best Practices:**\n- Use 'all_results: true' to fetch complete datasets\n- Set appropriate 'limit' and 'offset' for pagination\n- Use 'parameters' for dynamic query customization\n\n**Performance Tips:**\n- Large results are automatically cached and chunked\n- Set reasonable limits to avoid timeouts",
+		s.runNQEQueryByString); err != nil {
+		return fmt.Errorf("failed to register run_nqe_query_by_string tool: %w", err)
+	}
 	if err := server.RegisterTool("run_nqe_query_by_id",
 		"🚀 **RECOMMENDED**: Use this tool for standard network analysis and compliance checks.\n\nRun a Network Query Engine (NQE) query using a predefined query ID from the library. This is the preferred method for consistent, reliable network analysis.\n\n**Best Practices:**\n- Use 'all_results: true' to fetch complete datasets\n- Set appropriate 'limit' and 'offset' for pagination\n- Use 'parameters' for dynamic query customization\n- Check query descriptions with list_nqe_queries first\n\n**Performance Tips:**\n- Large results are automatically cached and chunked\n- Use semantic search to find relevant queries\n- Set reasonable limits to avoid timeouts",
 		s.runNQEQueryByID); err != nil {
@@ -1570,6 +1575,12 @@ func (s *ForwardMCPService) convertNQEQueryOptions(options *NQEQueryOptions) *fo
 	return forwardOptions
 }
 
+func buildNQECacheKey(queryType, queryID string, params map[string]interface{}, options *NQEQueryOptions) string {
+	paramsJSON := MarshalCompactJSONString(params)
+	optionsJSON := MarshalCompactJSONString(options)
+	return fmt.Sprintf("%s:%s|params:%s|options:%s", queryType, queryID, paramsJSON, optionsJSON)
+}
+
 // NQE Tool Implementations
 func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.ToolResponse, error) {
 	s.logToolCall("run_nqe_query_by_id", args, nil)
@@ -1691,7 +1702,7 @@ func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.Tool
 	}
 
 	// Create cache key from query parameters
-	cacheKey := fmt.Sprintf("query_id:%s|params:%v", args.QueryID, args.Parameters)
+	cacheKey := buildNQECacheKey("query_id", args.QueryID, args.Parameters, args.Options)
 
 	// Try to get result from cache first
 	if s.config.Forward.SemanticCache.Enabled && s.semanticCache != nil {
@@ -1820,6 +1831,217 @@ func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.Tool
 		"2. Create a custom query?\n" +
 		"3. Export these results?"
 
+	return mcp.NewToolResponse(mcp.NewTextContent(response)), nil
+}
+
+func (s *ForwardMCPService) runNQEQueryByString(args RunNQEQueryByStringArgs) (*mcp.ToolResponse, error) {
+	s.logToolCall("run_nqe_query_by_string", args, nil)
+
+	if strings.TrimSpace(args.Query) == "" {
+		return nil, fmt.Errorf("query is required")
+	}
+
+	networkID := s.getNetworkID(args.NetworkID)
+	snapshotID := s.getSnapshotID(args.SnapshotID)
+	queryID := "inline:" + hashString(args.Query)
+
+	// Proactive warning for potentially large queries
+	if (args.Options == nil || args.Options.Limit == 0 || args.Options.Limit > 1000) && !args.AllResults {
+		warnMsg := "⚠️ This query may return a large result set. To avoid hitting API size limits, consider setting 'all_results: true' to fetch results in batches for local analysis, or limit the output with a smaller 'limit' value.\n"
+		warnMsg += "Would you like to proceed as is, or update your request?\n"
+		warnMsg += "Example: { \"all_results\": true } or { \"options\": { \"limit\": 100 } }\n"
+		return mcp.NewToolResponse(mcp.NewTextContent(warnMsg)), nil
+	}
+
+	if args.AllResults {
+		limit := s.getQueryLimit(0)
+		if args.Options != nil && args.Options.Limit > 0 {
+			limit = args.Options.Limit
+		}
+		offset := 0
+		if args.Options != nil && args.Options.Offset > 0 {
+			offset = args.Options.Offset
+		}
+
+		allItems := []map[string]interface{}{}
+		var lastResult *forward.NQERunResult
+		for {
+			params := &forward.NQEQueryParams{
+				NetworkID:  networkID,
+				Query:      args.Query,
+				SnapshotID: snapshotID,
+				Parameters: args.Parameters,
+				Options: &forward.NQEQueryOptions{
+					Limit:  limit,
+					Offset: offset,
+				},
+			}
+			result, err := s.forwardClient.RunNQEQueryByString(params)
+			if err != nil {
+				return nil, fmt.Errorf("failed to run NQE query (batch at offset %d): %w", offset, err)
+			}
+			if lastResult == nil {
+				lastResult = result
+			}
+			allItems = append(allItems, result.Items...)
+			if len(result.Items) < limit {
+				break
+			}
+			offset += limit
+		}
+		if lastResult == nil {
+			return mcp.NewToolResponse(mcp.NewTextContent("No results found.")), nil
+		}
+		lastResult.Items = allItems
+
+		var entityID string
+		if s.memorySystem != nil {
+			id, chunkErr := s.memorySystem.StoreNQEResultWithChunking(queryID, networkID, snapshotID, lastResult, 200)
+			if chunkErr != nil {
+				s.logger.Warn("Failed to store NQE result with chunking: %v", chunkErr)
+			} else {
+				s.logger.Debug("Stored NQE result in memory system with chunking (entity: %s)", id)
+				entityID = id
+
+				if s.bloomManager != nil && len(allItems) > 100 {
+					filterType := s.determineFilterType(queryID, allItems)
+					buildErr := s.bloomManager.BuildFilterFromNQEResult(networkID, filterType, lastResult, 200)
+					if buildErr != nil {
+						s.logger.Warn("Failed to auto-build bloom filter for large result: %v", buildErr)
+					} else {
+						s.logger.Info("Auto-built bloom filter for large result - Network: %s, Type: %s, Items: %d", networkID, filterType, len(allItems))
+					}
+				}
+			}
+		}
+
+		rowCount := len(allItems)
+		var columns []string
+		if rowCount > 0 {
+			for k := range allItems[0] {
+				columns = append(columns, k)
+			}
+		}
+		previewRows := 5
+		if rowCount < previewRows {
+			previewRows = rowCount
+		}
+		preview := allItems[:previewRows]
+		response := "Fetched all results in batches.\n"
+		response += fmt.Sprintf("Total items: %d\nColumns: %v\n", rowCount, columns)
+		previewJSON, _ := json.MarshalIndent(preview, "", "  ")
+		response += fmt.Sprintf("Preview (first %d rows):\n%s\n", previewRows, string(previewJSON))
+		if entityID != "" {
+			response += fmt.Sprintf("Stored in memory system as entity: %s\n", entityID)
+			response += "You can use get_nqe_result_summary to analyze this result locally.\n"
+		}
+		return mcp.NewToolResponse(mcp.NewTextContent(response)), nil
+	}
+
+	cacheKey := buildNQECacheKey("query_string", queryID, args.Parameters, args.Options)
+	if s.config.Forward.SemanticCache.Enabled && s.semanticCache != nil {
+		if cachedResult, found := s.semanticCache.Get(cacheKey, networkID, snapshotID); found {
+			s.logger.Debug("Cache hit for inline NQE query %s", queryID)
+			return mcp.NewToolResponse(mcp.NewTextContent(MarshalCompactJSONString(cachedResult))), nil
+		}
+	}
+
+	params := &forward.NQEQueryParams{
+		NetworkID:  networkID,
+		Query:      args.Query,
+		SnapshotID: snapshotID,
+		Parameters: args.Parameters,
+		Options:    s.convertNQEQueryOptions(args.Options),
+	}
+	if params.Options == nil {
+		params.Options = &forward.NQEQueryOptions{
+			Limit: s.getQueryLimit(0),
+		}
+	}
+
+	start := time.Now()
+	result, err := s.forwardClient.RunNQEQueryByString(params)
+	executionTime := time.Since(start)
+	if err != nil {
+		s.logToolCall("run_nqe_query_by_string", args, err)
+
+		errorStr := err.Error()
+		if strings.Contains(errorStr, "Invalid module path") {
+			return nil, fmt.Errorf("query contains outdated module imports (this is a data quality issue in the Forward Networks repository) - query hash: %s. Try using find_executable_query to discover alternative queries", queryID)
+		}
+		if strings.Contains(errorStr, "NQE_RUNTIME_ERROR") {
+			return nil, fmt.Errorf("query execution failed due to code issues (this may be a data quality issue) - query hash: %s. Try using find_executable_query to find working alternatives. Error: %w", queryID, err)
+		}
+		if strings.Contains(errorStr, "result exceeds maximum length") {
+			s.logger.Warn("Result too large, retrying with all_results: true for inline query %s", queryID)
+			args.AllResults = true
+			msg := "The result was too large to return directly. Fetching all results in batches for local analysis. A summary will be provided.\n"
+			batchResp, batchErr := s.runNQEQueryByString(args)
+			if batchErr != nil {
+				return nil, batchErr
+			}
+			if s.memorySystem != nil && batchResp != nil && len(batchResp.Content) > 0 {
+				text := batchResp.Content[0].TextContent.Text
+				entityID := ""
+				if idx := strings.Index(text, "entity: "); idx != -1 {
+					end := strings.Index(text[idx:], "\n")
+					if end != -1 {
+						entityID = strings.TrimSpace(text[idx+len("entity: ") : idx+end])
+					} else {
+						entityID = strings.TrimSpace(text[idx+len("entity: "):])
+					}
+				}
+				if entityID != "" {
+					summaryArgs := GetNQEResultChunksArgs{EntityID: entityID}
+					summaryResp, summaryErr := s.getNQEResultSummary(summaryArgs)
+					if summaryErr == nil && summaryResp != nil && len(summaryResp.Content) > 0 {
+						msg += "\n" + summaryResp.Content[0].TextContent.Text
+					}
+				}
+			}
+			if batchResp != nil && len(batchResp.Content) > 0 {
+				batchResp.Content[0].TextContent.Text = msg + "\n" + batchResp.Content[0].TextContent.Text
+			}
+			return batchResp, nil
+		}
+		if strings.Contains(errorStr, "Provided argument") && strings.Contains(errorStr, "is not a parameter to the given query") {
+			return nil, fmt.Errorf("Query parameter mismatch: %s. Try using find_executable_query to find working alternatives or check the required parameters for this query.", errorStr)
+		}
+		return nil, fmt.Errorf("failed to run NQE query: %w", err)
+	}
+
+	if s.apiTracker != nil {
+		if trackErr := s.apiTracker.TrackNetworkQuery(queryID, networkID, snapshotID, result, executionTime); trackErr != nil {
+			s.logger.Debug("Failed to track query execution in memory system: %v", trackErr)
+		}
+	}
+
+	if s.memorySystem != nil {
+		_, chunkErr := s.memorySystem.StoreNQEResultWithChunking(queryID, networkID, snapshotID, result, 200)
+		if chunkErr != nil {
+			s.logger.Warn("Failed to store NQE result with chunking: %v", chunkErr)
+		} else {
+			s.logger.Debug("Stored NQE result in memory system with chunking (entity: %s)", queryID)
+		}
+	}
+
+	if s.config.Forward.SemanticCache.Enabled && s.semanticCache != nil {
+		if cacheErr := s.semanticCache.Put(cacheKey, networkID, snapshotID, result); cacheErr != nil {
+			s.logger.Warn("Failed to cache NQE query result for %s: %v", queryID, cacheErr)
+		} else {
+			s.logger.Debug("Cached result for NQE query %s (items: %d)", queryID, len(result.Items))
+		}
+	}
+
+	resultJSON := MarshalCompactJSONString(result)
+	s.logger.Debug("NQE query completed with %d items", len(result.Items))
+
+	response := fmt.Sprintf("NQE query completed. Found %d items:\n%s\n\n", len(result.Items), resultJSON)
+	if params.Options != nil && len(result.Items) == params.Options.Limit {
+		response += "\n⚠️ Results may be truncated. Use the 'offset' parameter to fetch the next page.\n"
+		response += fmt.Sprintf("Example: set 'offset' to %d to get the next page.\n", params.Options.Offset+params.Options.Limit)
+		response += "Or set 'all_results: true' in your request to fetch all results in batches.\n"
+	}
 	return mcp.NewToolResponse(mcp.NewTextContent(response)), nil
 }
 
