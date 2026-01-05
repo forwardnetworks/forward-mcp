@@ -683,8 +683,8 @@ func TestSemanticCacheClearExpired(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
 	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 
-	// Set short TTL for testing
-	cache.ttl = 1 * time.Millisecond
+	// Set short TTL for testing (50ms is long enough to be reliable but short for tests)
+	cache.ttl = 50 * time.Millisecond
 
 	result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
@@ -696,16 +696,16 @@ func TestSemanticCacheClearExpired(t *testing.T) {
 		}
 	}
 
-	// Wait for entries to expire
-	time.Sleep(10 * time.Millisecond)
+	// Wait for entries to expire (longer than TTL)
+	time.Sleep(60 * time.Millisecond)
 
-	// Add one fresh entry
+	// Add one fresh entry (this will NOT be expired when ClearExpired runs)
 	err := cache.Put("fresh_query", "162112", "latest", result)
 	if err != nil {
 		t.Fatalf("Failed to put fresh query: %v", err)
 	}
 
-	// Clear expired entries
+	// Clear expired entries immediately (fresh_query should still be valid)
 	removed := cache.ClearExpired()
 	if removed != 5 {
 		t.Errorf("Expected to remove 5 expired entries, removed %d", removed)

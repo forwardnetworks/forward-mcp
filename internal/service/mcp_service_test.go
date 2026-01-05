@@ -837,7 +837,7 @@ func TestGetDeviceLocations(t *testing.T) {
 	}
 
 	content := response.Content[0].TextContent.Text
-	if !contains(content, "Device locations") {
+	if !contains(content, "device locations") {
 		t.Error("Expected response to contain device location information")
 	}
 }
