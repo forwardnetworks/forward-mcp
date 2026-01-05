@@ -58,7 +58,7 @@ func TestAPIMemoryTracker_TrackNetworkQuery(t *testing.T) {
 	}
 
 	if len(relations) != 1 {
-		t.Errorf("Expected 1 'executed_on' relation, got %d", len(relations))
+		t.Fatalf("Expected 1 'executed_on' relation, got %d", len(relations))
 	}
 
 	if relations[0].ToID != networkEntity.ID {
@@ -72,7 +72,7 @@ func TestAPIMemoryTracker_TrackNetworkQuery(t *testing.T) {
 	}
 
 	if len(observations) != 1 {
-		t.Errorf("Expected 1 performance observation, got %d", len(observations))
+		t.Fatalf("Expected 1 performance observation, got %d", len(observations))
 	}
 
 	if !contains(observations[0].Content, "150ms") {
@@ -140,7 +140,7 @@ func TestAPIMemoryTracker_TrackDeviceDiscovery(t *testing.T) {
 	}
 
 	if len(relations) != 1 {
-		t.Errorf("Expected 1 'belongs_to' relation, got %d", len(relations))
+		t.Fatalf("Expected 1 'belongs_to' relation, got %d", len(relations))
 	}
 
 	if relations[0].ToID != networkEntity.ID {
@@ -154,7 +154,7 @@ func TestAPIMemoryTracker_TrackDeviceDiscovery(t *testing.T) {
 	}
 
 	if len(observations) != 1 {
-		t.Errorf("Expected 1 device discovery observation, got %d", len(observations))
+		t.Fatalf("Expected 1 device discovery observation, got %d", len(observations))
 	}
 
 	if !contains(observations[0].Content, "2 devices") {
@@ -199,7 +199,7 @@ func TestAPIMemoryTracker_TrackPathSearch(t *testing.T) {
 	}
 
 	if len(entities) != 1 {
-		t.Errorf("Expected 1 path search entity, got %d", len(entities))
+		t.Fatalf("Expected 1 path search entity, got %d", len(entities))
 	}
 
 	searchEntity := entities[0]
@@ -222,7 +222,7 @@ func TestAPIMemoryTracker_TrackPathSearch(t *testing.T) {
 	}
 
 	if len(observations) != 1 {
-		t.Errorf("Expected 1 search result observation, got %d", len(observations))
+		t.Fatalf("Expected 1 search result observation, got %d", len(observations))
 	}
 
 	if !contains(observations[0].Content, "successful") {

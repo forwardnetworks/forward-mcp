@@ -301,7 +301,7 @@ func (m *MemorySystem) SearchEntities(query string, entityType string, limit int
 	}
 
 	if query != "" {
-		whereClause += " AND (e.name LIKE ? OR EXISTS (SELECT 1 FROM observations o WHERE o.entity_id = e.id AND o.content LIKE ?))"
+		whereClause += " AND (e.name LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM observations o WHERE o.entity_id = e.id AND o.content LIKE ? ESCAPE '\\'))"
 		// SECURITY FIX: Escape LIKE pattern to prevent SQL injection via wildcards
 		escapedQuery := escapeLikePattern(query)
 		queryPattern := "%" + escapedQuery + "%"

@@ -953,9 +953,25 @@ func (s *ForwardMCPService) RegisterPrompts(server *mcp.Server) error {
 
 // RegisterResources registers contextual resources with the MCP server
 func (s *ForwardMCPService) RegisterResources(server *mcp.Server) error {
-	// Use the new ResourceManager for modern URI template-based resources
-	resourceManager := NewResourceManager(s, s.logger)
-	return resourceManager.RegisterAllResources(server)
+	// Register network context as a resource
+	if err := server.RegisterResource("forward://network/context", "network_context", "Current network context including available networks and queries", "application/json", func() (*mcp.ResourceResponse, error) {
+		context, err := s.getNetworkContext(NetworkContextArgs{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get network context: %w", err)
+		}
+
+		contextStr, ok := context.(string)
+		if !ok {
+			return nil, fmt.Errorf("network context is not a string")
+		}
+
+		return mcp.NewResourceResponse(mcp.NewTextEmbeddedResource("forward://network/context", contextStr, "application/json")), nil
+	}); err != nil {
+		return fmt.Errorf("failed to register network_context resource: %w", err)
+	}
+
+	s.logger.Debug("Successfully registered MCP resources")
+	return nil
 }
 
 // nqeQueryDiscoveryWorkflow implements the NQE query discovery workflow
