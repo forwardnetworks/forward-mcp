@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/logger"
@@ -35,7 +36,7 @@ func setupSmartSearchTestService() *ForwardMCPService {
 		logger:          testLogger,
 		instanceID:      "test", // Add instance ID for test service
 		defaults:        &ServiceDefaults{},
-		workflowManager: NewWorkflowManager(),
+		workflowManager: NewWorkflowManager(100, 1*time.Hour), // Test with smaller limits
 		semanticCache:   NewSemanticCache(embeddingService, testLogger, "test", nil),
 		queryIndex:      queryIndex,
 	}

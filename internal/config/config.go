@@ -37,11 +37,12 @@ type ForwardConfig struct {
 	InstanceID string `json:"instanceId" env:"FORWARD_INSTANCE_ID"`
 
 	// TLS Configuration
-	InsecureSkipVerify bool   `json:"insecureSkipVerify" env:"FORWARD_INSECURE_SKIP_VERIFY"`
-	CACertPath         string `json:"caCertPath" env:"FORWARD_CA_CERT_PATH"`
-	ClientCertPath     string `json:"clientCertPath" env:"FORWARD_CLIENT_CERT_PATH"`
-	ClientKeyPath      string `json:"clientKeyPath" env:"FORWARD_CLIENT_KEY_PATH"`
-	Timeout            int    `json:"timeout" env:"FORWARD_TIMEOUT"`
+	// SECURITY: InsecureSkipVerify has been removed as it allows MITM attacks
+	// Use CACertPath for custom CA certificates if needed
+	CACertPath     string `json:"caCertPath" env:"FORWARD_CA_CERT_PATH"`
+	ClientCertPath string `json:"clientCertPath" env:"FORWARD_CLIENT_CERT_PATH"`
+	ClientKeyPath  string `json:"clientKeyPath" env:"FORWARD_CLIENT_KEY_PATH"`
+	Timeout        int    `json:"timeout" env:"FORWARD_TIMEOUT"`
 
 	// Semantic Cache Configuration
 	SemanticCache SemanticCacheConfig `json:"semanticCache"`
@@ -87,6 +88,26 @@ type MCPConfig struct {
 	MaxRetries int
 }
 
+// RedisConfig holds Redis-specific configuration for distributed caching and storage
+type RedisConfig struct {
+	Enabled  bool   `json:"enabled" env:"REDIS_ENABLED"`
+	Address  string `json:"address" env:"REDIS_ADDRESS"`
+	Port     int    `json:"port" env:"REDIS_PORT"`
+	Password string `json:"password" env:"REDIS_PASSWORD"`
+	Database int    `json:"database" env:"REDIS_DATABASE"`
+	PoolSize int    `json:"poolSize" env:"REDIS_POOL_SIZE"`
+
+	// TLS Configuration
+	TLSEnabled bool   `json:"tlsEnabled" env:"REDIS_TLS_ENABLED"`
+	CACertPath string `json:"caCertPath" env:"REDIS_CA_CERT_PATH"`
+
+	// Connection settings
+	MaxRetries      int `json:"maxRetries" env:"REDIS_MAX_RETRIES"`
+	MinIdleConns    int `json:"minIdleConns" env:"REDIS_MIN_IDLE_CONNS"`
+	ConnMaxIdleTime int `json:"connMaxIdleTime" env:"REDIS_CONN_MAX_IDLE_TIME"` // seconds
+	ConnMaxLifetime int `json:"connMaxLifetime" env:"REDIS_CONN_MAX_LIFETIME"` // seconds
+}
+
 // LoadConfig loads configuration from environment variables and .env file
 func LoadConfig() *Config {
 	// Try to load .env file (fail silently if not found)
@@ -98,17 +119,16 @@ func LoadConfig() *Config {
 			Host: getEnv("SERVER_HOST", "0.0.0.0"),
 		},
 		Forward: ForwardConfig{
-			APIKey:             getEnv("FORWARD_API_KEY", ""),
-			APISecret:          getEnv("FORWARD_API_SECRET", ""),
-			APIBaseURL:         getEnv("FORWARD_API_BASE_URL", ""),
-			Timeout:            getEnvAsInt("FORWARD_TIMEOUT", 600), // 10 minutes for enhanced API operations
-			InsecureSkipVerify: getEnvAsBool("FORWARD_INSECURE_SKIP_VERIFY", false),
-			CACertPath:         getEnv("FORWARD_CA_CERT_PATH", ""),
-			ClientCertPath:     getEnv("FORWARD_CLIENT_CERT_PATH", ""),
-			ClientKeyPath:      getEnv("FORWARD_CLIENT_KEY_PATH", ""),
-			DefaultNetworkID:   getEnv("FORWARD_DEFAULT_NETWORK_ID", ""),
-			DefaultSnapshotID:  getEnv("FORWARD_DEFAULT_SNAPSHOT_ID", ""),
-			DefaultQueryLimit:  getEnvAsInt("FORWARD_DEFAULT_QUERY_LIMIT", 10000),
+			APIKey:            getEnv("FORWARD_API_KEY", ""),
+			APISecret:         getEnv("FORWARD_API_SECRET", ""),
+			APIBaseURL:        getEnv("FORWARD_API_BASE_URL", ""),
+			Timeout:           getEnvAsInt("FORWARD_TIMEOUT", 600), // 10 minutes for enhanced API operations
+			CACertPath:        getEnv("FORWARD_CA_CERT_PATH", ""),
+			ClientCertPath:    getEnv("FORWARD_CLIENT_CERT_PATH", ""),
+			ClientKeyPath:     getEnv("FORWARD_CLIENT_KEY_PATH", ""),
+			DefaultNetworkID:  getEnv("FORWARD_DEFAULT_NETWORK_ID", ""),
+			DefaultSnapshotID: getEnv("FORWARD_DEFAULT_SNAPSHOT_ID", ""),
+			DefaultQueryLimit: getEnvAsInt("FORWARD_DEFAULT_QUERY_LIMIT", 10000),
 			SemanticCache: SemanticCacheConfig{
 				Enabled:             getEnvAsBool("FORWARD_SEMANTIC_CACHE_ENABLED", true),
 				MaxEntries:          getEnvAsInt("FORWARD_SEMANTIC_CACHE_MAX_ENTRIES", 1000),
@@ -132,6 +152,14 @@ func LoadConfig() *Config {
 			Version:    getEnv("MCP_VERSION", "v1"),
 			MaxRetries: getEnvAsInt("MCP_MAX_RETRIES", 3),
 		},
+	}
+
+	// SECURITY: Check for deprecated InsecureSkipVerify setting
+	if getEnvAsBool("FORWARD_INSECURE_SKIP_VERIFY", false) {
+		debugLogger := logger.New()
+		debugLogger.Fatalf("SECURITY ERROR: FORWARD_INSECURE_SKIP_VERIFY is no longer supported. " +
+			"This setting bypasses TLS certificate validation and enables man-in-the-middle attacks. " +
+			"Remove this environment variable. For custom CA certificates, use FORWARD_CA_CERT_PATH instead.")
 	}
 
 	// Try to load JSON config file
