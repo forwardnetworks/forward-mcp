@@ -29,6 +29,7 @@ This PRD outlines the migration of the Forward MCP Server's semantic caching sys
 12. [Dependencies & Risks](#12-dependencies--risks)
 13. [Open Questions](#13-open-questions)
 14. [Appendix](#14-appendix)
+15. [Industry Patterns & Lessons Learned](#15-industry-patterns--lessons-learned)
 
 ---
 
@@ -684,6 +685,195 @@ feature_flags:
 
 ---
 
+## 15. Industry Patterns & Lessons Learned
+
+This section documents patterns observed in other MCP servers with semantic search capabilities, informing our design decisions.
+
+### 15.1 Surveyed Implementations
+
+| Project | Vector DB | Caching | Hybrid Search | Key Insight |
+|---------|-----------|---------|---------------|-------------|
+| [Qdrant MCP Server](https://github.com/qdrant/mcp-server-qdrant) | Qdrant | None | No | Thin wrapper pattern; 2 tools (store/find) |
+| [Ultimate MCP Server](https://github.com/Dicklesworthstone/ultimate_mcp_server) | Pluggable | 3-tier | Yes (Marqo) | Multi-level caching most sophisticated |
+| [TxtAI Assistant MCP](https://github.com/rmtech1/txtai-assistant-mcp) | TxtAI | Yes | Yes | All-in-one semantic memory |
+| [Claude Context (Zilliz)](https://github.com/zilliztech/claude-context) | Milvus | No | Yes (BM25+dense) | 40% token reduction claimed |
+| [Document MCP](https://github.com/yairwein/document-mcp) | LanceDB | No | No | Local-first, no cloud dependencies |
+| [AWS Bedrock MCP](https://aws.amazon.com/blogs/machine-learning/unlocking-the-power-of-model-context-protocol-mcp-on-aws/) | OpenSearch | Managed | Yes | Enterprise/cloud-native pattern |
+
+### 15.2 Key Lessons Learned
+
+#### Lesson 1: Hybrid Search is Industry Standard
+
+**Observation:** Most production systems combine keyword (BM25) and vector (semantic) search.
+
+**Rationale:**
+- Keyword search handles exact matches efficiently
+- Semantic search catches conceptual similarity
+- Combined approach improves recall without sacrificing precision
+
+**Recommendation for our design:**
+```go
+func (c *RedisCache) Get(query string) (*Result, bool) {
+    // Layer 1: Exact hash match (fastest)
+    if result := c.exactMatch(query); result != nil {
+        return result, true
+    }
+
+    // Layer 2: Keyword/tag search (fast)
+    if result := c.keywordSearch(query); result != nil {
+        return result, true
+    }
+
+    // Layer 3: Semantic vector search (comprehensive)
+    return c.vectorSearch(query)
+}
+```
+
+**Action:** Add hybrid search to Phase 3 of migration plan.
+
+---
+
+#### Lesson 2: Multi-Level Caching Maximizes Hit Rate
+
+**Observation:** Ultimate MCP Server implements 3-tier caching:
+1. **Exact match** - Hash-based lookup
+2. **Semantic similarity** - Vector distance
+3. **Task-aware** - Context-based caching
+
+**Our current design:** 2-tier (exact + semantic)
+
+**Gap:** We lack task-aware caching that considers query context.
+
+**Recommendation:**
+```go
+type CacheKey struct {
+    Query      string  // The NQE query or search
+    TaskType   string  // "nqe_query", "path_search", "device_list"
+    NetworkID  string
+    SnapshotID string
+}
+```
+
+**Benefit:** Same query text in different task contexts should be cached separately.
+
+---
+
+#### Lesson 3: Thin Wrapper vs. Full-Featured Server
+
+**Observation:** Two distinct patterns emerge:
+
+| Pattern | Example | Complexity | Use Case |
+|---------|---------|------------|----------|
+| **Thin Wrapper** | Qdrant MCP | Low | Single-purpose vector memory |
+| **Full-Featured** | Ultimate MCP | High | Multi-capability server |
+
+**Our position:** Full-featured (47+ tools, caching, memory system, bloom filters)
+
+**Lesson:** Our Redis migration should enhance the existing full-featured architecture, not simplify to a thin wrapper.
+
+---
+
+#### Lesson 4: Embedding Strategy Matters
+
+**Observation:** Different embedding approaches observed:
+
+| Approach | Latency | Cost | Quality |
+|----------|---------|------|---------|
+| Local (FastEmbed, sentence-transformers) | ~10ms | Free | Good |
+| Cloud (OpenAI, Cohere) | ~100ms | $$ | Excellent |
+| Hybrid (local + cloud fallback) | Variable | $ | Good+ |
+
+**Our current approach:** Keyword (TF-IDF) or OpenAI
+
+**Recommendation:** Keep hybrid approach but add local embedding option:
+```go
+type EmbeddingProvider string
+
+const (
+    EmbeddingKeyword   EmbeddingProvider = "keyword"    // Free, fast, offline
+    EmbeddingLocal     EmbeddingProvider = "local"      // sentence-transformers
+    EmbeddingOpenAI    EmbeddingProvider = "openai"     // Best quality
+    EmbeddingHybrid    EmbeddingProvider = "hybrid"     // Local + OpenAI fallback
+)
+```
+
+---
+
+#### Lesson 5: Token Reduction is a Key Metric
+
+**Observation:** Claude Context (Zilliz) measures success by token reduction:
+> "~40% token reduction under equivalent retrieval quality"
+
+**Our current metrics:** Hit rate, latency, API cost
+
+**Recommendation:** Add token reduction metric:
+```go
+type CacheMetrics struct {
+    // Existing
+    HitRate           float64
+    AvgLatencyMs      float64
+    APICostSaved      float64
+
+    // New: Token efficiency
+    TokensServedFromCache  int64   // Tokens returned from cache hits
+    TokensAvoidedByCache   int64   // Estimated tokens saved vs. fresh API call
+    TokenReductionPercent  float64 // Overall reduction percentage
+}
+```
+
+---
+
+#### Lesson 6: Local-First Option Valuable
+
+**Observation:** Document MCP uses LanceDB for fully local operation (no cloud dependencies).
+
+**Our design:** Requires Redis (external dependency)
+
+**Recommendation:** Maintain in-memory fallback as first-class option, not just failure mode:
+```yaml
+# Configuration options
+cache_mode: redis      # Primary: distributed Redis
+cache_mode: local      # Alternative: in-memory only (single instance)
+cache_mode: hybrid     # Redis with local fallback
+```
+
+---
+
+### 15.3 Architectural Decisions Informed by Research
+
+| Decision | Options Considered | Choice | Rationale |
+|----------|-------------------|--------|-----------|
+| **Vector DB** | Qdrant, Milvus, LanceDB, Redis | Redis | Already planned; provides caching + vectors |
+| **Embedding** | Cloud-only, Local-only, Hybrid | Hybrid | Balance cost, latency, quality |
+| **Search** | Vector-only, Hybrid | Hybrid | Industry standard; improves precision |
+| **Caching tiers** | 2-tier, 3-tier | 3-tier | Add task-aware for better hit rate |
+| **Architecture** | Thin wrapper, Full-featured | Full-featured | Matches existing 47+ tool design |
+| **Deployment** | Embedded, Separate service | Embedded | Lower latency, simpler deployment |
+
+### 15.4 Updated Feature Priorities
+
+Based on industry analysis, the following features are elevated in priority:
+
+| Feature | Original Priority | New Priority | Justification |
+|---------|------------------|--------------|---------------|
+| Hybrid search (BM25 + vector) | Not planned | P1 | Industry standard |
+| Task-aware caching | Not planned | P2 | Improves hit rate |
+| Token reduction metrics | Not planned | P2 | Key success metric |
+| Local embedding option | P3 | P2 | Reduces cost/latency |
+| Local-first mode | Fallback only | P2 | Valuable for dev/edge |
+
+### 15.5 References
+
+- [Qdrant MCP Server](https://github.com/qdrant/mcp-server-qdrant) - Official Qdrant implementation
+- [Ultimate MCP Server](https://github.com/Dicklesworthstone/ultimate_mcp_server) - Multi-level caching patterns
+- [TxtAI Assistant MCP](https://github.com/rmtech1/txtai-assistant-mcp) - Semantic memory management
+- [Claude Context (Zilliz)](https://github.com/zilliztech/claude-context) - Token reduction benchmarks
+- [Milvus MCP Documentation](https://milvus.io/docs/milvus_and_mcp.md) - Vector DB integration
+- [AWS Bedrock MCP](https://aws.amazon.com/blogs/machine-learning/unlocking-the-power-of-model-context-protocol-mcp-on-aws/) - Cloud-native patterns
+- [Anthropic MCP Documentation](https://docs.anthropic.com/en/docs/build-with-claude/mcp) - Protocol specification
+
+---
+
 ## Approval
 
 | Role | Name | Date | Signature |
@@ -696,3 +886,4 @@ feature_flags:
 ---
 
 *Document generated: January 5, 2026*
+*Last updated: January 5, 2026 - Added Industry Patterns & Lessons Learned*
