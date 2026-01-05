@@ -574,7 +574,7 @@ func createTestService() *ForwardMCPService {
 			SnapshotID: "",
 			QueryLimit: 100,
 		},
-		workflowManager: NewWorkflowManager(),
+		workflowManager: NewWorkflowManager(100, 1*time.Hour), // Test with smaller limits
 		semanticCache:   semanticCache,
 		queryIndex:      queryIndex,
 		database:        nil, // No database for tests

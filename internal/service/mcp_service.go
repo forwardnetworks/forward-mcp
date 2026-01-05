@@ -17,6 +17,7 @@ import (
 	"github.com/forward-mcp/internal/logger"
 	_ "github.com/mattn/go-sqlite3"
 	mcp "github.com/metoro-io/mcp-golang"
+	"golang.org/x/sync/errgroup"
 )
 
 // Arguments for get_nqe_result_chunks tool
@@ -40,23 +41,40 @@ type WorkflowState struct {
 	SnapshotID    string                 `json:"snapshot_id"`
 }
 
-// WorkflowManager manages user workflow states
+// WorkflowManager manages user workflow states with automatic cleanup
 type WorkflowManager struct {
-	sessions map[string]*WorkflowState
-	mutex    sync.RWMutex
+	sessions     map[string]*WorkflowState
+	lastAccessed map[string]time.Time
+	mutex        sync.RWMutex
+	maxSessions  int
+	sessionTTL   time.Duration
+	stopCleanup  chan struct{}
 }
 
-// NewWorkflowManager creates a new workflow manager
-func NewWorkflowManager() *WorkflowManager {
-	return &WorkflowManager{
-		sessions: make(map[string]*WorkflowState),
+// NewWorkflowManager creates a new workflow manager with automatic session cleanup
+func NewWorkflowManager(maxSessions int, sessionTTL time.Duration) *WorkflowManager {
+	wm := &WorkflowManager{
+		sessions:     make(map[string]*WorkflowState),
+		lastAccessed: make(map[string]time.Time),
+		maxSessions:  maxSessions,
+		sessionTTL:   sessionTTL,
+		stopCleanup:  make(chan struct{}),
 	}
+
+	// Start cleanup goroutine
+	go wm.cleanupLoop()
+
+	return wm
 }
 
-// GetState gets the workflow state for a session
+// GetState gets the workflow state for a session and updates last access time
 func (wm *WorkflowManager) GetState(sessionID string) *WorkflowState {
-	wm.mutex.RLock()
-	defer wm.mutex.RUnlock()
+	wm.mutex.Lock()
+	defer wm.mutex.Unlock()
+
+	// Update last accessed time
+	wm.lastAccessed[sessionID] = time.Now()
+
 	if state, exists := wm.sessions[sessionID]; exists {
 		return state
 	}
@@ -71,6 +89,41 @@ func (wm *WorkflowManager) SetState(sessionID string, state *WorkflowState) {
 	wm.mutex.Lock()
 	defer wm.mutex.Unlock()
 	wm.sessions[sessionID] = state
+	wm.lastAccessed[sessionID] = time.Now()
+}
+
+// cleanupLoop runs periodically to clean up stale sessions
+func (wm *WorkflowManager) cleanupLoop() {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			wm.cleanup()
+		case <-wm.stopCleanup:
+			return
+		}
+	}
+}
+
+// cleanup removes sessions that have exceeded their TTL
+func (wm *WorkflowManager) cleanup() {
+	wm.mutex.Lock()
+	defer wm.mutex.Unlock()
+
+	now := time.Now()
+	for sessionID, lastAccess := range wm.lastAccessed {
+		if now.Sub(lastAccess) > wm.sessionTTL {
+			delete(wm.sessions, sessionID)
+			delete(wm.lastAccessed, sessionID)
+		}
+	}
+}
+
+// Close stops the cleanup goroutine
+func (wm *WorkflowManager) Close() {
+	close(wm.stopCleanup)
 }
 
 // ForwardMCPService implements Forward Networks MCP tools using mcp-golang
@@ -178,7 +231,7 @@ func NewForwardMCPService(cfg *config.Config, logger *logger.Logger) *ForwardMCP
 			SnapshotID: cfg.Forward.DefaultSnapshotID,
 			QueryLimit: cfg.Forward.DefaultQueryLimit,
 		},
-		workflowManager:   NewWorkflowManager(),
+		workflowManager:   NewWorkflowManager(1000, 24*time.Hour), // Max 1000 sessions, 24h TTL
 		semanticCache:     semanticCache,
 		queryIndex:        queryIndex,
 		database:          database,
@@ -285,33 +338,106 @@ func NewForwardMCPService(cfg *config.Config, logger *logger.Logger) *ForwardMCP
 func (s *ForwardMCPService) Shutdown(timeout time.Duration) error {
 	s.logger.Info("Shutting down ForwardMCPService...")
 
-	// Cancel the context
+	// Cancel the service context
 	s.cancelFunc()
+
+	// Create shutdown context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	// Use errgroup to shutdown components concurrently with timeout enforcement
+	g, gctx := errgroup.WithContext(ctx)
 
 	// Close database connection if it exists
 	if s.database != nil {
-		if err := s.database.Close(); err != nil {
-			s.logger.Error("Failed to close database: %v", err)
-			return fmt.Errorf("failed to close database: %w", err)
-		}
+		g.Go(func() error {
+			if err := s.database.Close(); err != nil {
+				s.logger.Error("Failed to close database: %v", err)
+				return fmt.Errorf("failed to close database: %w", err)
+			}
+			return nil
+		})
 	}
 
 	// Close memory system if it exists
 	if s.memorySystem != nil {
-		if err := s.memorySystem.Close(); err != nil {
-			s.logger.Error("Failed to close memory system: %v", err)
-			return fmt.Errorf("failed to close memory system: %w", err)
-		}
+		g.Go(func() error {
+			if err := s.memorySystem.Close(); err != nil {
+				s.logger.Error("Failed to close memory system: %v", err)
+				return fmt.Errorf("failed to close memory system: %w", err)
+			}
+			return nil
+		})
 	}
 
 	// Close bloom index manager
 	if s.bloomIndexManager != nil {
-		if err := s.bloomIndexManager.Close(); err != nil {
-			s.logger.Error("Failed to close bloom index manager: %v", err)
+		g.Go(func() error {
+			if err := s.bloomIndexManager.Close(); err != nil {
+				s.logger.Error("Failed to close bloom index manager: %v", err)
+				return fmt.Errorf("failed to close bloom index manager: %w", err)
+			}
+			return nil
+		})
+	}
+
+	// Stop workflow manager cleanup goroutine (non-blocking)
+	if s.workflowManager != nil {
+		s.workflowManager.Close()
+	}
+
+	// Wait for all shutdown operations to complete or timeout
+	if err := g.Wait(); err != nil {
+		// Check if timeout occurred
+		if gctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("shutdown timed out after %v: %w", timeout, err)
 		}
+		return fmt.Errorf("shutdown error: %w", err)
 	}
 
 	s.logger.Info("ForwardMCPService shutdown complete")
+	return nil
+}
+
+// Validation helper functions - provide LLM-friendly error messages
+
+// validateNetworkID validates that a network ID is provided, with helpful guidance
+func (s *ForwardMCPService) validateNetworkID(networkID string) error {
+	if networkID == "" {
+		return fmt.Errorf("network_id is required. Use the list_networks tool to find available networks, or use set_default_network to configure a default network")
+	}
+	return nil
+}
+
+// validateQueryID validates that a query ID is provided
+func (s *ForwardMCPService) validateQueryID(queryID string) error {
+	if queryID == "" {
+		return fmt.Errorf("query_id is required. Use the list_nqe_queries or search_nqe_queries tool to find available queries and their IDs")
+	}
+	return nil
+}
+
+// validateEntityName validates that an entity name is provided
+func (s *ForwardMCPService) validateEntityName(name string) error {
+	if name == "" {
+		return fmt.Errorf("entity name is required and cannot be empty")
+	}
+	return nil
+}
+
+// validateEntityType validates that an entity type is provided
+func (s *ForwardMCPService) validateEntityType(entityType string) error {
+	if entityType == "" {
+		return fmt.Errorf("entity type is required and cannot be empty. Common types include: 'user', 'network', 'device', 'project', 'session'")
+	}
+	return nil
+}
+
+// validateNonEmpty validates that a required string field is not empty
+func (s *ForwardMCPService) validateNonEmpty(fieldName, value string) error {
+	if value == "" {
+		return fmt.Errorf("%s is required and cannot be empty", fieldName)
+	}
 	return nil
 }
 
@@ -827,25 +953,9 @@ func (s *ForwardMCPService) RegisterPrompts(server *mcp.Server) error {
 
 // RegisterResources registers contextual resources with the MCP server
 func (s *ForwardMCPService) RegisterResources(server *mcp.Server) error {
-	// Register network context as a resource
-	if err := server.RegisterResource("forward://network/context", "network_context", "Current network context including available networks and queries", "application/json", func() (*mcp.ResourceResponse, error) {
-		context, err := s.getNetworkContext(NetworkContextArgs{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get network context: %w", err)
-		}
-
-		contextStr, ok := context.(string)
-		if !ok {
-			return nil, fmt.Errorf("network context is not a string")
-		}
-
-		return mcp.NewResourceResponse(mcp.NewTextEmbeddedResource("forward://network/context", contextStr, "application/json")), nil
-	}); err != nil {
-		return fmt.Errorf("failed to register network_context resource: %w", err)
-	}
-
-	s.logger.Debug("Successfully registered MCP resources")
-	return nil
+	// Use the new ResourceManager for modern URI template-based resources
+	resourceManager := NewResourceManager(s, s.logger)
+	return resourceManager.RegisterAllResources(server)
 }
 
 // nqeQueryDiscoveryWorkflow implements the NQE query discovery workflow
@@ -1273,6 +1383,12 @@ func (s *ForwardMCPService) listNetworks(args ListNetworksArgs) (*mcp.ToolRespon
 
 func (s *ForwardMCPService) createNetwork(args CreateNetworkArgs) (*mcp.ToolResponse, error) {
 	s.logToolCall("create_network", args, nil)
+
+	// Validate required fields
+	if err := s.validateNonEmpty("network name", args.Name); err != nil {
+		return nil, err
+	}
+
 	network, err := s.forwardClient.CreateNetwork(args.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network: %w", err)
@@ -1284,6 +1400,12 @@ func (s *ForwardMCPService) createNetwork(args CreateNetworkArgs) (*mcp.ToolResp
 
 func (s *ForwardMCPService) deleteNetwork(args DeleteNetworkArgs) (*mcp.ToolResponse, error) {
 	s.logToolCall("delete_network", args, nil)
+
+	// Validate required fields
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
 	network, err := s.forwardClient.DeleteNetwork(args.NetworkID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete network: %w", err)
@@ -1295,6 +1417,12 @@ func (s *ForwardMCPService) deleteNetwork(args DeleteNetworkArgs) (*mcp.ToolResp
 
 func (s *ForwardMCPService) updateNetwork(args UpdateNetworkArgs) (*mcp.ToolResponse, error) {
 	s.logToolCall("update_network", args, nil)
+
+	// Validate required fields
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
 	update := &forward.NetworkUpdate{}
 	if args.Name != "" {
 		update.Name = &args.Name
@@ -1574,8 +1702,16 @@ func (s *ForwardMCPService) convertNQEQueryOptions(options *NQEQueryOptions) *fo
 func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.ToolResponse, error) {
 	s.logToolCall("run_nqe_query_by_id", args, nil)
 
+	// Validate required fields
+	if err := s.validateQueryID(args.QueryID); err != nil {
+		return nil, err
+	}
+
 	// Use defaults if not specified
 	networkID := s.getNetworkID(args.NetworkID)
+	if err := s.validateNetworkID(networkID); err != nil {
+		return nil, err
+	}
 	snapshotID := s.getSnapshotID(args.SnapshotID)
 
 	// Proactive warning for potentially large queries
@@ -3230,6 +3366,14 @@ func (s *ForwardMCPService) getDatabaseStatus(args GetDatabaseStatusArgs) (*mcp.
 func (s *ForwardMCPService) createEntity(args CreateEntityArgs) (*mcp.ToolResponse, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
+	}
+
+	// Validate required fields
+	if err := s.validateEntityName(args.Name); err != nil {
+		return nil, err
+	}
+	if err := s.validateEntityType(args.Type); err != nil {
+		return nil, err
 	}
 
 	entity, err := s.memorySystem.CreateEntity(args.Name, args.Type, args.Metadata)

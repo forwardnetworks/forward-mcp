@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
-
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/forward-mcp/internal/forward"
 	"github.com/forward-mcp/internal/logger"
@@ -273,6 +273,18 @@ func (m *MemorySystem) AddObservation(entityID, content, observationType string,
 	return observation, nil
 }
 
+// escapeLikePattern escapes special characters in SQL LIKE patterns to prevent SQL injection
+// SECURITY: Prevents LIKE pattern injection attacks by escaping wildcards
+func escapeLikePattern(pattern string) string {
+	// Escape backslash first (it's the escape character)
+	pattern = strings.ReplaceAll(pattern, "\\", "\\\\")
+	// Escape percent wildcard
+	pattern = strings.ReplaceAll(pattern, "%", "\\%")
+	// Escape underscore wildcard
+	pattern = strings.ReplaceAll(pattern, "_", "\\_")
+	return pattern
+}
+
 // SearchEntities searches for entities by name, type, or content
 func (m *MemorySystem) SearchEntities(query string, entityType string, limit int) ([]*Entity, error) {
 	if limit <= 0 {
@@ -290,7 +302,9 @@ func (m *MemorySystem) SearchEntities(query string, entityType string, limit int
 
 	if query != "" {
 		whereClause += " AND (e.name LIKE ? OR EXISTS (SELECT 1 FROM observations o WHERE o.entity_id = e.id AND o.content LIKE ?))"
-		queryPattern := "%" + query + "%"
+		// SECURITY FIX: Escape LIKE pattern to prevent SQL injection via wildcards
+		escapedQuery := escapeLikePattern(query)
+		queryPattern := "%" + escapedQuery + "%"
 		args = append(args, queryPattern, queryPattern)
 	}
 

@@ -11,8 +11,11 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/forward-mcp/internal/config"
@@ -287,26 +290,30 @@ func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*forward.NQER
 		}
 	}()
 
-	sc.mutex.RLock()
-	defer sc.mutex.RUnlock()
+	// SECURITY FIX: Use atomic operations for metrics to prevent data races
+	atomic.AddInt64(&sc.metrics.TotalQueries, 1)
 
-	// Only increment TotalQueries once per Get call
-	sc.metrics.TotalQueries++
+	sc.mutex.RLock()
+	key := sc.generateCacheKey(query, networkID, snapshotID)
+	entry, exists := sc.entries[key]
+	sc.mutex.RUnlock()
 
 	// First try exact match
-	key := sc.generateCacheKey(query, networkID, snapshotID)
-	if entry, exists := sc.entries[key]; exists && !sc.isExpired(entry) {
+	if exists && !sc.isExpired(entry) {
 		result, err := sc.getResultFromEntry(entry)
 		if err != nil {
 			sc.logger.Error("Failed to retrieve result from cache entry: %v", err)
-			sc.metrics.MissCount++
+			atomic.AddInt64(&sc.metrics.MissCount, 1)
 			return nil, false
 		}
 
-		// Update access metrics
+		// SECURITY FIX: Update access metrics with proper locking
+		sc.mutex.Lock()
 		entry.AccessCount++
 		entry.LastAccessed = time.Now()
-		sc.metrics.HitCount++
+		sc.mutex.Unlock()
+
+		atomic.AddInt64(&sc.metrics.HitCount, 1)
 
 		sc.logger.Debug("CACHE HIT: Exact match for query: %s (compression: %v, size: %d bytes)",
 			truncateString(query, 50), entry.IsCompressed, entry.CompressedSize)
@@ -325,13 +332,17 @@ func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*forward.NQER
 				result, err := sc.getResultFromEntry(bestMatch)
 				if err != nil {
 					sc.logger.Error("Failed to retrieve result from best match: %v", err)
-					sc.metrics.MissCount++
+					atomic.AddInt64(&sc.metrics.MissCount, 1)
 					return nil, false
 				}
 
+				// SECURITY FIX: Update access metrics with proper locking
+				sc.mutex.Lock()
 				bestMatch.AccessCount++
 				bestMatch.LastAccessed = time.Now()
-				sc.metrics.HitCount++
+				sc.mutex.Unlock()
+
+				atomic.AddInt64(&sc.metrics.HitCount, 1)
 
 				sc.logger.Debug("CACHE HIT: Semantic match (%.3f similarity) for query: %s",
 					bestMatch.SimilarityScore, truncateString(query, 50))
@@ -340,7 +351,7 @@ func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*forward.NQER
 		}
 	}
 
-	sc.metrics.MissCount++
+	atomic.AddInt64(&sc.metrics.MissCount, 1)
 	return nil, false
 }
 
@@ -553,8 +564,17 @@ func (sc *SemanticCache) evictEntriesByPolicy(maxToEvict int) int {
 		}
 	}
 
-	sc.metrics.EvictedCount += int64(evicted)
-	sc.metrics.EvictionsByPolicy[string(policy)] += int64(evicted)
+	// SECURITY FIX: Use atomic operations for eviction metrics
+	atomic.AddInt64(&sc.metrics.EvictedCount, int64(evicted))
+
+	// For EvictionsByPolicy map, we need to use a mutex since it's a map
+	if sc.metricsEnabled && evicted > 0 {
+		// Note: The caller should already have a lock, but this is safe
+		if sc.metrics.EvictionsByPolicy == nil {
+			sc.metrics.EvictionsByPolicy = make(map[string]int64)
+		}
+		sc.metrics.EvictionsByPolicy[string(policy)] += int64(evicted)
+	}
 
 	return evicted
 }
@@ -639,9 +659,15 @@ func (sc *SemanticCache) GetStats() map[string]interface{} {
 	sc.mutex.RLock()
 	defer sc.mutex.RUnlock()
 
+	// SECURITY FIX: Use atomic operations to read metrics safely
+	totalQueries := atomic.LoadInt64(&sc.metrics.TotalQueries)
+	hitCount := atomic.LoadInt64(&sc.metrics.HitCount)
+	missCount := atomic.LoadInt64(&sc.metrics.MissCount)
+	evictedCount := atomic.LoadInt64(&sc.metrics.EvictedCount)
+
 	hitRate := float64(0)
-	if sc.metrics.TotalQueries > 0 {
-		hitRate = float64(sc.metrics.HitCount) / float64(sc.metrics.TotalQueries) * 100
+	if totalQueries > 0 {
+		hitRate = float64(hitCount) / float64(totalQueries) * 100
 	}
 
 	// Update current metrics
@@ -652,9 +678,9 @@ func (sc *SemanticCache) GetStats() map[string]interface{} {
 
 	return map[string]interface{}{
 		"total_entries":        len(sc.entries),
-		"total_queries":        sc.metrics.TotalQueries,
-		"cache_hits":           sc.metrics.HitCount,
-		"cache_misses":         sc.metrics.MissCount,
+		"total_queries":        totalQueries,
+		"cache_hits":           hitCount,
+		"cache_misses":         missCount,
 		"hit_rate_percent":     fmt.Sprintf("%.2f", hitRate),
 		"threshold":            sc.similarityThreshold,
 		"max_entries":          sc.maxEntries,
@@ -666,7 +692,7 @@ func (sc *SemanticCache) GetStats() map[string]interface{} {
 		"compression_enabled":  sc.compressionEnabled,
 		"compression_ratio":    fmt.Sprintf("%.3f", sc.metrics.CompressionRatio),
 		"avg_response_time_ms": fmt.Sprintf("%.2f", sc.metrics.AvgResponseTimeMs),
-		"evicted_count":        sc.metrics.EvictedCount,
+		"evicted_count":        evictedCount,
 		"evictions_by_policy":  sc.metrics.EvictionsByPolicy,
 		"last_cleanup":         sc.metrics.LastCleanup,
 		"persistence_enabled":  sc.persistToDisk,
@@ -817,6 +843,17 @@ func (sc *SemanticCache) saveToDisk(entry *CacheEntry) error {
 		return fmt.Errorf("persistence not enabled or disk path not set")
 	}
 
+	// SECURITY: Validate hash format to prevent directory traversal
+	// Hash should only contain hexadecimal characters (a-f0-9)
+	if !regexp.MustCompile(`^[a-f0-9]+$`).MatchString(entry.Hash) {
+		return fmt.Errorf("security: invalid hash format (must be hexadecimal): %s", entry.Hash)
+	}
+
+	// Ensure no path separators in hash
+	if strings.ContainsAny(entry.Hash, `/\`) {
+		return fmt.Errorf("security: hash contains path separators: %s", entry.Hash)
+	}
+
 	filePath := filepath.Join(sc.diskCachePath, entry.Hash)
 
 	// Serialize entry to JSON
@@ -866,15 +903,31 @@ func (sc *SemanticCache) saveToDisk(entry *CacheEntry) error {
 
 // loadFromDisk loads a cache entry from disk
 func (sc *SemanticCache) loadFromDisk(filePath string) (*forward.NQERunResult, error) {
-	filePath = filepath.Clean(filePath)
+	cleanPath := filepath.Clean(filePath)
+
+	// SECURITY: Ensure path is within allowed cache directory to prevent path traversal attacks
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cache file path: %w", err)
+	}
+
+	absCacheDir, err := filepath.Abs(sc.diskCachePath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cache directory path: %w", err)
+	}
+
+	// Verify the path is within the cache directory
+	if !strings.HasPrefix(absPath, absCacheDir+string(filepath.Separator)) {
+		return nil, fmt.Errorf("security: path traversal attempt detected: %s", cleanPath)
+	}
 
 	// Check if file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("cache file not found at %s", filePath)
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("cache file not found at %s", absPath)
 	}
 
 	// Read file
-	fileBytes, err := os.ReadFile(filePath)
+	fileBytes, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from disk cache file %s: %w", filePath, err)
 	}

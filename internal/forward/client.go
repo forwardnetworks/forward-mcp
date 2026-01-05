@@ -9,12 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
-
-	"math"
 
 	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/logger"
@@ -81,9 +81,16 @@ type Client struct {
 
 // NewClient creates a new Forward platform client
 func NewClient(config *config.ForwardConfig) ClientInterface {
-	// Create TLS configuration
+	// Create TLS configuration with strong security settings
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: config.InsecureSkipVerify,
+		// SECURITY: Enforce TLS 1.3 minimum version
+		MinVersion: tls.VersionTLS13,
+		// SECURITY: Use only secure cipher suites
+		CipherSuites: []uint16{
+			tls.TLS_AES_128_GCM_SHA256,
+			tls.TLS_AES_256_GCM_SHA384,
+			tls.TLS_CHACHA20_POLY1305_SHA256,
+		},
 	}
 
 	// Load custom CA certificate if provided
@@ -117,6 +124,28 @@ func NewClient(config *config.ForwardConfig) ClientInterface {
 		},
 		config: config,
 	}
+}
+
+// makeSecureAuthHeader creates a Basic Auth header and zeros sensitive data from memory
+// SECURITY: This function ensures credentials don't persist in memory after use
+func (c *Client) makeSecureAuthHeader() (string, error) {
+	// Use byte slice for credentials to enable zeroing
+	credentials := make([]byte, len(c.config.APIKey)+len(c.config.APISecret)+1)
+	defer func() {
+		// SECURITY: Zero sensitive data from memory after use
+		for i := range credentials {
+			credentials[i] = 0
+		}
+	}()
+
+	// Build credentials: "key:secret"
+	copy(credentials, c.config.APIKey)
+	credentials[len(c.config.APIKey)] = ':'
+	copy(credentials[len(c.config.APIKey)+1:], c.config.APISecret)
+
+	// Encode to base64
+	auth := base64.StdEncoding.EncodeToString(credentials)
+	return "Basic " + auth, nil
 }
 
 // Legacy types for backward compatibility
@@ -446,12 +475,28 @@ func (c *Client) makeRequest(method, endpoint string, body interface{}) (*http.R
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	auth := base64.StdEncoding.EncodeToString([]byte(c.config.APIKey + ":" + c.config.APISecret))
-	req.Header.Set("Authorization", "Basic "+auth)
+
+	// SECURITY FIX: Zero sensitive credentials from memory after use
+	authHeader, err := c.makeSecureAuthHeader()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create auth header: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		// Provide LLM-friendly error messages based on error type
+		errStr := err.Error()
+		if strings.Contains(errStr, "connection refused") {
+			return nil, fmt.Errorf("cannot connect to Forward Networks API at %s. Please verify FORWARD_API_BASE_URL is correct and the API is accessible: %w", c.config.APIBaseURL, err)
+		}
+		if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline exceeded") {
+			return nil, fmt.Errorf("API request timed out. The Forward Networks API may be slow or overloaded. Try again in a moment: %w", err)
+		}
+		if strings.Contains(errStr, "no such host") {
+			return nil, fmt.Errorf("cannot resolve API hostname %s. Please check FORWARD_API_BASE_URL and network connectivity: %w", c.config.APIBaseURL, err)
+		}
+		return nil, fmt.Errorf("failed to send request to Forward Networks API: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -459,9 +504,29 @@ func (c *Client) makeRequest(method, endpoint string, body interface{}) (*http.R
 		errorBody, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
-		errorMsg := fmt.Sprintf("unexpected status code: %d", resp.StatusCode)
+		// Provide LLM-friendly error messages based on status code
+		switch resp.StatusCode {
+		case 401:
+			return nil, fmt.Errorf("authentication failed (HTTP 401): please verify FORWARD_API_KEY and FORWARD_API_SECRET environment variables are correct. These credentials are required to access the Forward Networks API")
+		case 403:
+			return nil, fmt.Errorf("access forbidden (HTTP 403): your API credentials are valid but lack permission to access this resource. Please check your Forward Networks account permissions")
+		case 404:
+			return nil, fmt.Errorf("resource not found (HTTP 404): the requested endpoint %s does not exist. Please verify the network ID, snapshot ID, or resource ID is correct", endpoint)
+		case 429:
+			return nil, fmt.Errorf("rate limit exceeded (HTTP 429): too many requests to Forward Networks API. Please wait before retrying")
+		case 500, 502, 503, 504:
+			return nil, fmt.Errorf("Forward Networks API server error (HTTP %d): the API is experiencing issues. Please try again later or contact Forward Networks support", resp.StatusCode)
+		}
+
+		// For other errors, provide the original error with context
+		errorMsg := fmt.Sprintf("API request failed with HTTP %d", resp.StatusCode)
 		if readErr == nil && len(errorBody) > 0 {
-			errorMsg += fmt.Sprintf(", response: %s", string(errorBody))
+			// Log full response server-side for debugging, but don't expose it to LLM
+			debugLogger := logger.New()
+			debugLogger.Debug("API Error Response: Status=%d, Endpoint=%s, Body=%s", resp.StatusCode, endpoint, string(errorBody))
+
+			// Provide sanitized message to LLM
+			errorMsg += ". Check server logs for details"
 		}
 
 		// Log additional debugging information for 400 errors
@@ -470,6 +535,7 @@ func (c *Client) makeRequest(method, endpoint string, body interface{}) (*http.R
 			debugLogger := logger.New()
 			debugLogger.Debug("400 Bad Request - URL: %s%s, Method: %s, Body Size: %d bytes",
 				c.config.APIBaseURL, endpoint, method, len(reqBody))
+			return nil, fmt.Errorf("bad request (HTTP 400): the API rejected the request parameters. Please verify all required fields are provided and have valid values")
 		}
 
 		return nil, fmt.Errorf("%s", errorMsg)

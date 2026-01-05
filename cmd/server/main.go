@@ -69,11 +69,8 @@ func main() {
 		logger.Info("Environment initialized - Default network: not set")
 	}
 
-	if cfg.Forward.InsecureSkipVerify {
-		logger.Info("Environment initialized - TLS verification: disabled")
-	} else {
-		logger.Info("Environment initialized - TLS verification: enabled")
-	}
+	// SECURITY: TLS 1.3 is now enforced, InsecureSkipVerify has been removed
+	logger.Info("Environment initialized - TLS verification: enabled (TLS 1.3 minimum)")
 
 	// Security: Do not log sensitive configuration details even in debug mode
 	// Use INFO level logging above for configuration visibility

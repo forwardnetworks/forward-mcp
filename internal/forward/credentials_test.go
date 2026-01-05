@@ -41,8 +41,8 @@ func TestForwardAPICredentials(t *testing.T) {
 	if cfg.Forward.APISecret != "" {
 		maskedSecret = "****"
 	}
-	t.Logf("API_KEY: %q, API_SECRET: %q, API_BASE_URL: %q, INSECURE_SKIP_VERIFY: %v",
-		maskedKey, maskedSecret, cfg.Forward.APIBaseURL, cfg.Forward.InsecureSkipVerify)
+	t.Logf("API_KEY: %q, API_SECRET: %q, API_BASE_URL: %q, TLS_VERIFICATION: %s",
+		maskedKey, maskedSecret, cfg.Forward.APIBaseURL, "enabled (TLS 1.3+)")
 
 	if cfg.Forward.APIKey == "" || cfg.Forward.APISecret == "" || cfg.Forward.APIBaseURL == "" {
 		t.Skip("FORWARD_API_KEY, FORWARD_API_SECRET, and FORWARD_API_BASE_URL must be set to run this test")

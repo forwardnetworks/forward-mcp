@@ -212,14 +212,12 @@ type NetworkDiscoveryArgs struct {
 
 // Resource Arguments
 type NetworkContextArgs struct {
-	// Dummy parameter for MCP framework compatibility
-	Dummy string `json:"dummy,omitempty" jsonschema:"description=Dummy parameter for no-parameter tools"`
+	// No parameters needed - MCP handles empty structs correctly
 }
 
 // Default Settings Management argument structures
 type GetDefaultSettingsArgs struct {
-	// Dummy parameter for MCP framework compatibility
-	Dummy string `json:"dummy,omitempty" jsonschema:"description=Dummy parameter for no-parameter tools"`
+	// No parameters needed - MCP handles empty structs correctly
 }
 
 type SetDefaultNetworkArgs struct {
@@ -228,8 +226,7 @@ type SetDefaultNetworkArgs struct {
 
 // Semantic Cache and AI Enhancement Args
 type GetCacheStatsArgs struct {
-	// Dummy parameter for MCP framework compatibility
-	Dummy string `json:"dummy,omitempty" jsonschema:"description=Dummy parameter for no-parameter tools"`
+	// No parameters needed - MCP handles empty structs correctly
 }
 
 type SuggestSimilarQueriesArgs struct {
@@ -267,8 +264,7 @@ type FindExecutableQueryArgs struct {
 
 // Smart Query Workflow Arguments
 type SmartQueryWorkflowArgs struct {
-	// Dummy parameter for MCP framework compatibility
-	Dummy string `json:"dummy,omitempty" jsonschema:"description=Dummy parameter for no-parameter tools"`
+	// No parameters needed - MCP handles empty structs correctly
 }
 
 // Database Hydration Tools Arguments
@@ -280,13 +276,11 @@ type HydrateDatabaseArgs struct {
 }
 
 type RefreshQueryIndexArgs struct {
-	// Dummy parameter for MCP framework compatibility
-	Dummy string `json:"dummy,omitempty" jsonschema:"description=Dummy parameter for no-parameter tools"`
+	// No parameters needed - MCP handles empty structs correctly
 }
 
 type GetDatabaseStatusArgs struct {
-	// Dummy parameter for MCP framework compatibility
-	Dummy string `json:"dummy,omitempty" jsonschema:"description=Dummy parameter for no-parameter tools"`
+	// No parameters needed - MCP handles empty structs correctly
 }
 
 type GetQueryIndexStatsArgs struct {
@@ -353,8 +347,7 @@ type DeleteObservationArgs struct {
 }
 
 type GetMemoryStatsArgs struct {
-	// Dummy parameter for MCP framework compatibility
-	Dummy string `json:"dummy,omitempty" jsonschema:"description=Dummy parameter for no-parameter tools"`
+	// No parameters needed - MCP handles empty structs correctly
 }
 
 // API Analytics Tools Arguments
@@ -425,8 +418,7 @@ type SearchBloomFilterArgs struct {
 }
 
 type GetBloomFilterStatsArgs struct {
-	// Dummy parameter for MCP framework compatibility
-	Dummy string `json:"dummy,omitempty" jsonschema:"description=Dummy parameter for no-parameter tools"`
+	// No parameters needed - MCP handles empty structs correctly
 }
 
 // Network Prefix Discovery and Connectivity Analysis

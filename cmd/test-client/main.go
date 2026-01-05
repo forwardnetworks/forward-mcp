@@ -46,7 +46,7 @@ func main() {
 	}
 
 	fmt.Printf("✅ Connected to: %s\n", cfg.Forward.APIBaseURL)
-	fmt.Printf("🔒 TLS Skip Verify: %v\n\n", cfg.Forward.InsecureSkipVerify)
+	fmt.Printf("🔒 TLS Verification: Enabled (TLS 1.3+ enforced)\n\n")
 
 	// Start the MCP server process
 	cmd := exec.Command("./bin/forward-mcp-server")
