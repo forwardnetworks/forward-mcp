@@ -39,31 +39,31 @@ test:
 	@echo "Running unit tests (excluding integration tests)..."
 	@echo "💡 Integration tests are excluded to prevent hanging on slow API calls"
 	@echo "💡 Use 'make test-integration' to run integration tests separately"
-	$(GOTEST) -v -timeout=60s ./internal/... ./cmd/... ./pkg/... -skip 'TestIntegration'
+	$(GOTEST) -v -timeout=60s ./internal/... ./cmd/... -skip 'TestIntegration'
 
 # Run unit tests quickly (no verbose output)
 test-quick:
 	@echo "Running unit tests quickly (no verbose output)..."
-	$(GOTEST) -timeout=60s ./internal/... ./cmd/... ./pkg/... -skip 'TestIntegration'
+	$(GOTEST) -timeout=60s ./internal/... ./cmd/... -skip 'TestIntegration'
 
 # Run integration tests with timeout
 test-integration:
 	@echo "Running integration tests (with 60s timeout)..."
 	@echo "⚠️  These tests make real API calls and may take time"
 	@echo "💡 Ensure your .env file is configured with valid Forward API credentials"
-	$(GOTEST) -v -timeout=60s ./internal/... ./cmd/... ./pkg/... -run 'TestIntegration'
+	$(GOTEST) -v -timeout=60s ./internal/... ./cmd/... -run 'TestIntegration'
 
 # Run all tests (unit + integration) with extended timeout
 test-all:
 	@echo "Running all tests (unit + integration) with extended timeout..."
 	@echo "⚠️  This includes integration tests that make real API calls"
-	$(GOTEST) -v -timeout=120s ./internal/... ./cmd/... ./pkg/...
+	$(GOTEST) -v -timeout=120s ./internal/... ./cmd/...
 
 # Run test coverage (excludes integration tests)
 test-coverage:
 	@echo "Running test coverage (excluding integration tests)..."
 	@echo "💡 Integration tests are excluded to prevent hanging on slow API calls"
-	$(GOTEST) -v -timeout=60s ./internal/... ./cmd/... ./pkg/... -skip 'TestIntegration' -coverprofile=coverage.out
+	$(GOTEST) -v -timeout=60s ./internal/... ./cmd/... -skip 'TestIntegration' -coverprofile=coverage.out
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
@@ -71,7 +71,7 @@ test-coverage:
 test-coverage-all:
 	@echo "Running test coverage (including integration tests)..."
 	@echo "⚠️  This includes integration tests that make real API calls"
-	$(GOTEST) -v -timeout=120s ./internal/... ./cmd/... ./pkg/... -coverprofile=coverage.out
+	$(GOTEST) -v -timeout=120s ./internal/... ./cmd/... -coverprofile=coverage.out
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 

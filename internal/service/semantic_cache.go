@@ -491,7 +491,7 @@ func (sc *SemanticCache) isExpired(entry *CacheEntry) bool {
 	return time.Since(entry.Timestamp) > sc.ttl
 }
 
-// evictOldest removes the oldest cache entry
+// evictOldest removes the oldest cache entry by creation time (Timestamp)
 func (sc *SemanticCache) evictOldest() {
 	if len(sc.entries) == 0 {
 		return
@@ -508,17 +508,41 @@ func (sc *SemanticCache) evictOldest() {
 		}
 	}
 
-	// Remove from both maps
-	if entry, exists := sc.entries[oldestKey]; exists {
+	sc.removeEntry(oldestKey)
+}
+
+// evictLRU removes the least recently used cache entry by LastAccessed time
+func (sc *SemanticCache) evictLRU() {
+	if len(sc.entries) == 0 {
+		return
+	}
+
+	// Find entry with oldest LastAccessed time (least recently used)
+	var lruKey string
+	var oldestAccess time.Time = time.Now()
+
+	for key, entry := range sc.entries {
+		if entry.LastAccessed.Before(oldestAccess) {
+			oldestAccess = entry.LastAccessed
+			lruKey = key
+		}
+	}
+
+	sc.removeEntry(lruKey)
+}
+
+// removeEntry removes a cache entry by key
+func (sc *SemanticCache) removeEntry(key string) {
+	if entry, exists := sc.entries[key]; exists {
 		// Update memory usage before deleting
 		entrySize := sc.estimateMemoryUsage(entry)
 		sc.currentMemoryUsage -= entrySize
 
-		delete(sc.entries, oldestKey)
+		delete(sc.entries, key)
 
 		// Remove from embedding index
 		for i, indexEntry := range sc.embeddingIndex {
-			if indexEntry.Hash == oldestKey {
+			if indexEntry.Hash == key {
 				sc.embeddingIndex = append(sc.embeddingIndex[:i], sc.embeddingIndex[i+1:]...)
 				break
 			}
@@ -539,9 +563,9 @@ func (sc *SemanticCache) evictEntriesByPolicy(maxToEvict int) int {
 
 	switch policy {
 	case config.EvictionPolicyLRU:
-		// Evict based on Least Recently Used
+		// Evict based on Least Recently Used (by LastAccessed time)
 		for evicted < maxToEvict && len(sc.entries) > 0 {
-			sc.evictOldest()
+			sc.evictLRU()
 			evicted++
 		}
 	case config.EvictionPolicyLFU:
