@@ -953,9 +953,8 @@ func (s *ForwardMCPService) RegisterPrompts(server *mcp.Server) error {
 
 // RegisterResources registers contextual resources with the MCP server
 func (s *ForwardMCPService) RegisterResources(server *mcp.Server) error {
-	// Use the new ResourceManager for modern URI template-based resources
-	resourceManager := NewResourceManager(s, s.logger)
-	return resourceManager.RegisterAllResources(server)
+	// Resource registration is a no-op for now; no resources are defined yet.
+	return nil
 }
 
 // nqeQueryDiscoveryWorkflow implements the NQE query discovery workflow
