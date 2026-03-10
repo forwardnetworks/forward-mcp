@@ -166,7 +166,7 @@ func runStdioMode(logger interface {
 		}
 
 		logger.Info("Server shutdown complete")
-		os.Exit(0)
+		return
 	}
 }
 
@@ -227,6 +227,6 @@ func runSSEMode(cfg *config.Config, logger interface {
 		}
 
 		logger.Info("Server shutdown complete")
-		os.Exit(0)
+		return
 	}
 }
