@@ -1,5 +1,7 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine3.21 AS builder
+
+RUN apk add --no-cache gcc musl-dev
 
 WORKDIR /app
 
@@ -13,10 +15,13 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/forward-mcp cmd/server/main.go
+RUN CGO_ENABLED=1 GOOS=linux go build -o /app/forward-mcp cmd/server/main.go
 
-# Final stage
-FROM alpine:latest
+# Final stage - pinned to Alpine 3.21 for zlib security fixes
+FROM alpine:3.21
+
+# Upgrade all packages to pick up security patches (zlib >= 1.3.1-r4)
+RUN apk upgrade --no-cache
 
 WORKDIR /app
 
