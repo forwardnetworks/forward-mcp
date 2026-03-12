@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,7 +12,9 @@ import (
 	"github.com/forward-mcp/internal/instancelock"
 	"github.com/forward-mcp/internal/logger"
 	"github.com/forward-mcp/internal/service"
+	ssetransport "github.com/forward-mcp/internal/transport/sse"
 	mcp "github.com/metoro-io/mcp-golang"
+	"github.com/metoro-io/mcp-golang/transport"
 	"github.com/metoro-io/mcp-golang/transport/stdio"
 )
 
@@ -79,31 +83,50 @@ func main() {
 	logger.Debug("Creating Forward MCP service...")
 	forwardService := service.NewForwardMCPService(cfg, logger)
 
+	// Setup graceful shutdown
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
+
+	// registerMCPServer sets up tools, prompts, and resources on an MCP server
+	registerMCPServer := func(server *mcp.Server) error {
+		if err := forwardService.RegisterTools(server); err != nil {
+			return fmt.Errorf("failed to register tools: %w", err)
+		}
+		if err := forwardService.RegisterPrompts(server); err != nil {
+			return fmt.Errorf("failed to register prompts: %w", err)
+		}
+		if err := forwardService.RegisterResources(server); err != nil {
+			return fmt.Errorf("failed to register resources: %w", err)
+		}
+		return nil
+	}
+
+	switch cfg.Server.Transport {
+	case "sse":
+		runSSEMode(cfg, logger, forwardService, registerMCPServer, shutdown)
+	default:
+		runStdioMode(logger, forwardService, registerMCPServer, shutdown)
+	}
+}
+
+func runStdioMode(logger interface {
+	Debug(format string, args ...interface{})
+	Info(format string, args ...interface{})
+	Error(format string, args ...interface{})
+	Fatalf(format string, args ...interface{})
+	Close() error
+}, forwardService *service.ForwardMCPService, registerMCPServer func(*mcp.Server) error, shutdown chan os.Signal) {
 	// Create MCP server with stdio transport for Claude Desktop compatibility
 	logger.Debug("Creating MCP server with stdio transport...")
-	transport := stdio.NewStdioServerTransport()
-	server := mcp.NewServer(transport)
+	stdioTransport := stdio.NewStdioServerTransport()
+	server := mcp.NewServer(stdioTransport)
 
-	// Register all Forward Networks tools
+	// Register all tools, prompts, resources
 	logger.Debug("Registering Forward Networks tools...")
-	if err := forwardService.RegisterTools(server); err != nil {
-		logger.Fatalf("Failed to register tools: %v", err)
+	if err := registerMCPServer(server); err != nil {
+		logger.Fatalf("%v", err)
 	}
-	logger.Debug("Tools registered successfully!")
-
-	// Register prompt workflows following MCP best practices
-	logger.Debug("Registering prompt workflows...")
-	if err := forwardService.RegisterPrompts(server); err != nil {
-		logger.Fatalf("Failed to register prompts: %v", err)
-	}
-	logger.Debug("Prompt workflows registered successfully!")
-
-	// Register contextual resources following MCP best practices
-	logger.Debug("Registering contextual resources...")
-	if err := forwardService.RegisterResources(server); err != nil {
-		logger.Fatalf("Failed to register resources: %v", err)
-	}
-	logger.Debug("Contextual resources registered successfully!")
+	logger.Debug("Tools, prompts, and resources registered successfully!")
 
 	// Check if we're in a TTY (interactive mode) or pipe mode
 	if fileInfo, _ := os.Stdin.Stat(); (fileInfo.Mode() & os.ModeCharDevice) != 0 {
@@ -113,10 +136,6 @@ func main() {
 	} else {
 		logger.Debug("Running in pipe mode (stdin redirected)")
 	}
-
-	// Setup graceful shutdown
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	// Start the server in a goroutine
 	logger.Debug("Starting Forward Networks MCP server...")
@@ -147,6 +166,67 @@ func main() {
 		}
 
 		logger.Info("Server shutdown complete")
-		os.Exit(0)
+		return
+	}
+}
+
+func runSSEMode(cfg *config.Config, logger interface {
+	Debug(format string, args ...interface{})
+	Info(format string, args ...interface{})
+	Error(format string, args ...interface{})
+	Fatalf(format string, args ...interface{})
+	Close() error
+}, forwardService *service.ForwardMCPService, registerMCPServer func(*mcp.Server) error, shutdown chan os.Signal) {
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+	logger.Info("Starting MCP server in SSE mode on %s...", addr)
+
+	// serviceFactory is called for each new SSE client session
+	serviceFactory := func(tr transport.Transport) error {
+		server := mcp.NewServer(tr)
+		if err := registerMCPServer(server); err != nil {
+			return err
+		}
+		// Serve starts the MCP protocol (connects transport, registers handlers)
+		go server.Serve()
+		return nil
+	}
+
+	sseServer := ssetransport.NewSSEServer(addr, "", serviceFactory)
+
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := sseServer.Start(); err != nil {
+			serverErr <- err
+		}
+	}()
+
+	logger.Info("SSE server is running on %s", addr)
+	logger.Info("  SSE endpoint: GET /sse")
+	logger.Info("  Message endpoint: POST /message?sessionId=<id>")
+
+	// Wait for shutdown signal or server error
+	select {
+	case err := <-serverErr:
+		logger.Fatalf("Server error: %v", err)
+	case sig := <-shutdown:
+		logger.Info("Received signal %v, shutting down gracefully...", sig)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := sseServer.Shutdown(ctx); err != nil {
+			logger.Error("Error during SSE server shutdown: %v", err)
+		}
+
+		if err := forwardService.Shutdown(30 * time.Second); err != nil {
+			logger.Error("Error during service shutdown: %v", err)
+		}
+
+		if err := logger.Close(); err != nil {
+			logger.Error("Error closing logger: %v", err)
+		}
+
+		logger.Info("Server shutdown complete")
+		return
 	}
 }
