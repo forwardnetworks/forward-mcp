@@ -33,7 +33,11 @@ go build -o forward-mcp ./cmd/server
 ```
 
 ## Run Instructions
-Set the following environment variables before running:
+
+### Set up .env
+
+
+Copy env.example to a new file called .env.  In this new file, set the following environment variables before running the MCP:
 - `FORWARD_API_BASE_URL` – Base URL for the Forward Networks API
 - `FORWARD_API_KEY` – Your Forward Networks API key
 - `FORWARD_API_SECRET` - Your Forward Networks API Secret
@@ -49,8 +53,8 @@ Set the following environment variables before running:
 - `FORWARD_LOCK_DIR` – (Optional, default: /tmp) Directory for server instance lock file
 
 Run the server:
-```sh
-./forward-mcp
+```cd bin
+./forward-mcp-server
 ```
 
 The server will start and listen for MCP protocol messages via stdio (compatible with Claude Desktop and other MCP clients).

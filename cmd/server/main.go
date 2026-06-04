@@ -119,6 +119,7 @@ func main() {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	// Start the server in a goroutine
+	logger.Info("Forward MCP Server ready (transport: stdio)")
 	logger.Debug("Starting Forward Networks MCP server...")
 	serverErr := make(chan error, 1)
 	go func() {
