@@ -7,9 +7,19 @@ import (
 	"testing"
 
 	"github.com/forward-mcp/internal/config"
+	"github.com/forward-mcp/internal/forward"
 	"github.com/forward-mcp/internal/logger"
 	"github.com/joho/godotenv"
 )
+
+// getTestNetworkID returns the network to run integration tests against,
+// preferring FORWARD_DEFAULT_NETWORK_ID over the first network in the account.
+func getTestNetworkID(networks []forward.Network) string {
+	if id := os.Getenv("FORWARD_DEFAULT_NETWORK_ID"); id != "" {
+		return id
+	}
+	return networks[0].ID
+}
 
 // getProjectRoot returns the absolute path to the project root.
 func getProjectRoot() string {
@@ -61,7 +71,7 @@ func TestIntegrationListNetworks(t *testing.T) {
 		t.Fatalf("Expected 1 content item, got: %d", len(response.Content))
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	if content == "" {
 		t.Fatal("Expected non-empty content")
 	}
@@ -84,8 +94,8 @@ func TestIntegrationSearchPaths(t *testing.T) {
 	}
 
 	// Use the first network for testing
-	networkID := networks[0].ID
-	t.Logf("Testing path search on network: %s (%s)", networks[0].Name, networkID)
+	networkID := getTestNetworkID(networks)
+	t.Logf("Testing path search on network %s", networkID)
 
 	args := SearchPathsBulkArgs{
 		NetworkID: networkID,
@@ -108,7 +118,7 @@ func TestIntegrationSearchPaths(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	t.Logf("Path search response: %s", content)
 }
 
@@ -127,8 +137,8 @@ func TestIntegrationSearchPathsSpecificIPs(t *testing.T) {
 	}
 
 	// Use the first network for testing
-	networkID := networks[0].ID
-	t.Logf("Testing path search on network: %s (%s)", networks[0].Name, networkID)
+	networkID := getTestNetworkID(networks)
+	t.Logf("Testing path search on network %s", networkID)
 
 	// Test scenarios with the specific IPs provided
 	testCases := []struct {
@@ -252,11 +262,11 @@ func TestIntegrationSearchPathsSpecificIPs(t *testing.T) {
 				t.Fatal("Expected content in response")
 			}
 
-			content := response.Content[0].TextContent.Text
+			content := contentText(response.Content[0])
 			t.Logf("Response for %s:\n%s", tc.name, content)
 
 			// Validate response structure
-			if !strings.Contains(content, "Path search completed") {
+			if !strings.Contains(content, "path search completed") {
 				t.Errorf("Response doesn't contain expected completion message")
 			}
 
@@ -297,7 +307,7 @@ func TestIntegrationPathSearchResponseStructure(t *testing.T) {
 		t.Skip("No networks available for path search structure test")
 	}
 
-	networkID := networks[0].ID
+	networkID := getTestNetworkID(networks)
 
 	args := SearchPathsBulkArgs{
 		NetworkID: networkID,
@@ -310,7 +320,7 @@ func TestIntegrationPathSearchResponseStructure(t *testing.T) {
 		MaxResults: 1,
 	}
 
-	t.Logf("Testing path search response structure on network: %s", networks[0].Name)
+	t.Logf("Testing path search response structure on network %s", networkID)
 
 	// Test that the response has the expected structure even if no paths are found
 	response, err := service.searchPathsBulk(args)
@@ -331,15 +341,15 @@ func TestIntegrationPathSearchResponseStructure(t *testing.T) {
 		t.Fatalf("Expected 1 content item, got %d", len(response.Content))
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	if content == "" {
 		t.Fatal("Expected non-empty content")
 	}
 
 	// Validate that the response contains expected elements
 	expectedElements := []string{
-		"Path search completed",
-		"Found",
+		"path search completed",
+		"found",
 		"paths",
 	}
 
@@ -367,7 +377,7 @@ func TestIntegrationRunNQEQuery(t *testing.T) {
 	}
 
 	// Use the first network for testing
-	networkID := networks[0].ID
+	networkID := getTestNetworkID(networks)
 
 	// Use a known executable query ID - Device Basic Info
 	args := RunNQEQueryByIDArgs{
@@ -389,7 +399,7 @@ func TestIntegrationRunNQEQuery(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	t.Logf("NQE query response: %s", content)
 }
 
@@ -408,8 +418,8 @@ func TestIntegrationPathSearchSpecificCustomerIPs(t *testing.T) {
 	}
 
 	// Use the first network for testing
-	networkID := networks[0].ID
-	t.Logf("Testing path search on network: %s (%s)", networks[0].Name, networkID)
+	networkID := getTestNetworkID(networks)
+	t.Logf("Testing path search on network %s", networkID)
 
 	// Test scenarios with the specific IPs provided by the customer
 	testCases := []struct {
@@ -569,7 +579,7 @@ func TestIntegrationPathSearchSpecificCustomerIPs(t *testing.T) {
 				t.Fatal("Expected content in response")
 			}
 
-			content := response.Content[0].TextContent.Text
+			content := contentText(response.Content[0])
 			t.Logf("✅ Response for %s:", tc.name)
 
 			// Log a shortened version for readability
@@ -580,7 +590,7 @@ func TestIntegrationPathSearchSpecificCustomerIPs(t *testing.T) {
 			}
 
 			// Validate response structure
-			if !strings.Contains(content, "Path search completed") {
+			if !strings.Contains(content, "path search completed") {
 				t.Errorf("Response doesn't contain expected completion message")
 			}
 
@@ -635,7 +645,7 @@ func TestIntegrationListDevices(t *testing.T) {
 	}
 
 	// Use the first network for testing
-	networkID := networks[0].ID
+	networkID := getTestNetworkID(networks)
 
 	args := ListDevicesArgs{
 		NetworkID: networkID,
@@ -651,7 +661,7 @@ func TestIntegrationListDevices(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	t.Logf("Devices response: %s", content)
 }
 
@@ -670,7 +680,7 @@ func TestIntegrationListSnapshots(t *testing.T) {
 	}
 
 	// Use the first network for testing
-	networkID := networks[0].ID
+	networkID := getTestNetworkID(networks)
 
 	args := ListSnapshotsArgs{
 		NetworkID: networkID,
@@ -685,6 +695,6 @@ func TestIntegrationListSnapshots(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	t.Logf("Snapshots response: %s", content)
 }

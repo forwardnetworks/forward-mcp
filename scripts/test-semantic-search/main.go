@@ -39,7 +39,7 @@ func main() {
 	}
 
 	// Initialize database
-	database, err := service.NewNQEDatabase(appLogger)
+	database, err := service.NewNQEDatabase(appLogger, "default")
 	if err != nil {
 		fmt.Printf("❌ Failed to create database: %v\n", err)
 		return
@@ -81,7 +81,7 @@ func main() {
 
 	testQueries := []string{
 		"AWS security issues",
-		"BGP routing problems", 
+		"BGP routing problems",
 		"interface utilization",
 		"network devices",
 		"security vulnerabilities",
@@ -97,7 +97,7 @@ func main() {
 
 	for i, query := range testQueries {
 		fmt.Printf("\n🔍 Test %d: Searching for '%s'\n", i+1, query)
-		
+
 		results, err := queryIndex.SearchQueries(query, 3) // Limit to 3 for cleaner output
 		if err != nil {
 			fmt.Printf("❌ Search failed: %v\n", err)
@@ -114,7 +114,7 @@ func main() {
 
 		fmt.Printf("✅ Found %d results:\n", len(results))
 		for j, result := range results {
-			fmt.Printf("   %d. %s (score: %.3f, type: %s)\n", 
+			fmt.Printf("   %d. %s (score: %.3f, type: %s)\n",
 				j+1, result.Path, result.SimilarityScore, result.MatchType)
 			if result.Intent != "" && result.Intent != result.Path {
 				fmt.Printf("      Intent: %s\n", result.Intent)
@@ -124,12 +124,12 @@ func main() {
 
 	// Test 3: Test specific query lookup
 	fmt.Println("\n3️⃣ Testing query lookup by ID...")
-	
+
 	queries := queryIndex.Queries()
 	if len(queries) > 0 {
 		firstQuery := queries[0]
 		fmt.Printf("🔍 Looking up query ID: %s\n", firstQuery.QueryID)
-		
+
 		found, err := queryIndex.GetQueryByID(firstQuery.QueryID)
 		if err != nil {
 			fmt.Printf("❌ Lookup failed: %v\n", err)
@@ -168,4 +168,4 @@ func main() {
 	}
 
 	fmt.Println("\n✅ Semantic search test completed successfully!")
-} 
+}

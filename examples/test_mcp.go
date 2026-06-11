@@ -7,8 +7,7 @@ import (
 	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/logger"
 	"github.com/forward-mcp/internal/service"
-	mcp "github.com/metoro-io/mcp-golang"
-	"github.com/metoro-io/mcp-golang/transport/stdio"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
@@ -19,9 +18,8 @@ func main() {
 	// Create Forward MCP service
 	forwardService := service.NewForwardMCPService(cfg, log)
 
-	// Create MCP server with stdio transport
-	transport := stdio.NewStdioServerTransport()
-	server := mcp.NewServer(transport)
+	// Create MCP server (stdio transport is attached at Run time)
+	server := mcp.NewServer(&mcp.Implementation{Name: "forward-mcp-example", Version: "0.0.1"}, nil)
 
 	// Register all Forward Networks tools
 	if err := forwardService.RegisterTools(server); err != nil {

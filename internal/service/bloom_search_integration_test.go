@@ -201,8 +201,14 @@ func TestBloomSearchManagerPerformance(t *testing.T) {
 		t.Fatalf("Failed to search bloom filter: %v", err)
 	}
 
-	// Search time should be very fast (less than 5 milliseconds for bloom filter)
-	if searchTime > 5*time.Millisecond {
+	// Search time should be very fast (less than 5 milliseconds for bloom filter).
+	// Race-detector instrumentation slows execution several-fold, so scale the
+	// threshold accordingly when -race is active.
+	searchLimit := 5 * time.Millisecond
+	if raceEnabled {
+		searchLimit = 100 * time.Millisecond
+	}
+	if searchTime > searchLimit {
 		t.Errorf("Search time too slow: %v for bloom filter search", searchTime)
 	}
 
@@ -213,6 +219,3 @@ func TestBloomSearchManagerPerformance(t *testing.T) {
 
 	t.Logf("Performance results - Build: %v, Search: %v", buildTime, searchTime)
 }
-
-
- 

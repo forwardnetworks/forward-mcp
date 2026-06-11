@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,9 +11,17 @@ import (
 	"github.com/forward-mcp/internal/instancelock"
 	"github.com/forward-mcp/internal/logger"
 	"github.com/forward-mcp/internal/service"
-	mcp "github.com/metoro-io/mcp-golang"
-	"github.com/metoro-io/mcp-golang/transport/stdio"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// serverVersion is reported to MCP clients during the initialize handshake.
+const serverVersion = "3.0.0"
+
+const serverInstructions = "MCP server for Forward Networks: network discovery, NQE queries, " +
+	"path searches, configuration search/diff, snapshots, locations, and a knowledge-graph memory. " +
+	"Start with list_networks to find a network ID (or set_default_network to pin one). " +
+	"Use search_nqe_queries to discover queries by natural language, then run_nqe_query_by_id to execute. " +
+	"Prefer search_paths_bulk for path analysis."
 
 func main() {
 	// Initialize logger
@@ -79,10 +88,15 @@ func main() {
 	logger.Debug("Creating Forward MCP service...")
 	forwardService := service.NewForwardMCPService(cfg, logger)
 
-	// Create MCP server with stdio transport for Claude Desktop compatibility
-	logger.Debug("Creating MCP server with stdio transport...")
-	transport := stdio.NewStdioServerTransport()
-	server := mcp.NewServer(transport)
+	// Create MCP server (official go-sdk); stdio transport is attached in Run below.
+	logger.Debug("Creating MCP server...")
+	server := mcp.NewServer(&mcp.Implementation{
+		Name:    "forward-mcp",
+		Title:   "Forward Networks MCP Server",
+		Version: serverVersion,
+	}, &mcp.ServerOptions{
+		Instructions: serverInstructions,
+	})
 
 	// Register all Forward Networks tools
 	logger.Debug("Registering Forward Networks tools...")
@@ -118,35 +132,45 @@ func main() {
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start the server in a goroutine
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run the server over stdio; Run blocks until the client disconnects
+	// (stdin EOF) or the context is cancelled.
 	logger.Debug("Starting Forward Networks MCP server...")
 	serverErr := make(chan error, 1)
 	go func() {
-		if err := server.Serve(); err != nil {
-			serverErr <- err
-		}
+		serverErr <- server.Run(ctx, &mcp.StdioTransport{})
 	}()
 
 	logger.Debug("MCP server is now running and waiting for connections...")
 
-	// Wait for shutdown signal or server error
+	// Wait for client disconnect, server error, or shutdown signal.
+	var runErr error
 	select {
-	case err := <-serverErr:
-		logger.Fatalf("Server error: %v", err)
+	case runErr = <-serverErr:
+		if runErr != nil {
+			logger.Error("Server error: %v", runErr)
+		} else {
+			logger.Info("Client disconnected, shutting down...")
+		}
 	case sig := <-shutdown:
 		logger.Info("Received signal %v, shutting down gracefully...", sig)
+		cancel()
+	}
 
-		// Shutdown the ForwardMCPService first to stop background goroutines
-		if err := forwardService.Shutdown(30 * time.Second); err != nil {
-			logger.Error("Error during service shutdown: %v", err)
-		}
+	// Shutdown the ForwardMCPService to stop background goroutines and close databases.
+	if err := forwardService.Shutdown(30 * time.Second); err != nil {
+		logger.Error("Error during service shutdown: %v", err)
+	}
 
-		// Close logger file if it exists
-		if err := logger.Close(); err != nil {
-			logger.Error("Error closing logger: %v", err)
-		}
+	// Close logger file if it exists
+	if err := logger.Close(); err != nil {
+		logger.Error("Error closing logger: %v", err)
+	}
 
-		logger.Info("Server shutdown complete")
-		os.Exit(0)
+	logger.Info("Server shutdown complete")
+	if runErr != nil {
+		os.Exit(1)
 	}
 }

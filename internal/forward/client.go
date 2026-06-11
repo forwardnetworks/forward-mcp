@@ -163,16 +163,17 @@ type ChatResponse struct {
 type Network struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	CreatedAt   int64  `json:"createdAt"`
+	Description string `json:"note,omitempty"` // API field is "note"
+	CreatedAt   string `json:"createdAt,omitempty"`
 	OrgID       string `json:"orgId,omitempty"`
 	CreatorID   string `json:"creatorId,omitempty"`
 	Creator     string `json:"creator,omitempty"`
+	ParentID    string `json:"parentId,omitempty"`
 }
 
 type NetworkUpdate struct {
 	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
+	Description *string `json:"note,omitempty"` // API field is "note"
 }
 
 // Path Search types
@@ -215,12 +216,15 @@ type PathSearchResponse struct {
 }
 
 // PathSearchBulkResponse represents the response from bulk path search
+// (the spec's PathSearchResponse schema, shared by single and bulk searches)
 type PathSearchBulkResponse struct {
-	DstIpLocationType string         `json:"dstIpLocationType"`
-	Info              PathSearchInfo `json:"info"`
-	ReturnPathInfo    PathSearchInfo `json:"returnPathInfo"`
-	TimedOut          bool           `json:"timedOut"`
-	QueryUrl          string         `json:"queryUrl"`
+	SrcIpLocationType  string                 `json:"srcIpLocationType,omitempty"`
+	DstIpLocationType  string                 `json:"dstIpLocationType"`
+	Info               PathSearchInfo         `json:"info"`
+	ReturnPathInfo     PathSearchInfo         `json:"returnPathInfo"`
+	TimedOut           bool                   `json:"timedOut"`
+	QueryUrl           string                 `json:"queryUrl"`
+	UnrecognizedValues map[string]interface{} `json:"unrecognizedValues,omitempty"`
 }
 
 type PathSearchInfo struct {
@@ -275,9 +279,9 @@ type NQEQueryParams struct {
 type NQEQueryOptions struct {
 	Offset  int               `json:"offset,omitempty"`
 	Limit   int               `json:"limit,omitempty"`
-	SortBy  []NQESortBy       `json:"sortBy,omitempty"`
+	SortBy  *NQESortBy        `json:"sortBy,omitempty"` // API accepts a single sort order, not a list
 	Filters []NQEColumnFilter `json:"columnFilters,omitempty"`
-	Format  string            `json:"format,omitempty"`
+	Format  string            `json:"itemFormat,omitempty"` // API field is "itemFormat": JSON (default) or LEGACY (deprecated)
 }
 
 type NQESortBy struct {
@@ -291,8 +295,9 @@ type NQEColumnFilter struct {
 }
 
 type NQERunResult struct {
-	SnapshotID string                   `json:"snapshotId"`
-	Items      []map[string]interface{} `json:"items"`
+	SnapshotID    string                   `json:"snapshotId"`
+	Items         []map[string]interface{} `json:"items"`
+	TotalNumItems int64                    `json:"totalNumItems,omitempty"`
 }
 
 type NQEQuery struct {
@@ -347,8 +352,8 @@ type NQEDiffRequest struct {
 }
 
 type NQEDiffResult struct {
-	TotalNumValues int                      `json:"totalNumValues"`
-	Rows           []map[string]interface{} `json:"rows"`
+	TotalNumRows int                      `json:"totalNumRows"`
+	Rows         []map[string]interface{} `json:"rows"`
 }
 
 // Device types
@@ -364,19 +369,27 @@ type DeviceResponse struct {
 }
 
 type Device struct {
-	Name          string                 `json:"name"`
-	Type          string                 `json:"type,omitempty"`
-	Vendor        string                 `json:"vendor,omitempty"`
-	OSVersion     string                 `json:"osVersion,omitempty"`
-	Platform      string                 `json:"platform,omitempty"`
-	Model         string                 `json:"model,omitempty"`
-	ManagementIPs []string               `json:"managementIps,omitempty"`
-	Hostname      string                 `json:"hostname,omitempty"`
-	Version       string                 `json:"version,omitempty"`
-	SerialNumber  string                 `json:"serialNumber,omitempty"`
-	LocationID    string                 `json:"locationId,omitempty"`
-	Interfaces    []DeviceInterface      `json:"interfaces,omitempty"`
-	Properties    map[string]interface{} `json:"properties,omitempty"`
+	Name            string   `json:"name"`
+	DisplayName     string   `json:"displayName,omitempty"`
+	SourceName      string   `json:"sourceName,omitempty"`
+	Type            string   `json:"type,omitempty"`
+	Vendor          string   `json:"vendor,omitempty"`
+	OSVersion       string   `json:"osVersion,omitempty"`
+	Platform        string   `json:"platform,omitempty"`
+	Model           string   `json:"model,omitempty"`
+	ManagementIPs   []string `json:"managementIps,omitempty"`
+	CollectionError string   `json:"collectionError,omitempty"`
+	ProcessingError string   `json:"processingError,omitempty"`
+	Tags            []string `json:"tags,omitempty"`       // present only if requested via "with"
+	LocationID      string   `json:"locationId,omitempty"` // present only if requested via "with"
+
+	// The fields below are not part of the public API response; they are
+	// populated internally (e.g. from NQE queries) by service-layer code.
+	Hostname     string                 `json:"hostname,omitempty"`
+	Version      string                 `json:"version,omitempty"`
+	SerialNumber string                 `json:"serialNumber,omitempty"`
+	Interfaces   []DeviceInterface      `json:"interfaces,omitempty"`
+	Properties   map[string]interface{} `json:"properties,omitempty"`
 }
 
 type DeviceInterface struct {
@@ -389,15 +402,17 @@ type DeviceInterface struct {
 
 // Snapshot types
 type Snapshot struct {
-	ID                 string `json:"id"`
-	ProcessingTrigger  string `json:"processingTrigger,omitempty"`
-	TotalDevices       int    `json:"totalDevices,omitempty"`
-	TotalEndpoints     int    `json:"totalEndpoints,omitempty"`
-	TotalOtherSources  int    `json:"totalOtherSources,omitempty"`
-	CreationDateMillis int64  `json:"creationDateMillis,omitempty"`
-	ProcessedAtMillis  int64  `json:"processedAtMillis,omitempty"`
-	IsDraft            bool   `json:"isDraft,omitempty"`
-	State              string `json:"state,omitempty"`
+	ID                string `json:"id"`
+	ProcessingTrigger string `json:"processingTrigger,omitempty"`
+	TotalDevices      int    `json:"totalDevices,omitempty"`
+	TotalEndpoints    int    `json:"totalEndpoints,omitempty"`
+	TotalOtherSources int    `json:"totalOtherSources,omitempty"`
+	CreatedAt         string `json:"createdAt,omitempty"`   // RFC3339 timestamp
+	ProcessedAt       string `json:"processedAt,omitempty"` // RFC3339 timestamp
+	IsDraft           bool   `json:"isDraft,omitempty"`
+	State             string `json:"state,omitempty"`
+	Note              string `json:"note,omitempty"`
+	ParentSnapshotID  string `json:"parentSnapshotId,omitempty"`
 	// Legacy fields for backward compatibility
 	NetworkID   string `json:"networkId,omitempty"`
 	Name        string `json:"name,omitempty"`
@@ -410,7 +425,7 @@ type SnapshotsResponse struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
 	Creator   string     `json:"creator"`
-	CreatedAt int64      `json:"createdAt"`
+	CreatedAt string     `json:"createdAt,omitempty"`
 	OrgID     string     `json:"orgId"`
 	CreatorID string     `json:"creatorId"`
 	Snapshots []Snapshot `json:"snapshots"`
@@ -698,7 +713,7 @@ func (c *Client) GetNetworks() ([]Network, error) {
 }
 
 func (c *Client) CreateNetwork(name string) (*Network, error) {
-	resp, err := c.makeRequest("POST", fmt.Sprintf("/api/networks?name=%s", name), nil)
+	resp, err := c.makeRequest("POST", fmt.Sprintf("/api/networks?name=%s", url.QueryEscape(name)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -791,12 +806,42 @@ func (c *Client) SearchPaths(networkID string, params *PathSearchParams) (*PathS
 	}
 	defer resp.Body.Close()
 
-	var pathResp PathSearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&pathResp); err != nil {
+	// The API returns the same PathSearchResponse schema as the bulk endpoint
+	// ({info, returnPathInfo, timedOut, queryUrl, ...}); decode that shape and
+	// map it onto the legacy struct this method exposes.
+	var apiResp PathSearchBulkResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return &pathResp, nil
+	pathResp := &PathSearchResponse{
+		Paths:              convertSpecPaths(apiResp.Info.Paths),
+		ReturnPaths:        convertSpecPaths(apiResp.ReturnPathInfo.Paths),
+		UnrecognizedValues: apiResp.UnrecognizedValues,
+		SnapshotID:         params.SnapshotID,
+	}
+	return pathResp, nil
+}
+
+// convertSpecPaths maps the API's path schema onto the legacy Path/Hop types.
+func convertSpecPaths(paths []BulkPath) []Path {
+	converted := make([]Path, len(paths))
+	for i, p := range paths {
+		hops := make([]Hop, len(p.Hops))
+		for j, h := range p.Hops {
+			hops[j] = Hop{
+				Device:    h.DeviceName,
+				Interface: h.IngressInterface,
+				Action:    h.DeviceType,
+			}
+		}
+		converted[i] = Path{
+			Hops:        hops,
+			Outcome:     p.ForwardingOutcome,
+			OutcomeType: p.SecurityOutcome,
+		}
+	}
+	return converted
 }
 
 func (c *Client) SearchPathsBulk(networkID string, request *PathSearchBulkRequest, snapshotID string) ([]PathSearchBulkResponse, error) {
@@ -1482,7 +1527,8 @@ func (c *Client) GetDevices(networkID string, params *DeviceQueryParams) (*Devic
 		} else {
 			query += "&"
 		}
-		query += fmt.Sprintf("offset=%d", params.Offset)
+		// API pagination parameter is "skip", not "offset"
+		query += fmt.Sprintf("skip=%d", params.Offset)
 	}
 	if params.Limit > 0 {
 		if query == "" {

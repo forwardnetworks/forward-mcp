@@ -92,7 +92,7 @@ Forward Networks API
 ### Core Components
 
 **ForwardMCPService** (`internal/service/mcp_service.go`):
-- Main orchestrator that registers 47+ MCP tools
+- Main orchestrator that registers 54 MCP tools, 6 prompts, and 1 resource
 - Manages component lifecycle and coordination
 - Handles workflow state and session management with automatic cleanup (1000 max sessions, 24h TTL)
 - Instance partitioning: Uses SHA-256(apiBaseURL)[:16] as instance_id for multi-tenant data isolation
@@ -277,7 +277,7 @@ docker-compose -f docker-compose.optimized.yml up
 
 ## Important Go Dependencies
 
-- `github.com/metoro-io/mcp-golang` v0.13.0 - MCP protocol
+- `github.com/modelcontextprotocol/go-sdk` v1.6.1 - official MCP SDK (protocol 2025-06-18)
 - `github.com/mattn/go-sqlite3` v1.14.28 - SQLite (requires CGO)
 - `github.com/danthegoodman1/bloomsearch` - Bloom filters
 - `github.com/joho/godotenv` v1.5.1 - Environment loading

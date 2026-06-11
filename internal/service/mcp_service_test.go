@@ -11,8 +11,7 @@ import (
 	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/forward"
 	"github.com/forward-mcp/internal/logger"
-	mcp "github.com/metoro-io/mcp-golang"
-	"github.com/metoro-io/mcp-golang/transport/stdio"
+	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // contains is a helper for substring checks in tests
@@ -41,14 +40,14 @@ func NewMockForwardClient() *MockForwardClient {
 			{
 				ID:        "162112",
 				Name:      "Test Network",
-				CreatedAt: 1745580296533,
+				CreatedAt: "2025-04-25T11:24:56.533Z",
 				Creator:   "admin",
 				OrgID:     "101",
 			},
 			{
 				ID:        "network-456",
 				Name:      "Production Network",
-				CreatedAt: 1745950510200,
+				CreatedAt: "2025-04-29T18:15:10.200Z",
 				Creator:   "admin",
 				OrgID:     "101",
 			},
@@ -79,15 +78,15 @@ func NewMockForwardClient() *MockForwardClient {
 		},
 		snapshots: []forward.Snapshot{
 			{
-				ID:                 "snapshot-123",
-				NetworkID:          "162112",
-				State:              "PROCESSED",
-				ProcessingTrigger:  "REPROCESS",
-				TotalDevices:       1232,
-				TotalEndpoints:     56,
-				CreationDateMillis: 1740478621913,
-				ProcessedAtMillis:  1745953554303,
-				IsDraft:            false,
+				ID:                "snapshot-123",
+				NetworkID:         "162112",
+				State:             "PROCESSED",
+				ProcessingTrigger: "REPROCESS",
+				TotalDevices:      1232,
+				TotalEndpoints:    56,
+				CreatedAt:         "2025-02-25T10:17:01.913Z",
+				ProcessedAt:       "2025-04-29T19:05:54.303Z",
+				IsDraft:           false,
 			},
 		},
 		locations: []forward.Location{
@@ -288,7 +287,7 @@ func (m *MockForwardClient) DiffNQEQuery(before, after string, request *forward.
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
-	return &forward.NQEDiffResult{TotalNumValues: 2, Rows: []map[string]interface{}{{"diff": "example"}}}, nil
+	return &forward.NQEDiffResult{TotalNumRows: 2, Rows: []map[string]interface{}{{"diff": "example"}}}, nil
 }
 
 func (m *MockForwardClient) GetDevices(networkID string, params *forward.DeviceQueryParams) (*forward.DeviceResponse, error) {
@@ -609,7 +608,7 @@ func TestListNetworks(t *testing.T) {
 		t.Fatalf("Expected 1 content item, got: %d", len(response.Content))
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	if content == "" {
 		t.Fatal("Expected non-empty content")
 	}
@@ -636,7 +635,7 @@ func TestCreateNetwork(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	if !contains(content, "New Test Network") {
 		t.Error("Expected response to contain new network name")
 	}
@@ -658,7 +657,7 @@ func TestDeleteNetwork(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	if !contains(content, "deleted successfully") {
 		t.Error("Expected response to indicate successful deletion")
 	}
@@ -689,7 +688,7 @@ func TestSearchPaths(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	t.Logf("Actual path search response content: %s", content)
 	if !contains(content, "Bulk path search completed") {
 		t.Error("Expected response to indicate bulk path search completion")
@@ -717,7 +716,7 @@ func TestRunNQEQuery(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	// Debug: Print actual content to understand what's happening
 	t.Logf("Actual response content: %s", content)
 
@@ -764,7 +763,7 @@ func TestRunNQEQueryByID(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	if !contains(content, "NQE query completed") {
 		t.Error("Expected response to indicate NQE query completion")
 	}
@@ -790,7 +789,7 @@ func TestListNQEQueries(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	if !contains(content, "Found") && !contains(content, "queries") {
 		t.Error("Expected response to contain query information")
 	}
@@ -814,7 +813,7 @@ func TestListDevices(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	if !contains(content, "router-1") {
 		t.Error("Expected response to contain device names")
 	}
@@ -836,7 +835,7 @@ func TestGetDeviceLocations(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := response.Content[0].TextContent.Text
+	content := contentText(response.Content[0])
 	if !contains(content, "device locations") {
 		t.Error("Expected response to contain device location information")
 	}
@@ -860,36 +859,34 @@ func TestErrorHandling(t *testing.T) {
 	}
 }
 
-// Integration test with mcp-golang
+// Integration test with the official MCP go-sdk: registering all tools,
+// prompts, and resources exercises schema inference for every argument struct.
 func TestMCPIntegration(t *testing.T) {
-	t.Skip("Skipping MCP integration test due to registration issues")
 	// Use the proper test service creation function
 	service := createTestService()
 
 	// Create MCP server
-	transport := stdio.NewStdioServerTransport()
-	server := mcp.NewServer(transport)
+	server := mcp.NewServer(&mcp.Implementation{Name: "forward-mcp-test", Version: "0.0.1"}, nil)
 
 	// Register tools
 	err := service.RegisterTools(server)
 	if err != nil {
 		t.Fatalf("Failed to register tools: %v", err)
 	}
-
-	// Test that server was created successfully
-	if server == nil {
-		t.Fatal("Expected server to be created")
+	if err := service.RegisterPrompts(server); err != nil {
+		t.Fatalf("Failed to register prompts: %v", err)
+	}
+	if err := service.RegisterResources(server); err != nil {
+		t.Fatalf("Failed to register resources: %v", err)
 	}
 }
 
 // Comprehensive test for RegisterTools function
 func TestRegisterToolsComprehensive(t *testing.T) {
-	t.Skip("Skipping RegisterTools test due to registration issues")
 	service := createTestService()
 
 	// Create MCP server
-	transport := stdio.NewStdioServerTransport()
-	server := mcp.NewServer(transport)
+	server := mcp.NewServer(&mcp.Implementation{Name: "forward-mcp-test", Version: "0.0.1"}, nil)
 
 	// Test successful registration
 	err := service.RegisterTools(server)
@@ -919,7 +916,7 @@ func TestRegisterToolsComprehensive(t *testing.T) {
 			_, err := service.searchPathsBulk(SearchPathsBulkArgs{
 				NetworkID: "162112",
 				Queries: []PathSearchQueryArgs{
-					{DstIP: "10.0.0.1"},
+					{SrcIP: "10.0.0.2", DstIP: "10.0.0.1"},
 				},
 			})
 			return err
@@ -1358,7 +1355,7 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 		}
 
 		// Verify response contains expected information
-		content := response.Content[0].TextContent.Text
+		content := contentText(response.Content[0])
 		if !contains(content, "total_entries") {
 			t.Error("Expected cache stats to contain total_entries")
 		}

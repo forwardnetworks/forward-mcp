@@ -66,7 +66,7 @@ func TestSearchNQEQueries_AutoInitialization(t *testing.T) {
 	}
 
 	// Response should be non-empty (either successful results or auto-initialization message)
-	responseText := response.Content[0].TextContent.Text
+	responseText := contentText(response.Content[0])
 	if responseText == "" {
 		t.Error("Expected non-empty response text")
 	}
@@ -110,7 +110,7 @@ func TestSearchNQEQueries_EmptyQuery(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	responseText := response.Content[0].TextContent.Text
+	responseText := contentText(response.Content[0])
 	if !contains(responseText, "Please provide a search query") {
 		t.Error("Expected response to ask for search query")
 	}
@@ -188,28 +188,28 @@ func TestSearchNQEQueries_Parameters(t *testing.T) {
 func TestFindExecutableQuery_AutoInitialization(t *testing.T) {
 	t.Skip("findExecutableQuery method not yet implemented")
 	/*
-	service := setupSmartSearchTestService()
+		service := setupSmartSearchTestService()
 
-	args := FindExecutableQueryArgs{
-		Query: "show me all network devices",
-		Limit: 3,
-	}
+		args := FindExecutableQueryArgs{
+			Query: "show me all network devices",
+			Limit: 3,
+		}
 
-	response, err := service.findExecutableQuery(args)
+		response, err := service.findExecutableQuery(args)
 
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
 
-	if response == nil {
-		t.Fatal("Expected response, got nil")
-	}
+		if response == nil {
+			t.Fatal("Expected response, got nil")
+		}
 
-	responseText := response.Content[0].TextContent.Text
-	// Should either show results or explain auto-initialization
-	if len(responseText) == 0 {
-		t.Error("Response should not be empty")
-	}
+		responseText := contentText(response.Content[0])
+		// Should either show results or explain auto-initialization
+		if len(responseText) == 0 {
+			t.Error("Response should not be empty")
+		}
 	*/
 }
 
@@ -218,26 +218,26 @@ func TestFindExecutableQuery_AutoInitialization(t *testing.T) {
 func TestFindExecutableQuery_EmptyQuery(t *testing.T) {
 	t.Skip("findExecutableQuery method not yet implemented")
 	/*
-	service := setupSmartSearchTestService()
+		service := setupSmartSearchTestService()
 
-	args := FindExecutableQueryArgs{
-		Query: "", // Empty query
-	}
+		args := FindExecutableQueryArgs{
+			Query: "", // Empty query
+		}
 
-	response, err := service.findExecutableQuery(args)
+		response, err := service.findExecutableQuery(args)
 
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
 
-	if response == nil {
-		t.Fatal("Expected response, got nil")
-	}
+		if response == nil {
+			t.Fatal("Expected response, got nil")
+		}
 
-	responseText := response.Content[0].TextContent.Text
-	if !contains(responseText, "Please describe what you want to analyze") {
-		t.Error("Expected response to ask for query description")
-	}
+		responseText := contentText(response.Content[0])
+		if !contains(responseText, "Please describe what you want to analyze") {
+			t.Error("Expected response to ask for query description")
+		}
 	*/
 }
 
@@ -246,71 +246,71 @@ func TestFindExecutableQuery_EmptyQuery(t *testing.T) {
 func TestFindExecutableQuery_Parameters(t *testing.T) {
 	t.Skip("findExecutableQuery method not yet implemented")
 	/*
-	service := setupSmartSearchTestService()
+		service := setupSmartSearchTestService()
 
-	testCases := []struct {
-		name        string
-		args        FindExecutableQueryArgs
-		expectError bool
-	}{
-		{
-			name: "Device information query",
-			args: FindExecutableQueryArgs{
-				Query: "show me device information",
-				Limit: 5,
+		testCases := []struct {
+			name        string
+			args        FindExecutableQueryArgs
+			expectError bool
+		}{
+			{
+				name: "Device information query",
+				args: FindExecutableQueryArgs{
+					Query: "show me device information",
+					Limit: 5,
+				},
+				expectError: false,
 			},
-			expectError: false,
-		},
-		{
-			name: "Hardware query",
-			args: FindExecutableQueryArgs{
-				Query: "find hardware details",
-				Limit: 3,
+			{
+				name: "Hardware query",
+				args: FindExecutableQueryArgs{
+					Query: "find hardware details",
+					Limit: 3,
+				},
+				expectError: false,
 			},
-			expectError: false,
-		},
-		{
-			name: "Query with related matches",
-			args: FindExecutableQueryArgs{
-				Query:          "device CPU and memory usage",
-				Limit:          2,
-				IncludeRelated: true,
+			{
+				name: "Query with related matches",
+				args: FindExecutableQueryArgs{
+					Query:          "device CPU and memory usage",
+					Limit:          2,
+					IncludeRelated: true,
+				},
+				expectError: false,
 			},
-			expectError: false,
-		},
-		{
-			name: "Configuration search query",
-			args: FindExecutableQueryArgs{
-				Query: "search device configurations",
-				Limit: 4,
+			{
+				name: "Configuration search query",
+				args: FindExecutableQueryArgs{
+					Query: "search device configurations",
+					Limit: 4,
+				},
+				expectError: false,
 			},
-			expectError: false,
-		},
-	}
+		}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			response, err := service.findExecutableQuery(tc.args)
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				response, err := service.findExecutableQuery(tc.args)
 
-			if tc.expectError {
-				if err == nil {
-					t.Error("Expected error but got none")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error, got: %v", err)
-				}
-				if response == nil {
-					t.Error("Expected response, got nil")
+				if tc.expectError {
+					if err == nil {
+						t.Error("Expected error but got none")
+					}
 				} else {
-					responseText := response.Content[0].TextContent.Text
-					if len(responseText) == 0 {
-						t.Error("Response should not be empty")
+					if err != nil {
+						t.Errorf("Expected no error, got: %v", err)
+					}
+					if response == nil {
+						t.Error("Expected response, got nil")
+					} else {
+						responseText := contentText(response.Content[0])
+						if len(responseText) == 0 {
+							t.Error("Response should not be empty")
+						}
 					}
 				}
-			}
-		})
-	}
+			})
+		}
 	*/
 }
 
@@ -409,7 +409,7 @@ func TestInitializeQueryIndex(t *testing.T) {
 		if response == nil {
 			t.Error("Expected response, got nil")
 		} else {
-			responseText := response.Content[0].TextContent.Text
+			responseText := contentText(response.Content[0])
 			if !contains(responseText, "query index") {
 				t.Error("Expected response to mention query index")
 			}
@@ -422,26 +422,26 @@ func TestInitializeQueryIndex(t *testing.T) {
 func TestGetQueryIndexStats(t *testing.T) {
 	t.Skip("getQueryIndexStats method not yet implemented")
 	/*
-	service := setupSmartSearchTestService()
+		service := setupSmartSearchTestService()
 
-	args := GetQueryIndexStatsArgs{
-		Detailed: false,
-	}
+		args := GetQueryIndexStatsArgs{
+			Detailed: false,
+		}
 
-	response, err := service.getQueryIndexStats(args)
+		response, err := service.getQueryIndexStats(args)
 
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
 
-	if response == nil {
-		t.Fatal("Expected response, got nil")
-	}
+		if response == nil {
+			t.Fatal("Expected response, got nil")
+		}
 
-	responseText := response.Content[0].TextContent.Text
-	if !contains(responseText, "Query Index Statistics") {
-		t.Error("Expected response to contain statistics header")
-	}
+		responseText := contentText(response.Content[0])
+		if !contains(responseText, "Query Index Statistics") {
+			t.Error("Expected response to contain statistics header")
+		}
 	*/
 }
 
@@ -450,26 +450,26 @@ func TestGetQueryIndexStats(t *testing.T) {
 func TestGetQueryIndexStats_Detailed(t *testing.T) {
 	t.Skip("getQueryIndexStats method not yet implemented")
 	/*
-	service := setupSmartSearchTestService()
+		service := setupSmartSearchTestService()
 
-	args := GetQueryIndexStatsArgs{
-		Detailed: true,
-	}
+		args := GetQueryIndexStatsArgs{
+			Detailed: true,
+		}
 
-	response, err := service.getQueryIndexStats(args)
+		response, err := service.getQueryIndexStats(args)
 
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
+		if err != nil {
+			t.Fatalf("Expected no error, got: %v", err)
+		}
 
-	if response == nil {
-		t.Fatal("Expected response, got nil")
-	}
+		if response == nil {
+			t.Fatal("Expected response, got nil")
+		}
 
-	responseText := response.Content[0].TextContent.Text
-	if !contains(responseText, "Query Index Statistics") {
-		t.Error("Expected response to contain statistics header")
-	}
+		responseText := contentText(response.Content[0])
+		if !contains(responseText, "Query Index Statistics") {
+			t.Error("Expected response to contain statistics header")
+		}
 	*/
 }
 
@@ -534,19 +534,19 @@ func BenchmarkSearchNQEQueries(b *testing.B) {
 func BenchmarkFindExecutableQuery(b *testing.B) {
 	b.Skip("findExecutableQuery method not yet implemented")
 	/*
-	service := setupSmartSearchTestService()
+		service := setupSmartSearchTestService()
 
-	args := FindExecutableQueryArgs{
-		Query: "show me all network devices",
-		Limit: 5,
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := service.findExecutableQuery(args)
-		if err != nil {
-			b.Logf("Search error (expected for empty index): %v", err)
+		args := FindExecutableQueryArgs{
+			Query: "show me all network devices",
+			Limit: 5,
 		}
-	}
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, err := service.findExecutableQuery(args)
+			if err != nil {
+				b.Logf("Search error (expected for empty index): %v", err)
+			}
+		}
 	*/
 }
