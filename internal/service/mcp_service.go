@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -522,15 +523,39 @@ func (s *ForwardMCPService) RegisterTools(server *mcp.Server) error {
 		"🚀 **RECOMMENDED**: Use this tool for path searches (single or bulk) with better performance.\n\nExecute path searches by tracing packets through the network. Supports both single and bulk path searches.\n\n**Source Specification Rules:**\n- **Option 1**: Use 'from' (device name) - API will use the device as source\n- **Option 2**: Use 'src_ip' (IP address/subnet) - API will resolve the IP to source locations\n- **Option 3**: Use both 'from' + 'src_ip' for precise packet header specification\n\n**Destination Specification:**\n- **REQUIRED**: 'dst_ip' must be a valid IP address or CIDR\n- **IMPORTANT**: Device names are NOT supported in dst_ip - use actual IP addresses\n\n**Best Practices:**\n- Use 'intent' parameter to control search behavior (PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY)\n- Set 'max_results' and 'max_candidates' to control response size and performance\n- Use 'max_seconds' and 'max_overall_seconds' for timeout control\n- 'snapshot_id' is optional - API uses latest processed snapshot if omitted\n\n**Request Format:** Provide an array of path search queries, each with 'dst_ip' and either 'from' or 'src_ip'.",
 		s.searchPathsBulkEntry)
 
+	addTool(server, "get_snapshot_topology",
+		"Get directed topology links from a Forward snapshot using the native topology API. Returns source/target port pairs suitable for drawing a network graph. Use device_filter, offset, and limit to keep large topologies bounded.",
+		s.getSnapshotTopology)
+
+	addTool(server, "list_l7_applications",
+		"List Forward L7 application IDs available for app-aware path search. Use app_id from this response with search_paths or search_paths_bulk.",
+		s.listL7Applications)
+
 	// Register network prefix analysis tool
 	addTool(server, "analyze_network_prefixes",
 		"🔍 **Network Prefix Discovery & Connectivity Analysis**\n\nDiscover network prefixes, map them to devices, and analyze connectivity between sites using different aggregation levels.\n\n**Capabilities:**\n- Discover network prefixes (/8, /16, /24, etc.) and map to devices\n- Analyze connectivity between sites using aggregated prefixes\n- Identify network topology patterns and connectivity gaps\n- Generate connectivity matrices for different aggregation levels\n\n**Use Cases:**\n- Site-to-site connectivity analysis\n- Network segmentation validation\n- Route aggregation verification\n- Multi-site network planning\n\n**Parameters:**\n- network_id: Target network for analysis\n- prefix_levels: Aggregation levels to analyze (e.g., ['/8', '/16', '/24'])\n- from_devices/to_devices: Specific devices to analyze\n- intent: Search intent (PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY)\n- max_results: Maximum results per analysis",
 		s.analyzeNetworkPrefixes)
 
 	// NQE Tools
+	addTool(server, "run_nqe_query",
+		"Run raw Network Query Engine (NQE) source code directly through Forward's native NQE API. Use built-in query IDs first when a matching library query exists; use this tool for narrow ad-hoc analysis or when composing a query from the Forward NQE data model. This executes the query only and does not save it to the NQE Library. Set options.limit for bounded results or all_results:true for paginated retrieval.",
+		s.runNQEQueryByString)
+
 	addTool(server, "run_nqe_query_by_id",
 		"🚀 **RECOMMENDED**: Use this tool for standard network analysis and compliance checks.\n\nRun a Network Query Engine (NQE) query using a predefined query ID from the library. This is the preferred method for consistent, reliable network analysis.\n\n**Best Practices:**\n- Use 'all_results: true' to fetch complete datasets\n- Set appropriate 'limit' and 'offset' for pagination\n- Use 'parameters' for dynamic query customization\n- Check query descriptions with list_nqe_queries first\n\n**Performance Tips:**\n- Large results are automatically cached and chunked\n- Use semantic search to find relevant queries\n- Set reasonable limits to avoid timeouts",
 		s.runNQEQueryByID)
+
+	addTool(server, "start_nqe_query",
+		"Start an asynchronous Forward NQE execution using either raw NQE source or an NQE Library query ID. Use this for long-running queries. Returns an execution_key for get_nqe_query_status and get_nqe_query_result. This does not save raw source to the NQE Library.",
+		s.startNQEQuery)
+
+	addTool(server, "get_nqe_query_status",
+		"Get status for an asynchronous Forward NQE execution. Poll this with the execution_key returned by start_nqe_query before fetching results.",
+		s.getNQEQueryStatus)
+
+	addTool(server, "get_nqe_query_result",
+		"Fetch results for a completed asynchronous Forward NQE execution. Supports offset/limit pagination and all_results:true for complete result retrieval.",
+		s.getNQEQueryResult)
 
 	addTool(server, "list_nqe_queries",
 		"🔍 **DISCOVERY TOOL**: Find available NQE queries for your analysis needs.\n\nList available NQE queries from the Forward Networks query library. Use this to discover predefined queries for reports and analysis.\n\n**Usage Tips:**\n- Filter by directory (e.g., '/L3/Basic/', '/L3/Advanced/', '/L3/Security/')\n- Use search_nqe_queries for semantic search\n- Check query descriptions before running\n- Use query IDs with run_nqe_query_by_id",
@@ -561,14 +586,139 @@ func (s *ForwardMCPService) RegisterTools(server *mcp.Server) error {
 		"Compare network configurations between snapshots to identify changes. Essential for change tracking and troubleshooting configuration drift.",
 		s.getConfigDiff)
 
+	addTool(server, "get_nqe_diff",
+		"Compare arbitrary NQE query results between two snapshots. Use this for NQE diffs, intent/check diffs, and drift analysis. Supports filters and sorting on ChangeType values ADDED, DELETED, and MODIFIED.",
+		s.getNQEDiff)
+
+	addTool(server, "get_snapshot_diff_summary",
+		"Get a broad snapshot diff overview across generally available Forward diff domains: files/configs, devices, cloud objects, interfaces, routes, ACLs, NAT, ARP, MAC, topology links, VLANs, checks, inventory queries, routing loops, and vulnerabilities.",
+		s.getSnapshotDiffSummary)
+
+	addTool(server, "get_snapshot_diff",
+		"Get focused details for a generally available Forward snapshot diff domain. Supports diff_type values such as files, devices, cloud-objects, interfaces, routes/l3, acl, cloud-acl, nat, arp, mac, topology, l2/vlans, checks, inventory-queries, routing-loop, and vulnerabilities.",
+		s.getSnapshotDiff)
+
+	addTool(server, "get_blast_radius",
+		"Get Forward blast radius for a source location to one or more IPv4 destination subnets. Use source_device for a simple DeviceFilter source or source for raw Forward LocationFilter JSON. Set host_centric for host-oriented rows.",
+		s.getBlastRadius)
+
+	addTool(server, "suggest_blast_radius_sources",
+		"Search valid Forward source locations for blast-radius analysis. Use this before get_blast_radius when the source name or location filter is uncertain.",
+		s.suggestBlastRadiusSources)
+
+	addTool(server, "list_predefined_checks",
+		"List Forward predefined checks available for intent/compliance analysis.",
+		s.listPredefinedChecks)
+
+	addTool(server, "list_checks",
+		"List checks for a Forward snapshot, optionally filtered by type, priority, and status. Use this for intent status and failed-check triage.",
+		s.listChecks)
+
+	addTool(server, "get_check",
+		"Get detailed results for one Forward check in a snapshot.",
+		s.getCheck)
+
 	// Device Management Tools
 	addTool(server, "list_devices",
 		"List devices in a network. Requires network_id. Returns basic device inventory with names, types, and status. Supports pagination with limit and offset. Use for device discovery and inventory management.",
 		s.listDevices)
 
+	addTool(server, "get_missing_devices",
+		"Get missing-device evidence for a Forward network snapshot. Use after collection to find peers Forward inferred but did not successfully collect.",
+		s.getMissingDevices)
+
 	addTool(server, "get_device_locations",
 		"Get device location mappings for a network. Requires network_id. Shows which devices are assigned to which physical locations. Use for topology planning and device organization.",
 		s.getDeviceLocations)
+
+	// Network Setup and Collection Tools
+	addTool(server, "list_classic_devices",
+		"List classic collection devices configured on a network. Requires network_id. Optional 'with' values include tags, locationId, and testResult. Use this before changing collection sources.",
+		s.listClassicDevices)
+
+	addTool(server, "get_classic_device",
+		"Get one classic collection device by name. Requires network_id and device_name. Optional 'with' values include tags, locationId, and testResult.",
+		s.getClassicDevice)
+
+	addTool(server, "upsert_classic_devices",
+		"Add or update classic collection devices in batch using Forward NewClassicDevice JSON. Requires network_id and devices array. Each device requires name and host. To enable SNMP performance collection for a device, set snmpCredentialId to an SNMP credential ID and enableSnmpCollection to true. Optional performance thresholds include highCpuUsage, highMemoryUsage, highInputUtilization, highOutputUtilization, and medium variants.",
+		s.upsertClassicDevices)
+
+	addTool(server, "delete_classic_devices",
+		"Delete classic collection devices by name. Requires network_id and names array. Use with caution because it removes collection source definitions.",
+		s.deleteClassicDevices)
+
+	addTool(server, "list_cli_credentials",
+		"List CLI credentials configured for a network. Requires network_id. Forward substitutes generated identifiers for sensitive password values.",
+		s.listCliCredentials)
+
+	addTool(server, "create_cli_credential",
+		"Create a CLI credential for network device collection. Requires network_id and credential JSON with type, name, and password; username is required for LOGIN and SHELL credential types. Plaintext passwords are never returned by this tool.",
+		s.createCliCredential)
+
+	addTool(server, "delete_cli_credential",
+		"Delete a CLI credential by ID. Requires network_id and credential_id. Use with caution because devices may reference this credential.",
+		s.deleteCliCredential)
+
+	addTool(server, "list_snmp_credentials",
+		"List SNMP credentials configured for a network. Requires network_id. Use this before enabling SNMP performance collection on devices. Sensitive values are redacted.",
+		s.listSnmpCredentials)
+
+	addTool(server, "create_snmp_credential",
+		"Create an SNMP credential for Forward performance collection. Requires network_id and credential JSON. For SNMPv2c use {name, version:\"V2C\", communityString}. For SNMPv3 use {name, version:\"V3\", authSettings:{username, authType, password, optional privacyProtocol/privacyPassword}}. Optional autoAssociate lets Forward try the credential during connectivity tests.",
+		s.createSnmpCredential)
+
+	addTool(server, "delete_snmp_credential",
+		"Delete an SNMP credential by ID. Requires network_id and credential_id. Use with caution because classic devices may reference this credential via snmpCredentialId.",
+		s.deleteSnmpCredential)
+
+	addTool(server, "get_performance_settings",
+		"Get network performance-monitoring settings. Requires network_id. Performance data collection must be enabled here and per device before CPU, memory, and interface utilization data is available.",
+		s.getPerformanceSettings)
+
+	addTool(server, "update_performance_settings",
+		"Enable or disable network performance monitoring and set collection interval. Requires network_id and settings patch, e.g. {enabled:true, intervalMinutes:5}. A supported collector must be configured; devices still need snmpCredentialId plus enableSnmpCollection:true.",
+		s.updatePerformanceSettings)
+
+	addTool(server, "list_performance_devices",
+		"List devices that have Forward performance data in the requested time window. Requires network_id. Optional snapshot_id, start_time, and end_time bound the history window.",
+		s.listPerformanceDevices)
+
+	addTool(server, "get_device_performance",
+		"Get historical Forward performance data for one device: CPU and memory usage with thresholds. Requires network_id and device_name. Optional snapshot_id, start_time, end_time, and max_samples.",
+		s.getDevicePerformance)
+
+	addTool(server, "get_interface_performance",
+		"Get historical Forward performance data for one interface: input/output utilization, errors, and discards with thresholds. Requires network_id, device_name, and interface_name. Optional snapshot_id, start_time, end_time, and max_samples.",
+		s.getInterfacePerformance)
+
+	addTool(server, "get_collector_status",
+		"Get the assigned collector status for a network, including whether a collector is set and its busy status.",
+		s.getCollectorStatus)
+
+	addTool(server, "start_collection",
+		"Trigger a collection for a network. Requires network_id and an online collector. Use wait_for_latest_snapshot afterward to wait for a processed snapshot.",
+		s.startCollection)
+
+	addTool(server, "start_collection_task",
+		"Create a Forward network collection task. Requires network_id and an assigned online collector. Use get_collector_task to follow task status, then wait_for_latest_snapshot for a processed snapshot.",
+		s.startCollectionTask)
+
+	addTool(server, "get_collector_task",
+		"Get status and details for a Forward collector task returned by start_collection_task.",
+		s.getCollectorTask)
+
+	addTool(server, "cancel_collection",
+		"Cancel an in-progress collection for a network. Requires network_id.",
+		s.cancelCollection)
+
+	addTool(server, "list_collection_schedules",
+		"List configured collection schedules for a network. Requires network_id.",
+		s.listCollectionSchedules)
+
+	addTool(server, "wait_for_latest_snapshot",
+		"Poll for the latest processed snapshot for a network. Optionally provide previous_snapshot_id to wait for a new processed snapshot after a collection.",
+		s.waitForLatestSnapshot)
 
 	// Snapshot Management Tools
 	addTool(server, "list_snapshots",
@@ -1362,17 +1512,103 @@ type SearchPathsBulkArgs struct {
 	MaxReturnPathResults    int                   `json:"max_return_path_results,omitempty" jsonschema:"Maximum number of return path results"`
 	MaxSeconds              int                   `json:"max_seconds,omitempty" jsonschema:"Maximum seconds per query"`
 	MaxOverallSeconds       int                   `json:"max_overall_seconds,omitempty" jsonschema:"Maximum overall seconds for all queries"`
+	IncludeTags             bool                  `json:"include_tags,omitempty" jsonschema:"Include device tags for each hop"`
 	IncludeNetworkFunctions bool                  `json:"include_network_functions,omitempty" jsonschema:"Include network functions in results"`
 }
 
 // PathSearchQueryArgs represents a single path search query in bulk request
 type PathSearchQueryArgs struct {
-	From    string `json:"from,omitempty" jsonschema:"Source device name"`
-	SrcIP   string `json:"src_ip,omitempty" jsonschema:"Source IP address or subnet"`
-	DstIP   string `json:"dst_ip" jsonschema:"Destination IP address or subnet"`
-	IPProto *int   `json:"ip_proto,omitempty" jsonschema:"IP protocol number"`
-	SrcPort string `json:"src_port,omitempty" jsonschema:"Source port"`
-	DstPort string `json:"dst_port,omitempty" jsonschema:"Destination port"`
+	From        string `json:"from,omitempty" jsonschema:"Source device name"`
+	SrcIP       string `json:"src_ip,omitempty" jsonschema:"Source IP address or subnet"`
+	DstIP       string `json:"dst_ip" jsonschema:"Destination IP address or subnet"`
+	IPProto     *int   `json:"ip_proto,omitempty" jsonschema:"IP protocol number"`
+	SrcPort     string `json:"src_port,omitempty" jsonschema:"Source port"`
+	DstPort     string `json:"dst_port,omitempty" jsonschema:"Destination port"`
+	AppID       string `json:"app_id,omitempty" jsonschema:"L7 app ID, such as ssh or unidentified"`
+	UserID      string `json:"user_id,omitempty" jsonschema:"L7 user ID or unidentified"`
+	UserGroupID string `json:"user_group_id,omitempty" jsonschema:"L7 user group ID"`
+	URL         string `json:"url,omitempty" jsonschema:"L7 URL with supported wildcards"`
+	Domain      string `json:"domain,omitempty" jsonschema:"DNS domain name with supported wildcards; cannot be used with url"`
+}
+
+func (s *ForwardMCPService) getSnapshotTopology(args GetSnapshotTopologyArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_snapshot_topology", args, nil)
+
+	snapshotID := strings.TrimSpace(args.SnapshotID)
+	if snapshotID == "" || strings.EqualFold(snapshotID, "latest") {
+		networkID := s.getNetworkID(args.NetworkID)
+		if err := s.validateNetworkID(networkID); err != nil {
+			return nil, err
+		}
+		snapshot, err := s.forwardClient.GetLatestSnapshot(networkID)
+		if err != nil {
+			s.logToolCall("get_snapshot_topology", args, err)
+			return nil, fmt.Errorf("failed to get latest snapshot: %w", err)
+		}
+		snapshotID = snapshot.ID
+	}
+	if err := s.validateNonEmpty("snapshot_id", snapshotID); err != nil {
+		return nil, err
+	}
+
+	links, err := s.forwardClient.GetTopology(snapshotID)
+	if err != nil {
+		s.logToolCall("get_snapshot_topology", args, err)
+		return nil, fmt.Errorf("failed to get snapshot topology: %w", err)
+	}
+
+	filter := strings.ToLower(strings.TrimSpace(args.DeviceFilter))
+	filtered := links
+	if filter != "" {
+		filtered = make([]forward.TopologyLink, 0, len(links))
+		for _, link := range links {
+			if strings.Contains(strings.ToLower(link.SourcePort), filter) ||
+				strings.Contains(strings.ToLower(link.TargetPort), filter) {
+				filtered = append(filtered, link)
+			}
+		}
+	}
+
+	offset := args.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	limit := args.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	end := offset + limit
+	if offset > len(filtered) {
+		offset = len(filtered)
+	}
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	returned := filtered[offset:end]
+
+	payload := map[string]interface{}{
+		"snapshotId":     snapshotID,
+		"totalLinks":     len(links),
+		"filteredLinks":  len(filtered),
+		"returnedLinks":  len(returned),
+		"offset":         offset,
+		"limit":          limit,
+		"deviceFilter":   strings.TrimSpace(args.DeviceFilter),
+		"topologyLinks":  returned,
+		"directedLinks":  true,
+		"sourceEndpoint": "/api/snapshots/{snapshotId}/topology",
+	}
+
+	response := fmt.Sprintf("Snapshot topology links:\n%s", MarshalCompactJSONString(payload))
+	if end < len(filtered) {
+		response += fmt.Sprintf("\n\nWarning: Results may be truncated. Use offset %d for the next page.", end)
+	}
+
+	return newToolResponse(newTextContent(response)), nil
 }
 
 func (s *ForwardMCPService) searchPathsBulk(args SearchPathsBulkArgs) (*mcp.CallToolResult, error) {
@@ -1444,11 +1680,16 @@ func (s *ForwardMCPService) searchPathsBulk(args SearchPathsBulkArgs) (*mcp.Call
 		}
 
 		params := forward.PathSearchParams{
-			From:    query.From,
-			SrcIP:   srcIP,
-			DstIP:   dstIP,
-			SrcPort: query.SrcPort,
-			DstPort: query.DstPort,
+			From:        query.From,
+			SrcIP:       srcIP,
+			DstIP:       dstIP,
+			SrcPort:     query.SrcPort,
+			DstPort:     query.DstPort,
+			AppID:       query.AppID,
+			UserID:      query.UserID,
+			UserGroupID: query.UserGroupID,
+			URL:         query.URL,
+			Domain:      query.Domain,
 		}
 
 		if query.IPProto != nil {
@@ -1470,6 +1711,7 @@ func (s *ForwardMCPService) searchPathsBulk(args SearchPathsBulkArgs) (*mcp.Call
 		MaxReturnPathResults:    args.MaxReturnPathResults,
 		MaxSeconds:              args.MaxSeconds,
 		MaxOverallSeconds:       args.MaxOverallSeconds,
+		IncludeTags:             args.IncludeTags,
 		IncludeNetworkFunctions: args.IncludeNetworkFunctions,
 	}
 
@@ -1608,7 +1850,359 @@ func (s *ForwardMCPService) convertNQEQueryOptions(options *NQEQueryOptions) *fo
 	return forwardOptions
 }
 
+func (s *ForwardMCPService) convertNQEExecutionColumnFilters(filters []NQEExecutionColumnFilter) []forward.NQEExecutionColumnFilter {
+	if len(filters) == 0 {
+		return nil
+	}
+
+	forwardFilters := make([]forward.NQEExecutionColumnFilter, len(filters))
+	for i, filter := range filters {
+		forwardFilters[i] = forward.NQEExecutionColumnFilter{
+			ColumnName: strings.TrimSpace(filter.ColumnName),
+			Operator:   strings.TrimSpace(filter.Operator),
+			Value:      filter.Value,
+			LowerBound: filter.LowerBound,
+			UpperBound: filter.UpperBound,
+		}
+		if forwardFilters[i].Operator == "" {
+			forwardFilters[i].Operator = "DEFAULT"
+		}
+	}
+
+	return forwardFilters
+}
+
+func (s *ForwardMCPService) convertNQESortKeys(sortKeys []NQESortBy) []forward.NQESortBy {
+	if len(sortKeys) == 0 {
+		return nil
+	}
+
+	forwardSortKeys := make([]forward.NQESortBy, len(sortKeys))
+	for i, sortKey := range sortKeys {
+		forwardSortKeys[i] = forward.NQESortBy{
+			ColumnName: strings.TrimSpace(sortKey.ColumnName),
+			Order:      strings.TrimSpace(sortKey.Order),
+		}
+	}
+
+	return forwardSortKeys
+}
+
 // NQE Tool Implementations
+func (s *ForwardMCPService) startNQEQuery(args StartNQEQueryArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("start_nqe_query", args, nil)
+
+	query := strings.TrimSpace(args.Query)
+	queryID := strings.TrimSpace(args.QueryID)
+	if (query == "" && queryID == "") || (query != "" && queryID != "") {
+		return nil, fmt.Errorf("provide exactly one of query or query_id")
+	}
+
+	networkID := s.getNetworkID(args.NetworkID)
+	if err := s.validateNetworkID(networkID); err != nil {
+		return nil, err
+	}
+
+	if queryID != "" {
+		if err := s.validateQueryID(queryID); err != nil {
+			return nil, err
+		}
+	}
+
+	request := &forward.NQEExecutionRequest{
+		Query:         query,
+		QueryID:       queryID,
+		CommitID:      strings.TrimSpace(args.CommitID),
+		Parameters:    args.Parameters,
+		ColumnFilters: s.convertNQEExecutionColumnFilters(args.ColumnFilters),
+		SortKeys:      s.convertNQESortKeys(args.SortKeys),
+	}
+
+	result, err := s.forwardClient.StartNQEExecution(networkID, s.getSnapshotID(args.SnapshotID), request)
+	if err != nil {
+		s.logToolCall("start_nqe_query", args, err)
+		return nil, fmt.Errorf("failed to start NQE query execution: %w", err)
+	}
+
+	response := fmt.Sprintf("NQE query execution started:\n%s\n\nUse get_nqe_query_status with execution_key %q before fetching results.",
+		MarshalCompactJSONString(result), result.ExecutionKey)
+	return newToolResponse(newTextContent(response)), nil
+}
+
+func (s *ForwardMCPService) getNQEQueryStatus(args GetNQEQueryStatusArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_nqe_query_status", args, nil)
+
+	if err := s.validateNonEmpty("execution_key", strings.TrimSpace(args.ExecutionKey)); err != nil {
+		return nil, err
+	}
+
+	networkID := s.getNetworkID(args.NetworkID)
+	if err := s.validateNetworkID(networkID); err != nil {
+		return nil, err
+	}
+
+	status, err := s.forwardClient.GetNQEExecutionStatus(networkID, strings.TrimSpace(args.ExecutionKey))
+	if err != nil {
+		s.logToolCall("get_nqe_query_status", args, err)
+		return nil, fmt.Errorf("failed to get NQE query execution status: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("NQE query execution status:\n%s", MarshalCompactJSONString(status)))), nil
+}
+
+func (s *ForwardMCPService) getNQEQueryResult(args GetNQEQueryResultArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_nqe_query_result", args, nil)
+
+	executionKey := strings.TrimSpace(args.ExecutionKey)
+	if err := s.validateNonEmpty("execution_key", executionKey); err != nil {
+		return nil, err
+	}
+
+	networkID := s.getNetworkID(args.NetworkID)
+	if err := s.validateNetworkID(networkID); err != nil {
+		return nil, err
+	}
+
+	limit := s.getQueryLimit(args.Limit)
+	offset := args.Offset
+	if offset < 0 {
+		return nil, fmt.Errorf("offset must be zero or greater")
+	}
+
+	queryLabel := fmt.Sprintf("async_nqe_%s", executionKey)
+	if args.AllResults {
+		allItems := []map[string]interface{}{}
+		var lastResult *forward.NQERunResult
+		for {
+			result, err := s.forwardClient.GetNQEExecutionResult(networkID, executionKey, offset, limit)
+			if err != nil {
+				s.logToolCall("get_nqe_query_result", args, err)
+				return nil, fmt.Errorf("failed to get NQE query execution result (batch at offset %d): %w", offset, err)
+			}
+			if lastResult == nil {
+				lastResult = result
+			}
+			allItems = append(allItems, result.Items...)
+			if len(result.Items) < limit || (result.TotalNumItems > 0 && int64(len(allItems)) >= result.TotalNumItems) {
+				break
+			}
+			offset += limit
+		}
+
+		if lastResult == nil {
+			return newToolResponse(newTextContent("No results found.")), nil
+		}
+		lastResult.Items = allItems
+
+		var entityID string
+		if s.memorySystem != nil {
+			id, chunkErr := s.memorySystem.StoreNQEResultWithChunking(queryLabel, networkID, "", lastResult, 200)
+			if chunkErr != nil {
+				s.logger.Warn("Failed to store async NQE result with chunking: %v", chunkErr)
+			} else {
+				entityID = id
+			}
+		}
+
+		rowCount := len(allItems)
+		var columns []string
+		if rowCount > 0 {
+			for k := range allItems[0] {
+				columns = append(columns, k)
+			}
+		}
+		previewRows := 5
+		if rowCount < previewRows {
+			previewRows = rowCount
+		}
+		previewJSON, _ := json.MarshalIndent(allItems[:previewRows], "", "  ")
+
+		response := "Fetched all async NQE results in batches.\n"
+		response += fmt.Sprintf("Total items: %d\nColumns: %v\n", rowCount, columns)
+		response += fmt.Sprintf("Preview (first %d rows):\n%s\n", previewRows, string(previewJSON))
+		if entityID != "" {
+			response += fmt.Sprintf("Stored in memory system as entity: %s\n", entityID)
+			response += "You can use get_nqe_result_summary to analyze this result locally.\n"
+		}
+		return newToolResponse(newTextContent(response)), nil
+	}
+
+	result, err := s.forwardClient.GetNQEExecutionResult(networkID, executionKey, offset, limit)
+	if err != nil {
+		s.logToolCall("get_nqe_query_result", args, err)
+		return nil, fmt.Errorf("failed to get NQE query execution result: %w", err)
+	}
+
+	if s.memorySystem != nil {
+		if _, chunkErr := s.memorySystem.StoreNQEResultWithChunking(queryLabel, networkID, result.SnapshotID, result, 200); chunkErr != nil {
+			s.logger.Warn("Failed to store async NQE result with chunking: %v", chunkErr)
+		}
+	}
+
+	response := fmt.Sprintf("NQE query execution result. Found %d items:\n%s\n", len(result.Items), MarshalCompactJSONString(result))
+	if len(result.Items) == limit {
+		response += "\nWarning: Results may be truncated. Use the 'offset' parameter to fetch the next page.\n"
+		response += fmt.Sprintf("Example: set 'offset' to %d to get the next page.\n", offset+limit)
+		response += "Or set 'all_results: true' in your request to fetch all results in batches.\n"
+	}
+	return newToolResponse(newTextContent(response)), nil
+}
+
+func (s *ForwardMCPService) runNQEQueryByString(args RunNQEQueryByStringArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("run_nqe_query", args, nil)
+
+	if err := s.validateNonEmpty("query", strings.TrimSpace(args.Query)); err != nil {
+		return nil, err
+	}
+
+	networkID := s.getNetworkID(args.NetworkID)
+	if err := s.validateNetworkID(networkID); err != nil {
+		return nil, err
+	}
+	snapshotID := s.getSnapshotID(args.SnapshotID)
+	queryLabel := "raw_nqe_query"
+
+	if args.AllResults {
+		limit := s.getQueryLimit(0)
+		if args.Options != nil && args.Options.Limit > 0 {
+			limit = args.Options.Limit
+		}
+		offset := 0
+		if args.Options != nil && args.Options.Offset > 0 {
+			offset = args.Options.Offset
+		}
+
+		allItems := []map[string]interface{}{}
+		var lastResult *forward.NQERunResult
+		for {
+			options := s.convertNQEQueryOptions(args.Options)
+			if options == nil {
+				options = &forward.NQEQueryOptions{}
+			}
+			options.Limit = limit
+			options.Offset = offset
+
+			params := &forward.NQEQueryParams{
+				NetworkID:  networkID,
+				Query:      args.Query,
+				SnapshotID: snapshotID,
+				Parameters: args.Parameters,
+				Options:    options,
+			}
+			result, err := s.forwardClient.RunNQEQueryByString(params)
+			if err != nil {
+				return nil, fmt.Errorf("failed to run raw NQE query (batch at offset %d): %w", offset, err)
+			}
+			if lastResult == nil {
+				lastResult = result
+			}
+			allItems = append(allItems, result.Items...)
+			if len(result.Items) < limit {
+				break
+			}
+			offset += limit
+		}
+
+		if lastResult == nil {
+			return newToolResponse(newTextContent("No results found.")), nil
+		}
+		lastResult.Items = allItems
+
+		var entityID string
+		if s.memorySystem != nil {
+			id, chunkErr := s.memorySystem.StoreNQEResultWithChunking(queryLabel, networkID, snapshotID, lastResult, 200)
+			if chunkErr != nil {
+				s.logger.Warn("Failed to store raw NQE result with chunking: %v", chunkErr)
+			} else {
+				entityID = id
+				s.logger.Debug("Stored raw NQE result in memory system with chunking (entity: %s)", id)
+			}
+		}
+
+		rowCount := len(allItems)
+		var columns []string
+		if rowCount > 0 {
+			for k := range allItems[0] {
+				columns = append(columns, k)
+			}
+		}
+		previewRows := 5
+		if rowCount < previewRows {
+			previewRows = rowCount
+		}
+		previewJSON, _ := json.MarshalIndent(allItems[:previewRows], "", "  ")
+
+		response := "Fetched all raw NQE results in batches.\n"
+		response += fmt.Sprintf("Total items: %d\nColumns: %v\n", rowCount, columns)
+		response += fmt.Sprintf("Preview (first %d rows):\n%s\n", previewRows, string(previewJSON))
+		if entityID != "" {
+			response += fmt.Sprintf("Stored in memory system as entity: %s\n", entityID)
+			response += "You can use get_nqe_result_summary to analyze this result locally.\n"
+		}
+		return newToolResponse(newTextContent(response)), nil
+	}
+
+	params := &forward.NQEQueryParams{
+		NetworkID:  networkID,
+		Query:      args.Query,
+		SnapshotID: snapshotID,
+		Parameters: args.Parameters,
+		Options:    s.convertNQEQueryOptions(args.Options),
+	}
+	if params.Options == nil {
+		params.Options = &forward.NQEQueryOptions{
+			Limit: s.getQueryLimit(0),
+		}
+	}
+
+	start := time.Now()
+	result, err := s.forwardClient.RunNQEQueryByString(params)
+	executionTime := time.Since(start)
+	if err != nil {
+		s.logToolCall("run_nqe_query", args, err)
+		errorStr := err.Error()
+		if strings.Contains(errorStr, "result exceeds maximum length") {
+			s.logger.Warn("Raw NQE result too large, retrying with all_results: true")
+			args.AllResults = true
+			batchResp, batchErr := s.runNQEQueryByString(args)
+			if batchErr != nil {
+				return nil, batchErr
+			}
+			if batchResp != nil && len(batchResp.Content) > 0 {
+				msg := "The raw NQE result was too large to return directly. Fetching results in batches for local analysis.\n\n"
+				batchResp.Content[0] = newTextContent(msg + contentText(batchResp.Content[0]))
+			}
+			return batchResp, nil
+		}
+		return nil, fmt.Errorf("failed to run raw NQE query: %w", err)
+	}
+
+	if s.apiTracker != nil {
+		if trackErr := s.apiTracker.TrackNetworkQuery(queryLabel, networkID, snapshotID, result, executionTime); trackErr != nil {
+			s.logger.Debug("Failed to track raw NQE query execution in memory system: %v", trackErr)
+		}
+	}
+
+	if s.memorySystem != nil {
+		_, chunkErr := s.memorySystem.StoreNQEResultWithChunking(queryLabel, networkID, snapshotID, result, 200)
+		if chunkErr != nil {
+			s.logger.Warn("Failed to store raw NQE result with chunking: %v", chunkErr)
+		}
+	}
+
+	resultJSON := MarshalCompactJSONString(result)
+	s.logger.Debug("Raw NQE query completed with %d items", len(result.Items))
+
+	response := fmt.Sprintf("Raw NQE query completed. Found %d items:\n%s\n", len(result.Items), resultJSON)
+	if params.Options != nil && len(result.Items) == params.Options.Limit {
+		response += "\n⚠️ Results may be truncated. Use the 'offset' parameter to fetch the next page.\n"
+		response += fmt.Sprintf("Example: set 'offset' to %d to get the next page.\n", params.Options.Offset+params.Options.Limit)
+		response += "Or set 'all_results: true' in your request to fetch all results in batches.\n"
+	}
+
+	return newToolResponse(newTextContent(response)), nil
+}
+
 func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.CallToolResult, error) {
 	s.logToolCall("run_nqe_query_by_id", args, nil)
 
@@ -1977,6 +2571,20 @@ func (s *ForwardMCPService) listDevices(args ListDevicesArgs) (*mcp.CallToolResu
 	return newToolResponse(newTextContent(fmt.Sprintf("Found %d devices (total: %d):\n%s", len(response.Devices), response.TotalCount, result))), nil
 }
 
+func (s *ForwardMCPService) getMissingDevices(args GetMissingDevicesArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_missing_devices", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	missingDevices, err := s.forwardClient.GetMissingDevices(args.NetworkID, args.SnapshotID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get missing devices: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Missing devices:\n%s", MarshalCompactJSONString(missingDevices)))), nil
+}
+
 func (s *ForwardMCPService) getDeviceLocations(args GetDeviceLocationsArgs) (*mcp.CallToolResult, error) {
 	s.logToolCall("get_device_locations", args, nil)
 
@@ -2073,6 +2681,561 @@ func (s *ForwardMCPService) getDeviceLocations(args GetDeviceLocationsArgs) (*mc
 	}
 
 	return newToolResponse(newTextContent(responseText.String())), nil
+}
+
+func redactSensitiveValues(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		redacted := make(map[string]interface{}, len(v))
+		for key, item := range v {
+			if isSensitiveKeyName(key) {
+				redacted[key] = "***REDACTED***"
+				continue
+			}
+			redacted[key] = redactSensitiveValues(item)
+		}
+		return redacted
+	case []map[string]interface{}:
+		redacted := make([]interface{}, len(v))
+		for i, item := range v {
+			redacted[i] = redactSensitiveValues(item)
+		}
+		return redacted
+	case []interface{}:
+		redacted := make([]interface{}, len(v))
+		for i, item := range v {
+			redacted[i] = redactSensitiveValues(item)
+		}
+		return redacted
+	default:
+		return value
+	}
+}
+
+func isSensitiveKeyName(key string) bool {
+	normalized := strings.NewReplacer("_", "", "-", "", ".", "").Replace(strings.ToLower(key))
+	return strings.Contains(normalized, "password") ||
+		strings.Contains(normalized, "secret") ||
+		strings.Contains(normalized, "community") ||
+		strings.Contains(normalized, "token") ||
+		strings.Contains(normalized, "passphrase") ||
+		strings.Contains(normalized, "sshkey") ||
+		strings.Contains(normalized, "privatekey") ||
+		strings.Contains(normalized, "apikey") ||
+		strings.Contains(normalized, "accesskey")
+}
+
+func stringMapValue(values map[string]interface{}, key string) string {
+	if values == nil {
+		return ""
+	}
+	if value, ok := values[key].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+func classicDevicesFromResponse(response map[string]interface{}) []interface{} {
+	devices, ok := response["devices"].([]interface{})
+	if !ok {
+		return []interface{}{}
+	}
+	return devices
+}
+
+func (s *ForwardMCPService) listClassicDevices(args ListClassicDevicesArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("list_classic_devices", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	response, err := s.forwardClient.GetClassicDevices(args.NetworkID, args.With)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list classic devices: %w", err)
+	}
+
+	devices := classicDevicesFromResponse(response)
+	totalCount := len(devices)
+
+	limit := args.Limit
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	offset := args.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	start := offset
+	end := offset + limit
+	if start >= totalCount {
+		response["devices"] = []interface{}{}
+	} else {
+		if end > totalCount {
+			end = totalCount
+		}
+		response["devices"] = devices[start:end]
+	}
+
+	shown := len(classicDevicesFromResponse(response))
+	hasMore := offset+shown < totalCount
+
+	var responseText strings.Builder
+	responseText.WriteString(fmt.Sprintf("Found %d classic devices", totalCount))
+	if shown == 0 {
+		responseText.WriteString(" (showing 0)")
+	} else {
+		responseText.WriteString(fmt.Sprintf(" (showing %d-%d)", offset+1, offset+shown))
+	}
+	if hasMore {
+		responseText.WriteString(fmt.Sprintf(", %d more available", totalCount-offset-shown))
+	}
+	responseText.WriteString(":\n")
+	responseText.WriteString(MarshalCompactJSONString(response))
+
+	return newToolResponse(newTextContent(responseText.String())), nil
+}
+
+func (s *ForwardMCPService) getClassicDevice(args GetClassicDeviceArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_classic_device", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+	if err := s.validateNonEmpty("device_name", args.DeviceName); err != nil {
+		return nil, err
+	}
+
+	device, err := s.forwardClient.GetClassicDevice(args.NetworkID, args.DeviceName, args.With)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get classic device: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Classic device:\n%s", MarshalCompactJSONString(device)))), nil
+}
+
+func (s *ForwardMCPService) upsertClassicDevices(args UpsertClassicDevicesArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("upsert_classic_devices", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+	if len(args.Devices) == 0 {
+		return nil, fmt.Errorf("devices is required")
+	}
+	for i, device := range args.Devices {
+		if stringMapValue(device, "name") == "" {
+			return nil, fmt.Errorf("devices[%d].name is required", i)
+		}
+		if stringMapValue(device, "host") == "" {
+			return nil, fmt.Errorf("devices[%d].host is required", i)
+		}
+	}
+
+	if err := s.forwardClient.UpsertClassicDevices(args.NetworkID, args.Devices); err != nil {
+		return nil, fmt.Errorf("failed to upsert classic devices: %w", err)
+	}
+
+	names := make([]string, 0, len(args.Devices))
+	for _, device := range args.Devices {
+		names = append(names, stringMapValue(device, "name"))
+	}
+	return newToolResponse(newTextContent(fmt.Sprintf("Upserted %d classic devices: %s", len(names), strings.Join(names, ", ")))), nil
+}
+
+func (s *ForwardMCPService) deleteClassicDevices(args DeleteClassicDevicesArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("delete_classic_devices", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+	if len(args.Names) == 0 {
+		return nil, fmt.Errorf("names is required")
+	}
+
+	if err := s.forwardClient.DeleteClassicDevices(args.NetworkID, args.Names); err != nil {
+		return nil, fmt.Errorf("failed to delete classic devices: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Deleted %d classic devices: %s", len(args.Names), strings.Join(args.Names, ", ")))), nil
+}
+
+func (s *ForwardMCPService) listCliCredentials(args ListCliCredentialsArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("list_cli_credentials", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	credentials, err := s.forwardClient.GetCliCredentials(args.NetworkID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list CLI credentials: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Found %d CLI credentials:\n%s", len(credentials), MarshalCompactJSONString(redactSensitiveValues(credentials))))), nil
+}
+
+func (s *ForwardMCPService) createCliCredential(args CreateCliCredentialArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("create_cli_credential", map[string]interface{}{
+		"network_id": args.NetworkID,
+		"credential": redactSensitiveValues(args.Credential),
+	}, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+	if stringMapValue(args.Credential, "type") == "" {
+		return nil, fmt.Errorf("credential.type is required")
+	}
+	if stringMapValue(args.Credential, "name") == "" {
+		return nil, fmt.Errorf("credential.name is required")
+	}
+	credentialType := strings.ToUpper(stringMapValue(args.Credential, "type"))
+	switch credentialType {
+	case "SSH_KEY":
+		if stringMapValue(args.Credential, "username") == "" {
+			return nil, fmt.Errorf("credential.username is required for SSH_KEY credentials")
+		}
+		if stringMapValue(args.Credential, "sshKey") == "" {
+			return nil, fmt.Errorf("credential.sshKey is required for SSH_KEY credentials")
+		}
+		if stringMapValue(args.Credential, "password") != "" {
+			return nil, fmt.Errorf("credential.password is not permitted for SSH_KEY credentials")
+		}
+	default:
+		if stringMapValue(args.Credential, "password") == "" {
+			return nil, fmt.Errorf("credential.password is required")
+		}
+	}
+
+	credential, err := s.forwardClient.CreateCliCredential(args.NetworkID, args.Credential)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CLI credential: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("CLI credential created:\n%s", MarshalCompactJSONString(redactSensitiveValues(credential))))), nil
+}
+
+func (s *ForwardMCPService) deleteCliCredential(args DeleteCliCredentialArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("delete_cli_credential", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+	if err := s.validateNonEmpty("credential_id", args.CredentialID); err != nil {
+		return nil, err
+	}
+
+	if err := s.forwardClient.DeleteCliCredential(args.NetworkID, args.CredentialID); err != nil {
+		return nil, fmt.Errorf("failed to delete CLI credential: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Deleted CLI credential %s", args.CredentialID))), nil
+}
+
+func (s *ForwardMCPService) listSnmpCredentials(args ListSnmpCredentialsArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("list_snmp_credentials", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	credentials, err := s.forwardClient.GetSnmpCredentials(args.NetworkID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list SNMP credentials: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Found %d SNMP credentials:\n%s", len(credentials), MarshalCompactJSONString(redactSensitiveValues(credentials))))), nil
+}
+
+func (s *ForwardMCPService) createSnmpCredential(args CreateSnmpCredentialArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("create_snmp_credential", map[string]interface{}{
+		"network_id": args.NetworkID,
+		"credential": redactSensitiveValues(args.Credential),
+	}, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+	if stringMapValue(args.Credential, "name") == "" {
+		return nil, fmt.Errorf("credential.name is required")
+	}
+	version := strings.ToUpper(stringMapValue(args.Credential, "version"))
+	if version == "" {
+		return nil, fmt.Errorf("credential.version is required")
+	}
+	switch version {
+	case "V2C":
+		if stringMapValue(args.Credential, "communityString") == "" {
+			return nil, fmt.Errorf("credential.communityString is required for SNMP V2C")
+		}
+	case "V3":
+		if _, ok := args.Credential["authSettings"].(map[string]interface{}); !ok {
+			return nil, fmt.Errorf("credential.authSettings is required for SNMP V3")
+		}
+	default:
+		return nil, fmt.Errorf("credential.version must be V2C or V3")
+	}
+
+	credential, err := s.forwardClient.CreateSnmpCredential(args.NetworkID, args.Credential)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SNMP credential: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("SNMP credential created:\n%s", MarshalCompactJSONString(redactSensitiveValues(credential))))), nil
+}
+
+func (s *ForwardMCPService) deleteSnmpCredential(args DeleteSnmpCredentialArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("delete_snmp_credential", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+	if err := s.validateNonEmpty("credential_id", args.CredentialID); err != nil {
+		return nil, err
+	}
+
+	if err := s.forwardClient.DeleteSnmpCredential(args.NetworkID, args.CredentialID); err != nil {
+		return nil, fmt.Errorf("failed to delete SNMP credential: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Deleted SNMP credential %s", args.CredentialID))), nil
+}
+
+func (s *ForwardMCPService) getPerformanceSettings(args GetPerformanceSettingsArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_performance_settings", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	settings, err := s.forwardClient.GetPerformanceSettings(args.NetworkID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get performance settings: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Performance settings:\n%s", MarshalCompactJSONString(settings)))), nil
+}
+
+func (s *ForwardMCPService) updatePerformanceSettings(args UpdatePerformanceSettingsArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("update_performance_settings", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+	if len(args.Settings) == 0 {
+		return nil, fmt.Errorf("settings is required")
+	}
+
+	settings, err := s.forwardClient.UpdatePerformanceSettings(args.NetworkID, args.Settings)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update performance settings: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Performance settings updated:\n%s", MarshalCompactJSONString(settings)))), nil
+}
+
+func performanceQuery(snapshotID, startTime, endTime string, maxSamples int) url.Values {
+	query := url.Values{}
+	if strings.TrimSpace(snapshotID) != "" {
+		query.Set("snapshotId", strings.TrimSpace(snapshotID))
+	}
+	if strings.TrimSpace(startTime) != "" {
+		query.Set("startTime", strings.TrimSpace(startTime))
+	}
+	if strings.TrimSpace(endTime) != "" {
+		query.Set("endTime", strings.TrimSpace(endTime))
+	}
+	if maxSamples > 0 {
+		query.Set("maxSamples", fmt.Sprintf("%d", maxSamples))
+	}
+	return query
+}
+
+func (s *ForwardMCPService) listPerformanceDevices(args ListPerformanceDevicesArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("list_performance_devices", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	devices, err := s.forwardClient.GetDevicesWithPerformanceData(
+		args.NetworkID,
+		performanceQuery(args.SnapshotID, args.StartTime, args.EndTime, 0),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list devices with performance data: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Found %d devices with performance data:\n%s", len(devices), MarshalCompactJSONString(devices)))), nil
+}
+
+func (s *ForwardMCPService) getDevicePerformance(args GetDevicePerformanceArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_device_performance", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+	if err := s.validateNonEmpty("device_name", args.DeviceName); err != nil {
+		return nil, err
+	}
+
+	performance, err := s.forwardClient.GetDevicePerformance(
+		args.NetworkID,
+		args.DeviceName,
+		performanceQuery(args.SnapshotID, args.StartTime, args.EndTime, args.MaxSamples),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device performance: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Device performance:\n%s", MarshalCompactJSONString(performance)))), nil
+}
+
+func (s *ForwardMCPService) getInterfacePerformance(args GetInterfacePerformanceArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_interface_performance", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+	if err := s.validateNonEmpty("device_name", args.DeviceName); err != nil {
+		return nil, err
+	}
+	if err := s.validateNonEmpty("interface_name", args.InterfaceName); err != nil {
+		return nil, err
+	}
+
+	performance, err := s.forwardClient.GetInterfacePerformance(
+		args.NetworkID,
+		args.DeviceName,
+		args.InterfaceName,
+		performanceQuery(args.SnapshotID, args.StartTime, args.EndTime, args.MaxSamples),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get interface performance: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Interface performance:\n%s", MarshalCompactJSONString(performance)))), nil
+}
+
+func (s *ForwardMCPService) getCollectorStatus(args GetCollectorStatusArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_collector_status", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	status, err := s.forwardClient.GetCollectorStatus(args.NetworkID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get collector status: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Collector status:\n%s", MarshalCompactJSONString(status)))), nil
+}
+
+func (s *ForwardMCPService) startCollection(args StartCollectionArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("start_collection", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	response, err := s.forwardClient.StartCollection(args.NetworkID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start collection: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Collection started:\n%s", MarshalCompactJSONString(response)))), nil
+}
+
+func (s *ForwardMCPService) startCollectionTask(args StartCollectionTaskArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("start_collection_task", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	task, err := s.forwardClient.AddCollectorTask(args.NetworkID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start collection task: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Collection task started:\n%s", MarshalCompactJSONString(task)))), nil
+}
+
+func (s *ForwardMCPService) getCollectorTask(args GetCollectorTaskArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_collector_task", args, nil)
+	if err := s.validateNonEmpty("task_id", args.TaskID); err != nil {
+		return nil, err
+	}
+
+	task, err := s.forwardClient.GetCollectorTask(args.TaskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get collector task: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Collector task:\n%s", MarshalCompactJSONString(task)))), nil
+}
+
+func (s *ForwardMCPService) cancelCollection(args CancelCollectionArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("cancel_collection", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	response, err := s.forwardClient.CancelCollection(args.NetworkID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to cancel collection: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Collection cancel requested:\n%s", MarshalCompactJSONString(response)))), nil
+}
+
+func (s *ForwardMCPService) listCollectionSchedules(args ListCollectionSchedulesArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("list_collection_schedules", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	schedules, err := s.forwardClient.GetCollectionSchedules(args.NetworkID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list collection schedules: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Collection schedules:\n%s", MarshalCompactJSONString(schedules)))), nil
+}
+
+func (s *ForwardMCPService) waitForLatestSnapshot(args WaitForLatestSnapshotArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("wait_for_latest_snapshot", args, nil)
+	if err := s.validateNonEmpty("network_id", args.NetworkID); err != nil {
+		return nil, err
+	}
+
+	timeoutSeconds := args.TimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 300
+	}
+	if timeoutSeconds > 1800 {
+		timeoutSeconds = 1800
+	}
+
+	pollIntervalSeconds := args.PollIntervalSeconds
+	if pollIntervalSeconds <= 0 {
+		pollIntervalSeconds = 10
+	}
+	if pollIntervalSeconds < 2 {
+		pollIntervalSeconds = 2
+	}
+
+	deadline := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
+	var lastErr error
+	attempts := 0
+
+	for {
+		attempts++
+		snapshot, err := s.forwardClient.GetLatestSnapshot(args.NetworkID)
+		if err == nil && snapshot != nil && snapshot.ID != "" && snapshot.ID != args.PreviousSnapshotID {
+			return newToolResponse(newTextContent(fmt.Sprintf("Latest processed snapshot after %d attempts:\n%s", attempts, MarshalCompactJSONString(snapshot)))), nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Duration(pollIntervalSeconds) * time.Second)
+	}
+
+	if lastErr != nil {
+		return nil, fmt.Errorf("timed out waiting for latest processed snapshot after %d attempts; last error: %w", attempts, lastErr)
+	}
+	return nil, fmt.Errorf("timed out waiting for latest processed snapshot after %d attempts", attempts)
 }
 
 // Snapshot Management Tool Implementations
@@ -2673,6 +3836,577 @@ func (s *ForwardMCPService) getConfigDiff(args GetConfigDiffArgs) (*mcp.CallTool
 	}
 
 	return s.runNQEQueryByID(queryArgs)
+}
+
+func (s *ForwardMCPService) getNQEDiff(args GetNQEDiffArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_nqe_diff", args, nil)
+
+	if args.BeforeSnapshot == "" {
+		return nil, fmt.Errorf("before_snapshot is required")
+	}
+	if args.AfterSnapshot == "" {
+		return nil, fmt.Errorf("after_snapshot is required")
+	}
+	if args.QueryID == "" {
+		return nil, fmt.Errorf("query_id is required")
+	}
+
+	request := &forward.NQEDiffRequest{
+		QueryID:    args.QueryID,
+		CommitID:   args.CommitID,
+		Options:    s.convertNQEQueryOptions(args.Options),
+		Parameters: args.Parameters,
+	}
+
+	result, err := s.forwardClient.DiffNQEQuery(args.BeforeSnapshot, args.AfterSnapshot, request)
+	if err != nil {
+		s.logToolCall("get_nqe_diff", args, err)
+		return nil, fmt.Errorf("failed to diff NQE query: %w", err)
+	}
+
+	resultJSON, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal NQE diff result: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("NQE diff result:\n%s", string(resultJSON)))), nil
+}
+
+var defaultSnapshotDiffSummaryDomains = []string{
+	"files",
+	"devices",
+	"cloud-objects",
+	"interfaces",
+	"acl",
+	"cloud-acl",
+	"nat",
+	"arp",
+	"mac",
+	"topology",
+	"l2",
+	"l3",
+	"checks",
+	"inventory-queries",
+	"routing-loop",
+	"vulnerabilities",
+}
+
+type snapshotDiffEndpoint struct {
+	Path  string
+	Query url.Values
+}
+
+func (s *ForwardMCPService) getSnapshotDiffSummary(args GetSnapshotDiffSummaryArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_snapshot_diff_summary", args, nil)
+
+	if args.BeforeSnapshot == "" {
+		return nil, fmt.Errorf("before_snapshot is required")
+	}
+	if args.AfterSnapshot == "" {
+		return nil, fmt.Errorf("after_snapshot is required")
+	}
+
+	domains := args.Include
+	if len(domains) == 0 {
+		domains = defaultSnapshotDiffSummaryDomains
+	}
+
+	results := map[string]interface{}{}
+	for _, domain := range domains {
+		endpoint, err := snapshotDiffSummaryEndpoint(domain)
+		if err != nil {
+			results[domain] = map[string]interface{}{
+				"ok":    false,
+				"error": err.Error(),
+			}
+			continue
+		}
+
+		result, err := s.forwardClient.GetSnapshotDiff(args.BeforeSnapshot, args.AfterSnapshot, endpoint.Path, endpoint.Query)
+		if err != nil {
+			results[domain] = map[string]interface{}{
+				"ok":    false,
+				"error": err.Error(),
+			}
+			continue
+		}
+
+		results[domain] = map[string]interface{}{
+			"ok":     true,
+			"result": result,
+		}
+	}
+
+	payload := map[string]interface{}{
+		"beforeSnapshot": args.BeforeSnapshot,
+		"afterSnapshot":  args.AfterSnapshot,
+		"diffs":          results,
+	}
+	resultJSON, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal snapshot diff summary: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Snapshot diff summary:\n%s", string(resultJSON)))), nil
+}
+
+func (s *ForwardMCPService) getSnapshotDiff(args GetSnapshotDiffArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_snapshot_diff", args, nil)
+
+	if args.BeforeSnapshot == "" {
+		return nil, fmt.Errorf("before_snapshot is required")
+	}
+	if args.AfterSnapshot == "" {
+		return nil, fmt.Errorf("after_snapshot is required")
+	}
+	if args.DiffType == "" {
+		return nil, fmt.Errorf("diff_type is required")
+	}
+
+	endpoint, err := snapshotDiffEndpointForArgs(args)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := s.forwardClient.GetSnapshotDiff(args.BeforeSnapshot, args.AfterSnapshot, endpoint.Path, endpoint.Query)
+	if err != nil {
+		s.logToolCall("get_snapshot_diff", args, err)
+		return nil, fmt.Errorf("failed to get snapshot diff: %w", err)
+	}
+
+	resultJSON, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal snapshot diff result: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Snapshot diff result:\n%s", string(resultJSON)))), nil
+}
+
+func (s *ForwardMCPService) getBlastRadius(args GetBlastRadiusArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_blast_radius", args, nil)
+
+	if args.NetworkID == "" {
+		return nil, fmt.Errorf("network_id is required")
+	}
+	if len(args.DstSubnets) == 0 {
+		return nil, fmt.Errorf("dst_subnets is required")
+	}
+
+	source := args.Source
+	if len(source) == 0 {
+		if args.SourceDevice == "" {
+			return nil, fmt.Errorf("source or source_device is required")
+		}
+		source = map[string]interface{}{
+			"type":  "DeviceFilter",
+			"value": args.SourceDevice,
+		}
+	}
+
+	timeoutSecs := args.TimeoutSeconds
+	if timeoutSecs == 0 {
+		timeoutSecs = 30
+	}
+	if timeoutSecs < 0 || timeoutSecs > 3600 {
+		return nil, fmt.Errorf("timeout_seconds must be between 1 and 3600")
+	}
+
+	var pagingOptions *forward.BlastRadiusPagingOptions
+	if args.PagingOptions != nil {
+		pagingOptions = &forward.BlastRadiusPagingOptions{
+			Offset: args.PagingOptions.Offset,
+			Limit:  args.PagingOptions.Limit,
+		}
+	}
+
+	request := &forward.BlastRadiusRequest{
+		Source:             source,
+		DstSubnets:         args.DstSubnets,
+		ProtocolExclusions: args.ProtocolExclusions,
+		TimeoutSecs:        timeoutSecs,
+		PagingOptions:      pagingOptions,
+	}
+
+	result, err := s.forwardClient.GetBlastRadius(args.NetworkID, args.SnapshotID, request, args.HostCentric)
+	if err != nil {
+		s.logToolCall("get_blast_radius", args, err)
+		return nil, fmt.Errorf("failed to get blast radius: %w", err)
+	}
+
+	resultJSON, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal blast radius result: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Blast radius result:\n%s", string(resultJSON)))), nil
+}
+
+func (s *ForwardMCPService) suggestBlastRadiusSources(args SuggestBlastRadiusSourcesArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("suggest_blast_radius_sources", args, nil)
+
+	if args.NetworkID == "" {
+		return nil, fmt.Errorf("network_id is required")
+	}
+	if args.Query == "" {
+		return nil, fmt.Errorf("query is required")
+	}
+
+	max := args.Max
+	if max == 0 {
+		max = 10
+	}
+	if max < 0 || max > 100 {
+		return nil, fmt.Errorf("max must be between 1 and 100")
+	}
+
+	result, err := s.forwardClient.SuggestBlastRadiusSources(args.NetworkID, args.SnapshotID, args.Query, max)
+	if err != nil {
+		s.logToolCall("suggest_blast_radius_sources", args, err)
+		return nil, fmt.Errorf("failed to suggest blast radius sources: %w", err)
+	}
+
+	resultJSON, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal blast radius source suggestions: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Blast radius source suggestions:\n%s", string(resultJSON)))), nil
+}
+
+func (s *ForwardMCPService) listPredefinedChecks(args ListPredefinedChecksArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("list_predefined_checks", args, nil)
+
+	checks, err := s.forwardClient.GetAvailablePredefinedChecks()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list predefined checks: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Found %d predefined checks:\n%s", len(checks), MarshalCompactJSONString(checks)))), nil
+}
+
+func (s *ForwardMCPService) listChecks(args ListChecksArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("list_checks", args, nil)
+	if err := s.validateNonEmpty("snapshot_id", args.SnapshotID); err != nil {
+		return nil, err
+	}
+
+	query := url.Values{}
+	addRepeatedQueryValues(query, "type", args.Types)
+	addRepeatedQueryValues(query, "priority", args.Priorities)
+	addRepeatedQueryValues(query, "status", args.Statuses)
+
+	checks, err := s.forwardClient.GetChecks(args.SnapshotID, query)
+	if err != nil {
+		if len(args.Statuses) == 0 {
+			return nil, fmt.Errorf("failed to list checks: %w", err)
+		}
+
+		fallbackQuery := url.Values{}
+		addRepeatedQueryValues(fallbackQuery, "type", args.Types)
+		addRepeatedQueryValues(fallbackQuery, "priority", args.Priorities)
+		checks, err = s.forwardClient.GetChecks(args.SnapshotID, fallbackQuery)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list checks: %w", err)
+		}
+		checks = filterChecksByStatus(checks, args.Statuses)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Found %d checks:\n%s", len(checks), MarshalCompactJSONString(checks)))), nil
+}
+
+func filterChecksByStatus(checks []map[string]interface{}, statuses []string) []map[string]interface{} {
+	if len(statuses) == 0 {
+		return checks
+	}
+
+	allowed := make(map[string]struct{}, len(statuses))
+	for _, status := range statuses {
+		allowed[strings.ToUpper(status)] = struct{}{}
+	}
+
+	filtered := make([]map[string]interface{}, 0, len(checks))
+	for _, check := range checks {
+		status, _ := check["status"].(string)
+		if _, ok := allowed[strings.ToUpper(status)]; ok {
+			filtered = append(filtered, check)
+		}
+	}
+	return filtered
+}
+
+func (s *ForwardMCPService) getCheck(args GetCheckArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("get_check", args, nil)
+	if err := s.validateNonEmpty("snapshot_id", args.SnapshotID); err != nil {
+		return nil, err
+	}
+	if err := s.validateNonEmpty("check_id", args.CheckID); err != nil {
+		return nil, err
+	}
+
+	check, err := s.forwardClient.GetCheck(args.SnapshotID, args.CheckID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get check: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Check detail:\n%s", MarshalCompactJSONString(check)))), nil
+}
+
+func (s *ForwardMCPService) listL7Applications(args ListL7ApplicationsArgs) (*mcp.CallToolResult, error) {
+	s.logToolCall("list_l7_applications", args, nil)
+
+	applications, err := s.forwardClient.GetL7Applications()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list L7 applications: %w", err)
+	}
+
+	return newToolResponse(newTextContent(fmt.Sprintf("Found %d L7 applications:\n%s", len(applications), MarshalCompactJSONString(applications)))), nil
+}
+
+func addRepeatedQueryValues(query url.Values, key string, values []string) {
+	for _, value := range values {
+		if value != "" {
+			query.Add(key, value)
+		}
+	}
+}
+
+func snapshotDiffSummaryEndpoint(domain string) (snapshotDiffEndpoint, error) {
+	q := url.Values{}
+	switch normalizeSnapshotDiffType(domain) {
+	case "files":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "files", Query: q}, nil
+	case "devices":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "devices", Query: q}, nil
+	case "cloud-objects":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "cloud-objects", Query: q}, nil
+	case "interfaces":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "interfaces", Query: q}, nil
+	case "acl":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "acl", Query: q}, nil
+	case "cloud-acl":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "cloud-acl", Query: q}, nil
+	case "nat":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "nat", Query: q}, nil
+	case "arp":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "arp", Query: q}, nil
+	case "mac":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "mac", Query: q}, nil
+	case "topology":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "topology", Query: q}, nil
+	case "l2":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "l2", Query: q}, nil
+	case "l3":
+		return snapshotDiffEndpoint{Path: "l3/summary", Query: q}, nil
+	case "checks":
+		q.Set("counts", "")
+		return snapshotDiffEndpoint{Path: "checks", Query: q}, nil
+	case "inventory-queries":
+		q.Set("count", "")
+		return snapshotDiffEndpoint{Path: "inventory-queries", Query: q}, nil
+	case "routing-loop":
+		return snapshotDiffEndpoint{Path: "routing-loop/count", Query: q}, nil
+	case "vulnerabilities":
+		return snapshotDiffEndpoint{Path: "vulnerabilities/counts", Query: q}, nil
+	default:
+		return snapshotDiffEndpoint{}, fmt.Errorf("unsupported diff domain %q", domain)
+	}
+}
+
+func snapshotDiffEndpointForArgs(args GetSnapshotDiffArgs) (snapshotDiffEndpoint, error) {
+	q := url.Values{}
+	for key, value := range args.Params {
+		if key != "" {
+			q.Set(key, value)
+		}
+	}
+	if args.Limit > 0 {
+		q.Set("limit", fmt.Sprintf("%d", args.Limit))
+	}
+	if args.Offset > 0 {
+		q.Set("offset", fmt.Sprintf("%d", args.Offset))
+	}
+
+	switch normalizeSnapshotDiffType(args.DiffType) {
+	case "files":
+		if args.Count {
+			q.Set("count", "")
+		}
+		if args.View != "" {
+			q.Set("view", args.View)
+		}
+		if args.FileType != "" && !strings.EqualFold(args.FileType, "ALL") {
+			q.Set("type", args.FileType)
+		}
+		return snapshotDiffEndpoint{Path: "files", Query: q}, nil
+	case "devices":
+		if args.Count {
+			q.Set("count", "")
+		}
+		if args.DeviceName != "" {
+			return snapshotDiffEndpoint{Path: "devices/" + url.PathEscape(args.DeviceName), Query: q}, nil
+		}
+		return snapshotDiffEndpoint{Path: "devices", Query: q}, nil
+	case "cloud-objects":
+		if args.Count {
+			q.Set("count", "")
+		}
+		return snapshotDiffEndpoint{Path: "cloud-objects", Query: q}, nil
+	case "interfaces":
+		if args.Count {
+			q.Set("count", "")
+		}
+		if args.DeviceName != "" && args.InterfaceName != "" {
+			return snapshotDiffEndpoint{
+				Path:  "devices/" + url.PathEscape(args.DeviceName) + "/interfaces/" + url.PathEscape(args.InterfaceName),
+				Query: q,
+			}, nil
+		}
+		if args.DeviceName != "" {
+			return snapshotDiffEndpoint{Path: "interfaces/devices/" + url.PathEscape(args.DeviceName), Query: q}, nil
+		}
+		return snapshotDiffEndpoint{Path: "interfaces", Query: q}, nil
+	case "topology":
+		if args.Count {
+			q.Set("count", "")
+		}
+		return snapshotDiffEndpoint{Path: "topology", Query: q}, nil
+	case "l2":
+		if args.Count {
+			q.Set("count", "")
+		}
+		return snapshotDiffEndpoint{Path: "l2", Query: q}, nil
+	case "acl":
+		if args.Count {
+			q.Set("count", "")
+		}
+		if args.DeviceName != "" {
+			return snapshotDiffEndpoint{Path: "acl/devices/" + url.PathEscape(args.DeviceName), Query: q}, nil
+		}
+		return snapshotDiffEndpoint{Path: "acl", Query: q}, nil
+	case "cloud-acl":
+		if args.Count {
+			q.Set("count", "")
+		}
+		if args.CloudObjectID != "" {
+			return snapshotDiffEndpoint{Path: "cloud-acl/objects/" + url.PathEscape(args.CloudObjectID), Query: q}, nil
+		}
+		return snapshotDiffEndpoint{Path: "cloud-acl", Query: q}, nil
+	case "nat":
+		if args.Count {
+			q.Set("count", "")
+		}
+		if args.DeviceName != "" {
+			return snapshotDiffEndpoint{Path: "nat/devices/" + url.PathEscape(args.DeviceName), Query: q}, nil
+		}
+		return snapshotDiffEndpoint{Path: "nat", Query: q}, nil
+	case "l3":
+		if args.Prefix != "" {
+			return snapshotDiffEndpoint{Path: "l3/prefixes/" + url.PathEscape(args.Prefix), Query: q}, nil
+		}
+		if args.DeviceName != "" {
+			return snapshotDiffEndpoint{Path: "l3/devices/" + url.PathEscape(args.DeviceName), Query: q}, nil
+		}
+		switch strings.ToLower(args.View) {
+		case "", "summary":
+			return snapshotDiffEndpoint{Path: "l3/summary", Query: q}, nil
+		case "devices", "prefixes":
+			q.Set("view", strings.ToLower(args.View))
+			return snapshotDiffEndpoint{Path: "l3", Query: q}, nil
+		default:
+			return snapshotDiffEndpoint{}, fmt.Errorf("unsupported l3 diff view %q", args.View)
+		}
+	case "arp":
+		if args.Count {
+			q.Set("count", "")
+		}
+		if args.DeviceName != "" {
+			return snapshotDiffEndpoint{Path: "arp/devices/" + url.PathEscape(args.DeviceName), Query: q}, nil
+		}
+		return snapshotDiffEndpoint{Path: "arp", Query: q}, nil
+	case "mac":
+		if args.Count {
+			q.Set("count", "")
+		}
+		if args.DeviceName != "" {
+			return snapshotDiffEndpoint{Path: "mac/devices/" + url.PathEscape(args.DeviceName), Query: q}, nil
+		}
+		return snapshotDiffEndpoint{Path: "mac", Query: q}, nil
+	case "checks":
+		if args.Count {
+			q.Set("counts", "")
+		}
+		if args.Stats {
+			q.Set("stats", "")
+		}
+		if args.CheckType != "" {
+			q.Set("type", args.CheckType)
+		}
+		if args.CheckID != "" {
+			return snapshotDiffEndpoint{Path: "checks/" + url.PathEscape(args.CheckID), Query: q}, nil
+		}
+		return snapshotDiffEndpoint{Path: "checks", Query: q}, nil
+	case "inventory-queries":
+		if args.Count {
+			q.Set("count", "")
+		}
+		return snapshotDiffEndpoint{Path: "inventory-queries", Query: q}, nil
+	case "routing-loop":
+		return snapshotDiffEndpoint{Path: "routing-loop/count", Query: q}, nil
+	case "vulnerabilities":
+		return snapshotDiffEndpoint{Path: "vulnerabilities/counts", Query: q}, nil
+	default:
+		return snapshotDiffEndpoint{}, fmt.Errorf("unsupported diff_type %q", args.DiffType)
+	}
+}
+
+func normalizeSnapshotDiffType(diffType string) string {
+	switch strings.ToLower(strings.TrimSpace(diffType)) {
+	case "routes", "route", "routing", "l3":
+		return "l3"
+	case "vlans", "vlan", "l2":
+		return "l2"
+	case "links", "topology":
+		return "topology"
+	case "config", "configs", "configuration", "files":
+		return "files"
+	case "access-lists", "acls", "acl":
+		return "acl"
+	case "cloud-acls", "cloud-acl":
+		return "cloud-acl"
+	case "nats", "nat":
+		return "nat"
+	case "arps", "arp":
+		return "arp"
+	case "macs", "mac":
+		return "mac"
+	case "devices", "device":
+		return "devices"
+	case "interfaces", "interface":
+		return "interfaces"
+	case "cloud-objects", "cloud-object":
+		return "cloud-objects"
+	case "checks", "check", "intent":
+		return "checks"
+	case "inventory-queries", "nqe-inventory":
+		return "inventory-queries"
+	case "routing-loop", "routing-loops":
+		return "routing-loop"
+	case "vulnerabilities", "vulnerability":
+		return "vulnerabilities"
+	default:
+		return strings.ToLower(strings.TrimSpace(diffType))
+	}
 }
 
 // Default Settings Management Tool Implementations
@@ -4452,6 +6186,9 @@ func NormalizePathSearchRequest(input map[string]interface{}) (isBulk bool, bulk
 	if v, ok := input["include_network_functions"].(bool); ok {
 		bulkArgs.IncludeNetworkFunctions = v
 	}
+	if v, ok := input["include_tags"].(bool); ok {
+		bulkArgs.IncludeTags = v
+	}
 
 	// Check if this is a bulk request with queries array
 	if queries, ok := input["queries"]; ok {
@@ -4478,6 +6215,21 @@ func NormalizePathSearchRequest(input map[string]interface{}) (isBulk bool, bulk
 					if v, ok := qm["ip_proto"].(int); ok {
 						query.IPProto = &v
 					}
+					if v, ok := qm["app_id"].(string); ok {
+						query.AppID = v
+					}
+					if v, ok := qm["user_id"].(string); ok {
+						query.UserID = v
+					}
+					if v, ok := qm["user_group_id"].(string); ok {
+						query.UserGroupID = v
+					}
+					if v, ok := qm["url"].(string); ok {
+						query.URL = v
+					}
+					if v, ok := qm["domain"].(string); ok {
+						query.Domain = v
+					}
 					bulkArgs.Queries = append(bulkArgs.Queries, query)
 				}
 			}
@@ -4503,6 +6255,21 @@ func NormalizePathSearchRequest(input map[string]interface{}) (isBulk bool, bulk
 		if v, ok := input["ip_proto"].(int); ok {
 			query.IPProto = &v
 		}
+		if v, ok := input["app_id"].(string); ok {
+			query.AppID = v
+		}
+		if v, ok := input["user_id"].(string); ok {
+			query.UserID = v
+		}
+		if v, ok := input["user_group_id"].(string); ok {
+			query.UserGroupID = v
+		}
+		if v, ok := input["url"].(string); ok {
+			query.URL = v
+		}
+		if v, ok := input["domain"].(string); ok {
+			query.Domain = v
+		}
 		bulkArgs.Queries = append(bulkArgs.Queries, query)
 	}
 
@@ -4520,15 +6287,21 @@ func (s *ForwardMCPService) searchPathsEntry(args SearchPathsArgs) (*mcp.CallToo
 		MaxResults:              args.MaxResults,
 		MaxReturnPathResults:    args.MaxReturnPathResults,
 		MaxSeconds:              args.MaxSeconds,
+		IncludeTags:             args.IncludeTags,
 		IncludeNetworkFunctions: args.IncludeNetworkFunctions,
 		Queries: []PathSearchQueryArgs{
 			{
-				From:    args.From,
-				SrcIP:   args.SrcIP,
-				DstIP:   args.DstIP,
-				IPProto: args.IPProto,
-				SrcPort: args.SrcPort,
-				DstPort: args.DstPort,
+				From:        args.From,
+				SrcIP:       args.SrcIP,
+				DstIP:       args.DstIP,
+				IPProto:     args.IPProto,
+				SrcPort:     args.SrcPort,
+				DstPort:     args.DstPort,
+				AppID:       args.AppID,
+				UserID:      args.UserID,
+				UserGroupID: args.UserGroupID,
+				URL:         args.URL,
+				Domain:      args.Domain,
 			},
 		},
 	}

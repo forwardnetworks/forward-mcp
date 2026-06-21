@@ -6,6 +6,8 @@
 /build/
 /bin/
 /data/
+/forward-mcp
+/server
 
 # IDE files
 .idea/

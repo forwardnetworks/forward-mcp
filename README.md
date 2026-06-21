@@ -5,7 +5,8 @@
 Forward MCP is an open-source server that provides a set of tools and APIs for interacting with Forward Networks' platform. It enables automation, analysis, and integration with network data using the Model Context Protocol (MCP).
 
 ## Features
-- Exposes 54 Forward Networks tools via the MCP protocol, plus 6 workflow prompts and a network-context resource
+- Exposes 82 Forward tools via the MCP protocol, plus 6 workflow prompts and a network-context resource
+- Adds collection workflow tools plus read-only topology, NQE by ID, raw and async NQE execution, and snapshot diff support for routes, ACLs, NAT, ARP, MAC, interfaces, files/configs, checks, inventory queries, routing loops, and vulnerabilities
 - Built on the official [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) (protocol revision 2025-06-18, negotiated with older clients)
 - Tool behavior annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so clients can distinguish queries from destructive operations
 - Schema-enforced input validation with LLM-friendly error messages
@@ -31,7 +32,9 @@ The client in `internal/forward` was audited against `https://docs.fwd.app/lates
 
 - `Network`/`Snapshot` timestamps decode as RFC3339 strings (`createdAt`, `processedAt`); network descriptions map to the API's `note` field
 - Device pagination uses the correct `skip` parameter (previously `offset`, which the API silently ignored)
-- NQE query options use the spec's single `sortBy` object and `itemFormat` field; diff results read `totalNumRows`
+- NQE query options use the spec's single `sortBy` object and `itemFormat` field; `run_nqe_query` executes raw NQE source through the native `/api/nqe` surface; diff results read `totalNumRows`
+- NQE diffs are exposed through `get_nqe_diff` using `/api/nqe-diffs/{before}/{after}`
+- Snapshot diffs are exposed through `get_snapshot_diff_summary` and `get_snapshot_diff` using generally available `/api/diffs/{before}/{after}` domains
 - Single path search decodes the spec's response shape (previously returned empty results)
 - Added spec fields: `Device.displayName`/`sourceName`/`collectionError`/`processingError`/`tags`, `NqeRunResult.totalNumItems`, path search `srcIpLocationType`/`unrecognizedValues`
 

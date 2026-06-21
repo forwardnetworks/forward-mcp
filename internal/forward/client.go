@@ -33,12 +33,17 @@ type ClientInterface interface {
 	UpdateNetwork(networkID string, update *NetworkUpdate) (*Network, error)
 
 	// Path Search operations
+	GetL7Applications() ([]map[string]interface{}, error)
 	SearchPaths(networkID string, params *PathSearchParams) (*PathSearchResponse, error)
 	SearchPathsBulk(networkID string, request *PathSearchBulkRequest, snapshotID string) ([]PathSearchBulkResponse, error)
+	GetTopology(snapshotID string) ([]TopologyLink, error)
 
 	// NQE operations
 	RunNQEQueryByString(params *NQEQueryParams) (*NQERunResult, error)
 	RunNQEQueryByID(params *NQEQueryParams) (*NQERunResult, error)
+	StartNQEExecution(networkID, snapshotID string, request *NQEExecutionRequest) (*NQEExecutionResponse, error)
+	GetNQEExecutionStatus(networkID, executionKey string) (*NQEExecutionStatus, error)
+	GetNQEExecutionResult(networkID, executionKey string, offset, limit int) (*NQERunResult, error)
 	GetNQEQueries(dir string) ([]NQEQuery, error)
 	GetNQEOrgQueries() ([]NQEQuery, error)
 	GetNQEOrgQueriesEnhanced() ([]NQEQueryDetail, error)
@@ -54,11 +59,38 @@ type ClientInterface interface {
 	GetNQEQueryByCommit(commitID string, path string, repository string) (*NQEQueryDetail, error)
 	GetNQEQueryByCommitWithContext(ctx context.Context, commitID string, path string, repository string) (*NQEQueryDetail, error)
 	DiffNQEQuery(before, after string, request *NQEDiffRequest) (*NQEDiffResult, error)
+	GetSnapshotDiff(before, after, path string, query url.Values) (map[string]interface{}, error)
+	GetBlastRadius(networkID, snapshotID string, request *BlastRadiusRequest, hostCentric bool) (map[string]interface{}, error)
+	SuggestBlastRadiusSources(networkID, snapshotID, query string, max int) ([]map[string]interface{}, error)
 
 	// Device operations
 	GetDevices(networkID string, params *DeviceQueryParams) (*DeviceResponse, error)
+	GetMissingDevices(networkID, snapshotID string) (map[string]interface{}, error)
 	GetDeviceLocations(networkID string) (map[string]string, error)
 	UpdateDeviceLocations(networkID string, locations map[string]string) error
+	GetClassicDevices(networkID string, include []string) (map[string]interface{}, error)
+	GetClassicDevice(networkID string, deviceName string, include []string) (map[string]interface{}, error)
+	UpsertClassicDevices(networkID string, devices []map[string]interface{}) error
+	DeleteClassicDevices(networkID string, names []string) error
+	GetCliCredentials(networkID string) ([]map[string]interface{}, error)
+	CreateCliCredential(networkID string, credential map[string]interface{}) (map[string]interface{}, error)
+	DeleteCliCredential(networkID string, credentialID string) error
+	GetSnmpCredentials(networkID string) ([]map[string]interface{}, error)
+	CreateSnmpCredential(networkID string, credential map[string]interface{}) (map[string]interface{}, error)
+	DeleteSnmpCredential(networkID string, credentialID string) error
+	GetPerformanceSettings(networkID string) (map[string]interface{}, error)
+	UpdatePerformanceSettings(networkID string, settings map[string]interface{}) (map[string]interface{}, error)
+	GetDevicesWithPerformanceData(networkID string, query url.Values) ([]string, error)
+	GetDevicePerformance(networkID, deviceName string, query url.Values) (map[string]interface{}, error)
+	GetInterfacePerformance(networkID, deviceName, interfaceName string, query url.Values) (map[string]interface{}, error)
+
+	// Collection operations
+	GetCollectorStatus(networkID string) (map[string]interface{}, error)
+	AddCollectorTask(networkID string) (map[string]interface{}, error)
+	GetCollectorTask(taskID string) (map[string]interface{}, error)
+	StartCollection(networkID string) (map[string]interface{}, error)
+	CancelCollection(networkID string) (map[string]interface{}, error)
+	GetCollectionSchedules(networkID string) (map[string]interface{}, error)
 
 	// Snapshot operations
 	GetSnapshots(networkID string) ([]Snapshot, error)
@@ -71,6 +103,11 @@ type ClientInterface interface {
 	CreateLocationsBulk(networkID string, locations []LocationBulkPatch) error
 	UpdateLocation(networkID string, locationID string, update *LocationUpdate) (*Location, error)
 	DeleteLocation(networkID string, locationID string) (*Location, error)
+
+	// Checks and security operations
+	GetAvailablePredefinedChecks() ([]map[string]interface{}, error)
+	GetChecks(snapshotID string, query url.Values) ([]map[string]interface{}, error)
+	GetCheck(snapshotID, checkID string) (map[string]interface{}, error)
 }
 
 // Client represents the Forward platform client
@@ -185,6 +222,12 @@ type PathSearchParams struct {
 	IPProto                 *int   `json:"ipProto,omitempty"`
 	SrcPort                 string `json:"srcPort,omitempty"`
 	DstPort                 string `json:"dstPort,omitempty"`
+	AppID                   string `json:"appId,omitempty"`
+	UserID                  string `json:"userId,omitempty"`
+	UserGroupID             string `json:"userGroupId,omitempty"`
+	URL                     string `json:"url,omitempty"`
+	Domain                  string `json:"domain,omitempty"`
+	IncludeTags             bool   `json:"includeTags,omitempty"`
 	IncludeNetworkFunctions bool   `json:"includeNetworkFunctions,omitempty"`
 	MaxCandidates           int    `json:"maxCandidates,omitempty"`
 	MaxResults              int    `json:"maxResults,omitempty"`
@@ -202,7 +245,13 @@ type PathSearchBulkRequest struct {
 	MaxReturnPathResults    int                `json:"maxReturnPathResults,omitempty"`
 	MaxSeconds              int                `json:"maxSeconds,omitempty"`
 	MaxOverallSeconds       int                `json:"maxOverallSeconds,omitempty"`
+	IncludeTags             bool               `json:"includeTags,omitempty"`
 	IncludeNetworkFunctions bool               `json:"includeNetworkFunctions,omitempty"`
+}
+
+type TopologyLink struct {
+	SourcePort string `json:"sourcePort"`
+	TargetPort string `json:"targetPort"`
 }
 
 // PathSearchResponse represents the response from single path search
@@ -294,10 +343,41 @@ type NQEColumnFilter struct {
 	Value      string `json:"value"`
 }
 
+type NQEExecutionColumnFilter struct {
+	ColumnName string `json:"columnName"`
+	Operator   string `json:"operator"`
+	Value      string `json:"value,omitempty"`
+	LowerBound string `json:"lowerBound,omitempty"`
+	UpperBound string `json:"upperBound,omitempty"`
+}
+
 type NQERunResult struct {
 	SnapshotID    string                   `json:"snapshotId"`
 	Items         []map[string]interface{} `json:"items"`
 	TotalNumItems int64                    `json:"totalNumItems,omitempty"`
+}
+
+type NQEExecutionRequest struct {
+	Query         string                     `json:"query,omitempty"`
+	QueryID       string                     `json:"queryId,omitempty"`
+	CommitID      string                     `json:"commitId,omitempty"`
+	Parameters    map[string]interface{}     `json:"parameters,omitempty"`
+	ColumnFilters []NQEExecutionColumnFilter `json:"columnFilters,omitempty"`
+	SortKeys      []NQESortBy                `json:"sortKeys,omitempty"`
+}
+
+type NQEExecutionStatus struct {
+	Status          string                 `json:"status"`
+	Outcome         string                 `json:"outcome,omitempty"`
+	MillisExecuting int64                  `json:"millisExecuting,omitempty"`
+	RowsProduced    int64                  `json:"rowsProduced,omitempty"`
+	TimeoutMinutes  int64                  `json:"timeoutMinutes,omitempty"`
+	Error           map[string]interface{} `json:"error,omitempty"`
+}
+
+type NQEExecutionResponse struct {
+	ExecutionKey string `json:"executionKey"`
+	NQEExecutionStatus
 }
 
 type NQEQuery struct {
@@ -354,6 +434,19 @@ type NQEDiffRequest struct {
 type NQEDiffResult struct {
 	TotalNumRows int                      `json:"totalNumRows"`
 	Rows         []map[string]interface{} `json:"rows"`
+}
+
+type BlastRadiusPagingOptions struct {
+	Offset int `json:"offset,omitempty"`
+	Limit  int `json:"limit,omitempty"`
+}
+
+type BlastRadiusRequest struct {
+	Source             map[string]interface{}    `json:"source"`
+	DstSubnets         []string                  `json:"dstSubnets"`
+	ProtocolExclusions []int                     `json:"protocolExclusions,omitempty"`
+	TimeoutSecs        int                       `json:"timeoutSecs,omitempty"`
+	PagingOptions      *BlastRadiusPagingOptions `json:"pagingOptions,omitempty"`
 }
 
 // Device types
@@ -762,45 +855,64 @@ func (c *Client) SearchPaths(networkID string, params *PathSearchParams) (*PathS
 	endpoint := fmt.Sprintf("/api/networks/%s/paths", networkID)
 
 	// Build query parameters
-	query := fmt.Sprintf("?dstIp=%s", params.DstIP)
+	query := url.Values{}
+	query.Set("dstIp", params.DstIP)
 	if params.From != "" {
-		query += fmt.Sprintf("&from=%s", params.From)
+		query.Set("from", params.From)
 	}
 	if params.SrcIP != "" {
-		query += fmt.Sprintf("&srcIp=%s", params.SrcIP)
+		query.Set("srcIp", params.SrcIP)
 	}
 	if params.Intent != "" {
-		query += fmt.Sprintf("&intent=%s", params.Intent)
+		query.Set("intent", params.Intent)
 	}
 	if params.IPProto != nil {
-		query += fmt.Sprintf("&ipProto=%d", *params.IPProto)
+		query.Set("ipProto", fmt.Sprintf("%d", *params.IPProto))
 	}
 	if params.SrcPort != "" {
-		query += fmt.Sprintf("&srcPort=%s", params.SrcPort)
+		query.Set("srcPort", params.SrcPort)
 	}
 	if params.DstPort != "" {
-		query += fmt.Sprintf("&dstPort=%s", params.DstPort)
+		query.Set("dstPort", params.DstPort)
+	}
+	if params.AppID != "" {
+		query.Set("appId", params.AppID)
+	}
+	if params.UserID != "" {
+		query.Set("userId", params.UserID)
+	}
+	if params.UserGroupID != "" {
+		query.Set("userGroupId", params.UserGroupID)
+	}
+	if params.URL != "" {
+		query.Set("url", params.URL)
+	}
+	if params.Domain != "" {
+		query.Set("domain", params.Domain)
+	}
+	if params.IncludeTags {
+		query.Set("includeTags", "true")
 	}
 	if params.IncludeNetworkFunctions {
-		query += "&includeNetworkFunctions=true"
+		query.Set("includeNetworkFunctions", "true")
 	}
 	if params.MaxCandidates > 0 {
-		query += fmt.Sprintf("&maxCandidates=%d", params.MaxCandidates)
+		query.Set("maxCandidates", fmt.Sprintf("%d", params.MaxCandidates))
 	}
 	if params.MaxResults > 0 {
-		query += fmt.Sprintf("&maxResults=%d", params.MaxResults)
+		query.Set("maxResults", fmt.Sprintf("%d", params.MaxResults))
 	}
 	if params.MaxReturnPathResults > 0 {
-		query += fmt.Sprintf("&maxReturnPathResults=%d", params.MaxReturnPathResults)
+		query.Set("maxReturnPathResults", fmt.Sprintf("%d", params.MaxReturnPathResults))
 	}
 	if params.MaxSeconds > 0 {
-		query += fmt.Sprintf("&maxSeconds=%d", params.MaxSeconds)
+		query.Set("maxSeconds", fmt.Sprintf("%d", params.MaxSeconds))
 	}
 	if params.SnapshotID != "" {
-		query += fmt.Sprintf("&snapshotId=%s", params.SnapshotID)
+		query.Set("snapshotId", params.SnapshotID)
 	}
 
-	resp, err := c.makeRequest("GET", endpoint+query, nil)
+	resp, err := c.makeRequest("GET", appendQuery(endpoint, query), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -875,6 +987,23 @@ func (c *Client) SearchPathsBulk(networkID string, request *PathSearchBulkReques
 	}
 
 	return responses, nil
+}
+
+func (c *Client) GetTopology(snapshotID string) ([]TopologyLink, error) {
+	endpoint := fmt.Sprintf("/api/snapshots/%s/topology", url.PathEscape(snapshotID))
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var links []TopologyLink
+	if err := json.NewDecoder(resp.Body).Decode(&links); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return links, nil
 }
 
 // NQE operations
@@ -955,6 +1084,70 @@ func (c *Client) RunNQEQueryByID(params *NQEQueryParams) (*NQERunResult, error) 
 	}
 
 	resp, err := c.makeRequest("POST", endpoint+query, requestBody)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result NQERunResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (c *Client) StartNQEExecution(networkID, snapshotID string, request *NQEExecutionRequest) (*NQEExecutionResponse, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/nqe-executions", networkID)
+	query := url.Values{}
+	if snapshotID != "" {
+		query.Set("snapshotId", snapshotID)
+	}
+	endpoint = appendQuery(endpoint, query)
+
+	resp, err := c.makeRequest("POST", endpoint, request)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result NQEExecutionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (c *Client) GetNQEExecutionStatus(networkID, executionKey string) (*NQEExecutionStatus, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/nqe-executions/%s", networkID, url.PathEscape(executionKey))
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result NQEExecutionStatus
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}
+
+func (c *Client) GetNQEExecutionResult(networkID, executionKey string, offset, limit int) (*NQERunResult, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/nqe-executions/%s/result", networkID, url.PathEscape(executionKey))
+	query := url.Values{}
+	if offset > 0 {
+		query.Set("offset", fmt.Sprintf("%d", offset))
+	}
+	if limit > 0 {
+		query.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	endpoint = appendQuery(endpoint, query)
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1512,6 +1705,79 @@ func (c *Client) DiffNQEQuery(before, after string, request *NQEDiffRequest) (*N
 	return &result, nil
 }
 
+func (c *Client) GetSnapshotDiff(before, after, path string, query url.Values) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/diffs/%s/%s/%s", before, after, strings.TrimPrefix(path, "/"))
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result, nil
+}
+
+func (c *Client) GetBlastRadius(networkID, snapshotID string, request *BlastRadiusRequest, hostCentric bool) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/blast-radius", networkID)
+	query := url.Values{}
+	if hostCentric {
+		query.Set("type", "host-centric")
+	}
+	if snapshotID != "" && snapshotID != "latest" {
+		query.Set("snapshotId", snapshotID)
+	}
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+
+	resp, err := c.makeRequest("POST", endpoint, request)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result, nil
+}
+
+func (c *Client) SuggestBlastRadiusSources(networkID, snapshotID, query string, max int) ([]map[string]interface{}, error) {
+	params := url.Values{}
+	params.Set("for", "blastRadius")
+	params.Set("q", query)
+	if max > 0 {
+		params.Set("max", fmt.Sprintf("%d", max))
+	}
+	if snapshotID != "" && snapshotID != "latest" {
+		params.Set("snapshotId", snapshotID)
+	}
+	endpoint := fmt.Sprintf("/api/networks/%s/suggestions/locations?%s", networkID, params.Encode())
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result, nil
+}
+
 // Device operations
 func (c *Client) GetDevices(networkID string, params *DeviceQueryParams) (*DeviceResponse, error) {
 	endpoint := fmt.Sprintf("/api/networks/%s/devices", networkID)
@@ -1560,6 +1826,21 @@ func (c *Client) GetDevices(networkID string, params *DeviceQueryParams) (*Devic
 	return deviceResp, nil
 }
 
+func (c *Client) GetMissingDevices(networkID, snapshotID string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/missing-devices", networkID)
+	query := url.Values{}
+	if snapshotID != "" && snapshotID != "latest" {
+		query.Set("snapshotId", snapshotID)
+	}
+
+	resp, err := c.makeRequest("GET", appendQuery(endpoint, query), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
 func (c *Client) GetDeviceLocations(networkID string) (map[string]string, error) {
 	endpoint := fmt.Sprintf("/api/networks/%s/atlas", networkID)
 
@@ -1587,6 +1868,323 @@ func (c *Client) UpdateDeviceLocations(networkID string, locations map[string]st
 	defer resp.Body.Close()
 
 	return nil
+}
+
+func queryInclude(include []string) string {
+	if len(include) == 0 {
+		return ""
+	}
+
+	values := url.Values{}
+	for _, item := range include {
+		if strings.TrimSpace(item) != "" {
+			values.Add("with", item)
+		}
+	}
+	if encoded := values.Encode(); encoded != "" {
+		return "?" + encoded
+	}
+	return ""
+}
+
+func decodeObjectResponse(resp *http.Response) (map[string]interface{}, error) {
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return result, nil
+}
+
+func decodeArrayResponse(resp *http.Response) ([]map[string]interface{}, error) {
+	defer resp.Body.Close()
+
+	var result []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return result, nil
+}
+
+func appendQuery(endpoint string, query url.Values) string {
+	if len(query) == 0 {
+		return endpoint
+	}
+	return endpoint + "?" + query.Encode()
+}
+
+func (c *Client) GetL7Applications() ([]map[string]interface{}, error) {
+	resp, err := c.makeRequest("GET", "/api/l7-applications", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeArrayResponse(resp)
+}
+
+// Network setup operations
+func (c *Client) GetClassicDevices(networkID string, include []string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/classic-devices%s", networkID, queryInclude(include))
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) GetClassicDevice(networkID string, deviceName string, include []string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf(
+		"/api/networks/%s/classic-devices/%s%s",
+		networkID,
+		url.PathEscape(deviceName),
+		queryInclude(include),
+	)
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) UpsertClassicDevices(networkID string, devices []map[string]interface{}) error {
+	endpoint := fmt.Sprintf("/api/networks/%s/classic-devices?action=putBatch", networkID)
+
+	resp, err := c.makeRequest("POST", endpoint, devices)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	return nil
+}
+
+func (c *Client) DeleteClassicDevices(networkID string, names []string) error {
+	endpoint := fmt.Sprintf("/api/networks/%s/classic-devices?action=deleteBatch", networkID)
+	body := map[string]interface{}{"names": names}
+
+	resp, err := c.makeRequest("POST", endpoint, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	return nil
+}
+
+func (c *Client) GetCliCredentials(networkID string) ([]map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/cli-credentials", networkID)
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return result, nil
+}
+
+func (c *Client) CreateCliCredential(networkID string, credential map[string]interface{}) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/cli-credentials", networkID)
+
+	resp, err := c.makeRequest("POST", endpoint, credential)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) DeleteCliCredential(networkID string, credentialID string) error {
+	endpoint := fmt.Sprintf("/api/networks/%s/cli-credentials/%s", networkID, url.PathEscape(credentialID))
+
+	resp, err := c.makeRequest("DELETE", endpoint, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	return nil
+}
+
+func (c *Client) GetSnmpCredentials(networkID string) ([]map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/snmpCredentials", networkID)
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeArrayResponse(resp)
+}
+
+func (c *Client) CreateSnmpCredential(networkID string, credential map[string]interface{}) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/snmpCredentials", networkID)
+
+	resp, err := c.makeRequest("POST", endpoint, credential)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) DeleteSnmpCredential(networkID string, credentialID string) error {
+	endpoint := fmt.Sprintf("/api/networks/%s/snmpCredentials/%s", networkID, url.PathEscape(credentialID))
+
+	resp, err := c.makeRequest("DELETE", endpoint, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	return nil
+}
+
+func (c *Client) GetPerformanceSettings(networkID string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/performance/settings", networkID)
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) UpdatePerformanceSettings(networkID string, settings map[string]interface{}) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/performance/settings", networkID)
+
+	resp, err := c.makeRequest("PATCH", endpoint, settings)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) GetDevicesWithPerformanceData(networkID string, query url.Values) ([]string, error) {
+	endpoint := appendQuery(fmt.Sprintf("/api/networks/%s/performance/devices-with-data", networkID), query)
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result []string
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+	return result, nil
+}
+
+func (c *Client) GetDevicePerformance(networkID, deviceName string, query url.Values) (map[string]interface{}, error) {
+	endpoint := appendQuery(
+		fmt.Sprintf("/api/networks/%s/devices/%s/performance", networkID, url.PathEscape(deviceName)),
+		query,
+	)
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) GetInterfacePerformance(networkID, deviceName, interfaceName string, query url.Values) (map[string]interface{}, error) {
+	endpoint := appendQuery(
+		fmt.Sprintf(
+			"/api/networks/%s/devices/%s/interfaces/%s/performance",
+			networkID,
+			url.PathEscape(deviceName),
+			url.PathEscape(interfaceName),
+		),
+		query,
+	)
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+// Network collection operations
+func (c *Client) GetCollectorStatus(networkID string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/collector/status", networkID)
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) AddCollectorTask(networkID string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/collector-tasks?networkId=%s&type=NETWORK_COLLECTION", url.QueryEscape(networkID))
+
+	resp, err := c.makeRequest("POST", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) GetCollectorTask(taskID string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/collector-tasks/%s", url.PathEscape(taskID))
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) StartCollection(networkID string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/startcollection", networkID)
+
+	resp, err := c.makeRequest("POST", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) CancelCollection(networkID string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/cancelcollection", networkID)
+
+	resp, err := c.makeRequest("POST", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
+}
+
+func (c *Client) GetCollectionSchedules(networkID string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/networks/%s/collection-schedules", networkID)
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
 }
 
 // Snapshot operations
@@ -1723,4 +2321,36 @@ func (c *Client) DeleteLocation(networkID string, locationID string) (*Location,
 	}
 
 	return &location, nil
+}
+
+// Checks operations
+func (c *Client) GetAvailablePredefinedChecks() ([]map[string]interface{}, error) {
+	resp, err := c.makeRequest("GET", "/api/predefinedChecks", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeArrayResponse(resp)
+}
+
+func (c *Client) GetChecks(snapshotID string, query url.Values) ([]map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/snapshots/%s/checks", url.PathEscape(snapshotID))
+
+	resp, err := c.makeRequest("GET", appendQuery(endpoint, query), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeArrayResponse(resp)
+}
+
+func (c *Client) GetCheck(snapshotID, checkID string) (map[string]interface{}, error) {
+	endpoint := fmt.Sprintf("/api/snapshots/%s/checks/%s", url.PathEscape(snapshotID), url.PathEscape(checkID))
+
+	resp, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeObjectResponse(resp)
 }
