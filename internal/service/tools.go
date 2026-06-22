@@ -455,3 +455,10 @@ type ConnectivityAnalysisResult struct {
 	AggregationLevel string   `json:"aggregation_level"`
 	Details          []string `json:"details,omitempty"`
 }
+
+// Draw.io Topology Tool Arguments
+type GenerateDrawioTopologyArgs struct {
+	NetworkID  string `json:"network_id,omitempty" jsonschema:"Network ID to query (optional if a default network is set)"`
+	SnapshotID string `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID to use (optional, uses latest if omitted)"`
+	OutputPath string `json:"output_path,omitempty" jsonschema:"Local path to save the .drawio file (default: ~/Downloads/forward-topology-TIMESTAMP.drawio)"`
+}

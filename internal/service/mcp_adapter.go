@@ -105,7 +105,8 @@ var toolAnnotations = map[string]*mcp.ToolAnnotations{
 	"get_nqe_result_summary":   annReadOnly,
 	"analyze_nqe_result_sql":   annReadOnly,
 	"search_bloom_filter":      annReadOnly,
-	"get_bloom_filter_stats":   annReadOnly,
+	"get_bloom_filter_stats":      annReadOnly,
+	"generate_drawio_topology":    annReadOnly,
 
 	// Additive creation tools.
 	"create_network":  annCreate,

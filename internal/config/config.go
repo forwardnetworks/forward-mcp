@@ -20,8 +20,9 @@ type Config struct {
 
 // ServerConfig holds server-specific configuration
 type ServerConfig struct {
-	Port int
-	Host string
+	Port     int
+	Host     string
+	HTTPAddr string // bind address for HTTP/SSE transport, e.g. "localhost:8080" (empty = disabled)
 }
 
 // ForwardConfig holds Forward Networks API configuration
@@ -115,8 +116,9 @@ func LoadConfig() *Config {
 
 	config := &Config{
 		Server: ServerConfig{
-			Port: getEnvAsInt("SERVER_PORT", 8080),
-			Host: getEnv("SERVER_HOST", "0.0.0.0"),
+			Port:     getEnvAsInt("SERVER_PORT", 8080),
+			Host:     getEnv("SERVER_HOST", "0.0.0.0"),
+			HTTPAddr: getEnv("FORWARD_HTTP_ADDR", "localhost:8080"),
 		},
 		Forward: ForwardConfig{
 			APIKey:            getEnv("FORWARD_API_KEY", ""),

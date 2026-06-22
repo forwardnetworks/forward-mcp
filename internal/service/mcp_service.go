@@ -757,6 +757,10 @@ func (s *ForwardMCPService) RegisterTools(server *mcp.Server) error {
 		"Get statistics and performance metrics for all bloom filters",
 		s.getBloomFilterStats)
 
+	addTool(server, "generate_drawio_topology",
+		"🗺️ **TOPOLOGY VISUALIZATION**: Generate an interactive draw.io network diagram from live L2 CDP/LLDP neighbor data.\n\nQueries the Forward Networks L2 CDP/LLDP topology (query FQ_08cb4fd1d50cb521e25a43714e85f23c1e664b34) to discover all devices and physical links, then generates a draw.io XML diagram and opens it in your browser via https://app.diagrams.net.\n\n**What you get:**\n- All network devices as nodes with interface labels on edges\n- Deduplicated bidirectional links (CDP/LLDP reports each link twice)\n- .drawio file saved to ~/Downloads for offline use\n- Diagram opened automatically in browser\n\n**Tips:**\n- In draw.io, use Arrange > Apply Layout > Organic for the best topology view\n- Hover over edges to see interface names\n- Use snapshot_id to visualize a specific point in time",
+		s.generateDrawioTopology)
+
 	return nil
 }
 

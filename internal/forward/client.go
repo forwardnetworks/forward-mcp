@@ -550,6 +550,9 @@ func (c *Client) makeRequest(method, endpoint string, body interface{}) (*http.R
 			debugLogger := logger.New()
 			debugLogger.Debug("400 Bad Request - URL: %s%s, Method: %s, Body Size: %d bytes",
 				c.config.APIBaseURL, endpoint, method, len(reqBody))
+			if readErr == nil && len(errorBody) > 0 {
+				return nil, fmt.Errorf("bad request (HTTP 400): %s", string(errorBody))
+			}
 			return nil, fmt.Errorf("bad request (HTTP 400): the API rejected the request parameters. Please verify all required fields are provided and have valid values")
 		}
 

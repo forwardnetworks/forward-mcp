@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -132,31 +133,36 @@ func main() {
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Run the server over stdio; Run blocks until the client disconnects
-	// (stdin EOF) or the context is cancelled.
-	logger.Debug("Starting Forward Networks MCP server...")
-	serverErr := make(chan error, 1)
+	// Start HTTP server (SSE + Streamable HTTP).
+	addr := cfg.Server.HTTPAddr
+	mux := http.NewServeMux()
+	// Legacy SSE transport (MCP 2024-11-05) — for clients that use /sse
+	mux.Handle("/sse", mcp.NewSSEHandler(func(r *http.Request) *mcp.Server { return server }, nil))
+	// Streamable HTTP transport (MCP 2025-03-26) — preferred by modern clients
+	mux.Handle("/mcp", mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server { return server }, nil))
+
+	httpServer := &http.Server{Addr: addr, Handler: mux}
 	go func() {
-		serverErr <- server.Run(ctx, &mcp.StdioTransport{})
+		logger.Info("HTTP/SSE transport listening on http://%s (SSE: /sse, Streamable: /mcp)", addr)
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatalf("HTTP server error: %v", err)
+		}
 	}()
 
 	logger.Debug("MCP server is now running and waiting for connections...")
 
-	// Wait for client disconnect, server error, or shutdown signal.
-	var runErr error
-	select {
-	case runErr = <-serverErr:
-		if runErr != nil {
-			logger.Error("Server error: %v", runErr)
-		} else {
-			logger.Info("Client disconnected, shutting down...")
-		}
-	case sig := <-shutdown:
-		logger.Info("Received signal %v, shutting down gracefully...", sig)
-		cancel()
+	// Wait for shutdown signal.
+	sig := <-shutdown
+	logger.Info("Received signal %v, shutting down gracefully...", sig)
+	cancel()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error("HTTP server shutdown error: %v", err)
 	}
 
 	// Shutdown the ForwardMCPService to stop background goroutines and close databases.
@@ -170,7 +176,4 @@ func main() {
 	}
 
 	logger.Info("Server shutdown complete")
-	if runErr != nil {
-		os.Exit(1)
-	}
 }
