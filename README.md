@@ -15,6 +15,12 @@ Forward MCP is an open-source server that provides a set of tools and APIs for i
 - Semantic cache and knowledge-graph memory system for query results
 - Designed for easy integration and automation
 
+- implements a network drawing capability
+    - retrieve CDP/LLDP adjacencies
+    - produce draw.io formatted XML file
+    - clicking the file starts draw.io desktop
+    - file can also be dragged into draw.io browser
+
 ## What's New in 3.0.0
 
 ### Migrated to the official MCP Go SDK
