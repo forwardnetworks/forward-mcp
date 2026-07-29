@@ -10,12 +10,13 @@ import (
 	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/instancelock"
 	"github.com/forward-mcp/internal/logger"
+	"github.com/forward-mcp/internal/mcpserver"
 	"github.com/forward-mcp/internal/service"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// serverVersion is reported to MCP clients during the initialize handshake.
-const serverVersion = "3.0.0"
+// serverVersion is reported during 2026 discovery and legacy initialization.
+const serverVersion = "3.1.0"
 
 const serverInstructions = "MCP server for Forward Networks: network discovery, NQE queries, " +
 	"path searches, configuration search/diff, snapshots, locations, and a knowledge-graph memory. " +
@@ -90,13 +91,11 @@ func main() {
 
 	// Create MCP server (official go-sdk); stdio transport is attached in Run below.
 	logger.Debug("Creating MCP server...")
-	server := mcp.NewServer(&mcp.Implementation{
+	server := mcpserver.New(&mcp.Implementation{
 		Name:    "forward-mcp",
 		Title:   "Forward Networks MCP Server",
 		Version: serverVersion,
-	}, &mcp.ServerOptions{
-		Instructions: serverInstructions,
-	})
+	}, serverInstructions)
 
 	// Register all Forward Networks tools
 	logger.Debug("Registering Forward Networks tools...")

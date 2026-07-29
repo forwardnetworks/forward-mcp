@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.1.0] - 2026-07-29 - MCP 2026-07-28 Protocol Alignment
+
+### Changed
+
+- Upgraded the official MCP Go SDK from v1.6.1 to v1.7.0.
+- Enabled `server/discover`, per-request protocol metadata, stateless request semantics, required result typing, and backward negotiation through the SDK.
+- Removed the deprecated MCP logging capability while retaining stderr/file operational logging.
+- Added public five-minute cache hints for static discovery and catalog results.
+- Marked tenant-specific resource reads private with a zero cache TTL.
+
+### Verified
+
+- Added an in-memory client/server protocol test that proves MCP 2026-07-28 discovery is used without the legacy initialize handshake.
+- Verified server identity, inferred tool/resource capabilities, cache metadata, and private resource handling.
+
 ## [2.1.0] - 2025-07-18 - Bloomsearch Integration for Large NQE Results
 
 ### 🎯 **MAJOR FEATURE: Bloomsearch Integration**

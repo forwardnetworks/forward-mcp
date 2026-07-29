@@ -1,13 +1,13 @@
 # Forward MCP
 
-**Version 3.0.0**
+**Version 3.1.0**
 
 Forward MCP is an open-source server that provides a set of tools and APIs for interacting with Forward Networks' platform. It enables automation, analysis, and integration with network data using the Model Context Protocol (MCP).
 
 ## Features
 - Exposes 82 Forward tools via the MCP protocol, plus 6 workflow prompts and a network-context resource
 - Adds collection workflow tools plus read-only topology, NQE by ID, raw and async NQE execution, and snapshot diff support for routes, ACLs, NAT, ARP, MAC, interfaces, files/configs, checks, inventory queries, routing loops, and vulnerabilities
-- Built on the official [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) (protocol revision 2025-06-18, negotiated with older clients)
+- Built on the official [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) v1.7.0 (protocol revision 2026-07-28, negotiated with older clients)
 - Tool behavior annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so clients can distinguish queries from destructive operations
 - Schema-enforced input validation with LLM-friendly error messages
 - Supports prompt workflows and contextual resources
@@ -16,10 +16,22 @@ Forward MCP is an open-source server that provides a set of tools and APIs for i
 - Semantic cache and knowledge-graph memory system for query results
 - Designed for easy integration and automation
 
+## What's New in 3.1.0
+
+### MCP 2026-07-28 support
+
+- **Stateless protocol core**: new clients negotiate with `server/discover`; each request carries its protocol version and capabilities, plus client identity when provided, instead of relying on an initialize/session handshake.
+- **Backward compatibility**: the official SDK continues to negotiate MCP 2025-11-25, 2025-06-18, 2025-03-26, and 2024-11-05 with older clients.
+- **Cacheable catalogs**: discovery and static tool, prompt, and resource lists advertise a five-minute public cache lifetime. Tenant-specific `resources/read` payloads are explicitly private and immediately stale.
+- **Current capability surface**: the deprecated MCP logging capability is no longer advertised; operational logs continue to use stderr or the configured log file.
+- **Explicit workflow state**: workflow handles remain visible `session_id` prompt/tool arguments, rather than hidden protocol-session state.
+
+Forward MCP currently uses stdio. HTTP routing headers and OAuth/OIDC requirements from the 2026-07-28 release do not apply to this transport; any future Streamable HTTP endpoint must run the Go SDK in stateless mode.
+
 ## What's New in 3.0.0
 
 ### Migrated to the official MCP Go SDK
-The server now uses `github.com/modelcontextprotocol/go-sdk` (v1.6.1), replacing the unmaintained `metoro-io/mcp-golang` library:
+The server migrated to `github.com/modelcontextprotocol/go-sdk`, replacing the unmaintained `metoro-io/mcp-golang` library:
 
 - **Protocol currency**: initialize handshake reports protocol revision 2025-06-18 and negotiates with clients on older revisions (previously pinned to 2024-11-05).
 - **Populated `serverInfo` and `instructions`**: clients now see the server name, version, and usage guidance during initialization.

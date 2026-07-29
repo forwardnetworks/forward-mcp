@@ -277,7 +277,7 @@ docker-compose -f docker-compose.optimized.yml up
 
 ## Important Go Dependencies
 
-- `github.com/modelcontextprotocol/go-sdk` v1.6.1 - official MCP SDK (protocol 2025-06-18)
+- `github.com/modelcontextprotocol/go-sdk` v1.7.0 - official MCP SDK (protocol 2026-07-28 with legacy negotiation)
 - `github.com/mattn/go-sqlite3` v1.14.28 - SQLite (requires CGO)
 - `github.com/danthegoodman1/bloomsearch` - Bloom filters
 - `github.com/joho/godotenv` v1.5.1 - Environment loading
