@@ -1,4 +1,4 @@
-package service
+package sqlite
 
 import (
 	"database/sql"
@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/forward-mcp/internal/domain"
 	"github.com/mattn/go-sqlite3"
 )
 
@@ -30,36 +29,6 @@ func openSQLiteWithForeignKeys(dbPath string) (*sql.DB, error) {
 		})
 	})
 	return sql.Open(driverName, dbPath)
-}
-
-// Entity represents a node in the knowledge graph
-type Entity struct {
-	ID        string                 `json:"id"`
-	Name      string                 `json:"name"`
-	Type      string                 `json:"type"`
-	CreatedAt time.Time              `json:"created_at"`
-	UpdatedAt time.Time              `json:"updated_at"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
-}
-
-// Relation represents an edge between two entities
-type Relation struct {
-	ID         string                 `json:"id"`
-	FromID     string                 `json:"from_id"`
-	ToID       string                 `json:"to_id"`
-	Type       string                 `json:"type"`
-	CreatedAt  time.Time              `json:"created_at"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
-}
-
-// Observation represents additional information about an entity
-type Observation struct {
-	ID        string                 `json:"id"`
-	EntityID  string                 `json:"entity_id"`
-	Content   string                 `json:"content"`
-	Type      string                 `json:"type"`
-	CreatedAt time.Time              `json:"created_at"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // MemorySystem manages the knowledge graph memory using SQLite
@@ -84,8 +53,11 @@ func NewMemorySystem(logger ports.Logger, instanceID string) (*MemorySystem, err
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	dbPath := filepath.Join(dataDir, "memory.db")
-	// db, err := sql.Open("sqlite3", dbPath)
+	return NewMemorySystemAt(filepath.Join(dataDir, "memory.db"), logger, instanceID)
+}
+
+// NewMemorySystemAt opens the memory store in the SQLite file at dbPath.
+func NewMemorySystemAt(dbPath string, logger ports.Logger, instanceID string) (*MemorySystem, error) {
 	db, err := openSQLiteWithForeignKeys(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open memory database: %w", err)
@@ -166,7 +138,7 @@ func (m *MemorySystem) initSchema() error {
 }
 
 // CreateEntity creates a new entity in the knowledge graph
-func (m *MemorySystem) CreateEntity(name, entityType string, metadata map[string]interface{}) (*Entity, error) {
+func (m *MemorySystem) CreateEntity(name, entityType string, metadata map[string]interface{}) (*ports.Entity, error) {
 	entityID := fmt.Sprintf("entity_%d", time.Now().UnixNano())
 	now := time.Now()
 
@@ -188,7 +160,7 @@ func (m *MemorySystem) CreateEntity(name, entityType string, metadata map[string
 		return nil, fmt.Errorf("failed to create entity: %w", err)
 	}
 
-	entity := &Entity{
+	entity := &ports.Entity{
 		ID:        entityID,
 		Name:      name,
 		Type:      entityType,
@@ -202,7 +174,7 @@ func (m *MemorySystem) CreateEntity(name, entityType string, metadata map[string
 }
 
 // CreateRelation creates a new relation between two entities
-func (m *MemorySystem) CreateRelation(fromID, toID, relationType string, properties map[string]interface{}) (*Relation, error) {
+func (m *MemorySystem) CreateRelation(fromID, toID, relationType string, properties map[string]interface{}) (*ports.Relation, error) {
 	relationID := fmt.Sprintf("relation_%d", time.Now().UnixNano())
 	now := time.Now()
 
@@ -224,7 +196,7 @@ func (m *MemorySystem) CreateRelation(fromID, toID, relationType string, propert
 		return nil, fmt.Errorf("failed to create relation: %w", err)
 	}
 
-	relation := &Relation{
+	relation := &ports.Relation{
 		ID:         relationID,
 		FromID:     fromID,
 		ToID:       toID,
@@ -238,7 +210,7 @@ func (m *MemorySystem) CreateRelation(fromID, toID, relationType string, propert
 }
 
 // AddObservation adds an observation to an entity
-func (m *MemorySystem) AddObservation(entityID, content, observationType string, metadata map[string]interface{}) (*Observation, error) {
+func (m *MemorySystem) AddObservation(entityID, content, observationType string, metadata map[string]interface{}) (*ports.Observation, error) {
 	observationID := fmt.Sprintf("observation_%d", time.Now().UnixNano())
 	now := time.Now()
 
@@ -260,7 +232,7 @@ func (m *MemorySystem) AddObservation(entityID, content, observationType string,
 		return nil, fmt.Errorf("failed to add observation: %w", err)
 	}
 
-	observation := &Observation{
+	observation := &ports.Observation{
 		ID:        observationID,
 		EntityID:  entityID,
 		Content:   content,
@@ -286,7 +258,7 @@ func escapeLikePattern(pattern string) string {
 }
 
 // SearchEntities searches for entities by name, type, or content
-func (m *MemorySystem) SearchEntities(query string, entityType string, limit int) ([]*Entity, error) {
+func (m *MemorySystem) SearchEntities(query string, entityType string, limit int) ([]*ports.Entity, error) {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -323,7 +295,7 @@ func (m *MemorySystem) SearchEntities(query string, entityType string, limit int
 	}
 	defer rows.Close()
 
-	var entities []*Entity
+	var entities []*ports.Entity
 	for rows.Next() {
 		entity, err := m.scanEntity(rows)
 		if err != nil {
@@ -336,8 +308,8 @@ func (m *MemorySystem) SearchEntities(query string, entityType string, limit int
 }
 
 // GetEntity retrieves an entity by ID or name
-func (m *MemorySystem) GetEntity(identifier string) (*Entity, error) {
-	var entity *Entity
+func (m *MemorySystem) GetEntity(identifier string) (*ports.Entity, error) {
+	var entity *ports.Entity
 	var err error
 
 	// Try by ID first
@@ -347,7 +319,7 @@ func (m *MemorySystem) GetEntity(identifier string) (*Entity, error) {
 	}
 
 	// Try by name
-	entity, err = m.getEntityByName(identifier)
+	entity, err = m.GetEntityByName(identifier)
 	if err == nil {
 		return entity, nil
 	}
@@ -356,7 +328,7 @@ func (m *MemorySystem) GetEntity(identifier string) (*Entity, error) {
 }
 
 // getEntityByID retrieves an entity by ID
-func (m *MemorySystem) getEntityByID(id string) (*Entity, error) {
+func (m *MemorySystem) getEntityByID(id string) (*ports.Entity, error) {
 	row := m.db.QueryRow(`
 		SELECT id, name, type, created_at, updated_at, metadata
 		FROM entities
@@ -366,8 +338,8 @@ func (m *MemorySystem) getEntityByID(id string) (*Entity, error) {
 	return m.scanEntityRow(row)
 }
 
-// getEntityByName retrieves an entity by name
-func (m *MemorySystem) getEntityByName(name string) (*Entity, error) {
+// GetEntityByName retrieves the most recently updated entity with this name
+func (m *MemorySystem) GetEntityByName(name string) (*ports.Entity, error) {
 	row := m.db.QueryRow(`
 		SELECT id, name, type, created_at, updated_at, metadata
 		FROM entities
@@ -380,7 +352,7 @@ func (m *MemorySystem) getEntityByName(name string) (*Entity, error) {
 }
 
 // GetRelations retrieves relations for an entity
-func (m *MemorySystem) GetRelations(entityID string, relationType string) ([]*Relation, error) {
+func (m *MemorySystem) GetRelations(entityID string, relationType string) ([]*ports.Relation, error) {
 	var whereClause string
 	var args []interface{}
 
@@ -404,7 +376,7 @@ func (m *MemorySystem) GetRelations(entityID string, relationType string) ([]*Re
 	}
 	defer rows.Close()
 
-	var relations []*Relation
+	var relations []*ports.Relation
 	for rows.Next() {
 		relation, err := m.scanRelation(rows)
 		if err != nil {
@@ -417,7 +389,7 @@ func (m *MemorySystem) GetRelations(entityID string, relationType string) ([]*Re
 }
 
 // GetObservations retrieves observations for an entity
-func (m *MemorySystem) GetObservations(entityID string, observationType string) ([]*Observation, error) {
+func (m *MemorySystem) GetObservations(entityID string, observationType string) ([]*ports.Observation, error) {
 	var whereClause string
 	var args []interface{}
 
@@ -441,7 +413,7 @@ func (m *MemorySystem) GetObservations(entityID string, observationType string) 
 	}
 	defer rows.Close()
 
-	var observations []*Observation
+	var observations []*ports.Observation
 	for rows.Next() {
 		observation, err := m.scanObservation(rows)
 		if err != nil {
@@ -562,8 +534,8 @@ func (m *MemorySystem) Close() error {
 
 // Helper methods for scanning database rows
 
-func (m *MemorySystem) scanEntity(rows *sql.Rows) (*Entity, error) {
-	var entity Entity
+func (m *MemorySystem) scanEntity(rows *sql.Rows) (*ports.Entity, error) {
+	var entity ports.Entity
 	var metadataJSON sql.NullString
 	var createdAt, updatedAt int64
 
@@ -591,8 +563,8 @@ func (m *MemorySystem) scanEntity(rows *sql.Rows) (*Entity, error) {
 	return &entity, nil
 }
 
-func (m *MemorySystem) scanEntityRow(row *sql.Row) (*Entity, error) {
-	var entity Entity
+func (m *MemorySystem) scanEntityRow(row *sql.Row) (*ports.Entity, error) {
+	var entity ports.Entity
 	var metadataJSON sql.NullString
 	var createdAt, updatedAt int64
 
@@ -620,8 +592,8 @@ func (m *MemorySystem) scanEntityRow(row *sql.Row) (*Entity, error) {
 	return &entity, nil
 }
 
-func (m *MemorySystem) scanRelation(rows *sql.Rows) (*Relation, error) {
-	var relation Relation
+func (m *MemorySystem) scanRelation(rows *sql.Rows) (*ports.Relation, error) {
+	var relation ports.Relation
 	var propertiesJSON sql.NullString
 	var createdAt int64
 
@@ -648,8 +620,8 @@ func (m *MemorySystem) scanRelation(rows *sql.Rows) (*Relation, error) {
 	return &relation, nil
 }
 
-func (m *MemorySystem) scanObservation(rows *sql.Rows) (*Observation, error) {
-	var observation Observation
+func (m *MemorySystem) scanObservation(rows *sql.Rows) (*ports.Observation, error) {
+	var observation ports.Observation
 	var metadataJSON sql.NullString
 	var createdAt int64
 
@@ -677,7 +649,7 @@ func (m *MemorySystem) scanObservation(rows *sql.Rows) (*Observation, error) {
 }
 
 // StoreNQEResultWithChunking stores a large NQE result in chunked observations for LLM-friendly retrieval
-func (m *MemorySystem) StoreNQEResultWithChunking(queryID, networkID, snapshotID string, result *domain.NQERunResult, chunkSize int) (string, error) {
+func (m *MemorySystem) StoreNQEResultWithChunking(queryID, networkID, snapshotID string, result *ports.NQERunResult, chunkSize int) (string, error) {
 	if chunkSize <= 0 {
 		chunkSize = 200 // Default chunk size if not specified
 	}
@@ -758,3 +730,6 @@ func (m *MemorySystem) GetNQEResultChunks(resultEntityID string) ([]string, erro
 	}
 	return chunks, nil
 }
+
+// MemorySystem implements the MemoryStore port.
+var _ ports.MemoryStore = (*MemorySystem)(nil)

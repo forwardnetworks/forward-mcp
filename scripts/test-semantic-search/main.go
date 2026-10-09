@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
+	"github.com/forward-mcp/internal/adapters/secondary/sqlite"
 	"github.com/forward-mcp/internal/ports"
 	"os"
 
 	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
-	"github.com/forward-mcp/internal/service"
 )
 
 func main() {
@@ -42,7 +42,7 @@ func main() {
 	}
 
 	// Initialize database
-	database, err := service.NewNQEDatabase(appLogger, "default")
+	database, err := sqlite.NewNQEDatabase(appLogger, "default")
 	if err != nil {
 		fmt.Printf("❌ Failed to create database: %v\n", err)
 		return

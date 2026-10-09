@@ -6,6 +6,9 @@ import (
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/adapters/secondary/semcache"
+	"github.com/forward-mcp/internal/adapters/secondary/sqlite"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -539,6 +542,16 @@ func createTestService() *ForwardMCPService {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	// The memory store lives in a temp directory, never in ~/.forward-mcp.
+	dir, err := os.MkdirTemp("", "forward-mcp-test-")
+	if err != nil {
+		panic(err)
+	}
+	memory, err := sqlite.NewMemorySystemAt(filepath.Join(dir, "memory.db"), logger, "test")
+	if err != nil {
+		panic(err)
+	}
+
 	service := &ForwardMCPService{
 		forwardClient: NewMockForwardClient(),
 		config:        cfg,
@@ -549,15 +562,12 @@ func createTestService() *ForwardMCPService {
 			SnapshotID: "",
 			QueryLimit: 100,
 		},
-		workflowManager: NewWorkflowManager(100, 1*time.Hour), // Test with smaller limits
-		semanticCache:   semanticCache,
-		queryIndex:      queryIndex,
-		database:        nil, // No database for tests
-		memorySystem:    func() *MemorySystem { ms, _ := NewMemorySystem(logger, "test"); return ms }(),
-		apiTracker: func() *APIMemoryTracker {
-			ms, _ := NewMemorySystem(logger, "test")
-			return NewAPIMemoryTracker(ms, logger, "test")
-		}(),
+		workflowManager:   NewWorkflowManager(100, 1*time.Hour), // Test with smaller limits
+		semanticCache:     semanticCache,
+		queryIndex:        queryIndex,
+		database:          nil, // No database for tests
+		memorySystem:      memory,
+		apiTracker:        NewAPIMemoryTracker(memory, logger, "test"),
 		bloomManager:      NewBloomSearchManager(logger, "test"),
 		bloomIndexManager: NewBloomIndexManager(logger, "/tmp"),
 		ctx:               ctx,

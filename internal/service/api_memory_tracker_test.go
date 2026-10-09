@@ -1,6 +1,9 @@
 package service
 
 import (
+	"path/filepath"
+
+	"github.com/forward-mcp/internal/adapters/secondary/sqlite"
 	"testing"
 	"time"
 
@@ -298,4 +301,14 @@ func TestAPIMemoryTracker_NilMemorySystem(t *testing.T) {
 	if err == nil {
 		t.Error("GetQueryAnalytics should return error for nil memory system")
 	}
+}
+
+// createTestMemorySystem opens a memory store in a temp directory.
+func createTestMemorySystem(t *testing.T) *sqlite.MemorySystem {
+	t.Helper()
+	ms, err := sqlite.NewMemorySystemAt(filepath.Join(t.TempDir(), "memory.db"), logger.New(), "test-instance")
+	if err != nil {
+		t.Fatalf("Failed to open test memory store: %v", err)
+	}
+	return ms
 }

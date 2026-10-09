@@ -13,6 +13,7 @@ import (
 	"github.com/forward-mcp/internal/adapters/secondary/instancelock"
 	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/adapters/secondary/semcache"
+	"github.com/forward-mcp/internal/adapters/secondary/sqlite"
 	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/ports"
 	"github.com/forward-mcp/internal/service"
@@ -185,10 +186,30 @@ func main() {
 
 // newDeps builds the adapters the service runs on.
 func newDeps(cfg *ports.Config, log ports.Logger) service.Deps {
+	instanceID := service.InstanceID(cfg)
 	embedder := embeddings.New(cfg.Forward.SemanticCache.EmbeddingProvider, os.Getenv("OPENAI_API_KEY"), log)
+
+	// A store that cannot open stays a nil interface: the service checks for
+	// nil and runs without it. A nil *NQEDatabase in the interface would not
+	// compare equal to nil.
+	var queryStore ports.QueryStore
+	if db, err := sqlite.NewNQEDatabase(log, instanceID); err != nil {
+		log.Error("Failed to create database: %v", err)
+	} else {
+		queryStore = db
+	}
+	var memory ports.MemoryStore
+	if m, err := sqlite.NewMemorySystem(log, instanceID); err != nil {
+		log.Error("Failed to create memory system: %v", err)
+	} else {
+		memory = m
+	}
+
 	return service.Deps{
 		API:        forwardapi.NewClient(&cfg.Forward, log),
-		Cache:      semcache.NewSemanticCache(embedder, log, service.InstanceID(cfg), &cfg.Forward.SemanticCache),
+		Cache:      semcache.NewSemanticCache(embedder, log, instanceID, &cfg.Forward.SemanticCache),
 		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
+		QueryStore: queryStore,
+		Memory:     memory,
 	}
 }

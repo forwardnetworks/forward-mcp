@@ -134,8 +134,8 @@ type ForwardMCPService struct {
 	workflowManager   *WorkflowManager
 	semanticCache     ports.ResultCache
 	queryIndex        ports.QueryIndex
-	database          *NQEDatabase
-	memorySystem      *MemorySystem       // Knowledge graph memory system
+	database          ports.QueryStore
+	memorySystem      ports.MemoryStore   // Knowledge graph memory system
 	apiTracker        *APIMemoryTracker   // API result tracking using memory system
 	bloomManager      *BloomSearchManager // Bloom filter for efficient large result filtering
 	bloomIndexManager *BloomIndexManager  // Persistent bloom index for large NQE results
@@ -157,6 +157,11 @@ type Deps struct {
 	API        ports.ForwardAPI
 	Cache      ports.ResultCache
 	QueryIndex ports.QueryIndex
+	// QueryStore and Memory may be nil when their database cannot be opened;
+	// the service then runs without them. Pass a nil interface, never a nil
+	// pointer of a concrete type.
+	QueryStore ports.QueryStore
+	Memory     ports.MemoryStore
 }
 
 // NewForwardMCPService creates the service from its configuration and deps.
@@ -174,23 +179,11 @@ func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, deps Deps) *F
 
 	semanticCache := deps.Cache
 
-	// Create database with instance partitioning
-	database, err := NewNQEDatabase(logger, instanceID)
-	if err != nil {
-		logger.Error("Failed to create database: %v", err)
-		// Continue without database - will fall back to spec file
-		database = nil
-	}
+	database := deps.QueryStore
 
 	queryIndex := deps.QueryIndex
 
-	// Create memory system
-	memorySystem, err := NewMemorySystem(logger, instanceID)
-	if err != nil {
-		logger.Error("Failed to create memory system: %v", err)
-		// Continue without memory system
-		memorySystem = nil
-	}
+	memorySystem := deps.Memory
 
 	// Create API memory tracker
 	var apiTracker *APIMemoryTracker
@@ -938,7 +931,7 @@ Welcome! This workflow teaches you how to handle large NQE query results efficie
 - **Chunking**: Large results are split into 200-row chunks for LLM-friendly processing
 - **Memory System**: Results are stored persistently with metadata and summaries
 - **SQL Analysis**: Full SQL query capabilities on stored data
-- **Entity Management**: Each result gets a unique entity ID for easy reference
+- **domain.Entity Management**: Each result gets a unique entity ID for easy reference
 
 Would you like to:
 1. Learn about the process step-by-step
@@ -967,7 +960,7 @@ When you run an NQE query with "all_results: true" or when results exceed size l
 - Each result gets a unique entity ID for easy reference
 
 **Step 2: Memory System Storage**
-- **Entity Creation**: Creates a result entity with metadata (query_id, network_id, snapshot_id, row_count)
+- **domain.Entity Creation**: Creates a result entity with metadata (query_id, network_id, snapshot_id, row_count)
 - **Chunking**: Splits data into manageable chunks stored as observations
 - **Summary**: Generates a summary observation with columns, row count, and metadata
 - **Persistence**: All data is stored in SQLite database for later retrieval
@@ -1880,7 +1873,7 @@ func (s *ForwardMCPService) listNQEQueries(ctx context.Context, args ListNQEQuer
 
 		// Try to initialize from database first, then fallback to spec
 		if s.database != nil {
-			queries, err := s.database.loadWithSmartCachingContext(s.ctx, s.forwardClient, s.logger)
+			queries, err := queryLoader{s.database}.loadWithSmartCachingContext(s.ctx, s.forwardClient, s.logger)
 			if err != nil {
 				s.logger.Warn("Database loading failed, falling back to spec file: %v", err)
 				if err := s.queryIndex.LoadFromSpec(); err != nil {
@@ -3116,17 +3109,17 @@ func (s *ForwardMCPService) hydrateDatabase(ctx context.Context, args HydrateDat
 			queries, err = s.forwardClient.GetNQEAllQueriesEnhanced(ctx, existingCommitIDs)
 			if err != nil {
 				s.logger.Warn("🔄 Enhanced API failed, falling back to basic API: %v", err)
-				queries, err = s.database.loadFromBasicAPI(ctx, s.forwardClient, s.logger)
+				queries, err = queryLoader{s.database}.loadFromBasicAPI(ctx, s.forwardClient, s.logger)
 			}
 		} else {
-			queries, err = s.database.loadFromBasicAPI(ctx, s.forwardClient, s.logger)
+			queries, err = queryLoader{s.database}.loadFromBasicAPI(ctx, s.forwardClient, s.logger)
 		}
 		if err != nil {
 			s.logger.Error("failed to load queries from API: %v", err)
 			return
 		}
 		if !args.ForceRefresh && len(existingQueries) > 0 {
-			queries = s.database.mergeQueries(existingQueries, queries)
+			queries = queryLoader{s.database}.mergeQueries(existingQueries, queries)
 		}
 		if err := s.database.SaveQueries(queries); err != nil {
 			s.logger.Error("failed to save queries to database: %v", err)
@@ -3227,7 +3220,7 @@ func (s *ForwardMCPService) getDatabaseStatus(ctx context.Context, args GetDatab
 		}
 
 		// Get database path
-		status["database_path"] = s.database.dbPath
+		status["database_path"] = s.database.Path()
 	}
 
 	if s.queryIndex != nil {
@@ -3429,7 +3422,7 @@ func (s *ForwardMCPService) getRelations(ctx context.Context, args GetRelationsA
 		offset = 0
 	}
 
-	var relations []*Relation
+	var relations []*domain.Relation
 	var totalCount int
 	var hasMore bool
 
@@ -3461,7 +3454,7 @@ func (s *ForwardMCPService) getRelations(ctx context.Context, args GetRelationsA
 		start := offset
 		end := offset + limit
 		if start >= totalCount {
-			relations = []*Relation{}
+			relations = []*domain.Relation{}
 		} else {
 			if end > totalCount {
 				end = totalCount
@@ -3526,7 +3519,7 @@ func (s *ForwardMCPService) getObservations(ctx context.Context, args GetObserva
 		offset = 0
 	}
 
-	var observations []*Observation
+	var observations []*domain.Observation
 	var totalCount int
 	var hasMore bool
 
@@ -3558,7 +3551,7 @@ func (s *ForwardMCPService) getObservations(ctx context.Context, args GetObserva
 		start := offset
 		end := offset + limit
 		if start >= totalCount {
-			observations = []*Observation{}
+			observations = []*domain.Observation{}
 		} else {
 			if end > totalCount {
 				end = totalCount
@@ -3694,7 +3687,7 @@ func (s *ForwardMCPService) getNQEResultChunks(ctx context.Context, args GetNQER
 	// If entity_id is not provided, try to look up by query_id/network_id/snapshot_id
 	if entityID == "" && args.QueryID != "" && args.NetworkID != "" && args.SnapshotID != "" {
 		lookupName := fmt.Sprintf("%s-%s-%s", args.QueryID, args.NetworkID, args.SnapshotID)
-		entity, err := s.memorySystem.getEntityByName(lookupName)
+		entity, err := s.memorySystem.GetEntityByName(lookupName)
 		if err != nil {
 			return nil, fmt.Errorf("could not find result entity for query/network/snapshot: %w", err)
 		}
@@ -3733,7 +3726,7 @@ func (s *ForwardMCPService) getNQEResultSummary(ctx context.Context, args GetNQE
 	entityID := args.EntityID
 	if entityID == "" && args.QueryID != "" && args.NetworkID != "" && args.SnapshotID != "" {
 		lookupName := fmt.Sprintf("%s-%s-%s", args.QueryID, args.NetworkID, args.SnapshotID)
-		entity, err := s.memorySystem.getEntityByName(lookupName)
+		entity, err := s.memorySystem.GetEntityByName(lookupName)
 		if err != nil {
 			return nil, fmt.Errorf("could not find result entity for query/network/snapshot: %w", err)
 		}

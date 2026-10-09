@@ -1,7 +1,6 @@
-package service
+package sqlite
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,45 +11,12 @@ import (
 
 // Helper function to create a test memory system
 func createTestMemorySystem(t *testing.T) *MemorySystem {
-	// Create a temporary directory for test database
-	tempDir := t.TempDir()
-
-	logger := logger.New()
-
-	// Create the memory system directly with a test database path
-	dbPath := filepath.Join(tempDir, "memory.db")
-
-	memorySystem := &MemorySystem{
-		logger:     logger,
-		dbPath:     dbPath,
-		instanceID: "test-instance",
-	}
-
-	// Create the database directory
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-
-	// Open the database
-	// db, err := sql.Open("sqlite3", dbPath)
-	db, err := openSQLiteWithForeignKeys(dbPath)
+	t.Helper()
+	ms, err := NewMemorySystemAt(filepath.Join(t.TempDir(), "memory.db"), logger.New(), "test-instance")
 	if err != nil {
-		t.Fatalf("Failed to open test database: %v", err)
+		t.Fatalf("Failed to open test memory store: %v", err)
 	}
-	memorySystem.db = db
-
-	// Enable foreign key support for cascading deletes in tests
-	// _, err = db.Exec("PRAGMA foreign_keys = ON;")
-	// if err != nil {
-	// 	t.Fatalf("Failed to enable foreign keys in test DB: %v", err)
-	// }
-
-	// Initialize schema
-	if err := memorySystem.initSchema(); err != nil {
-		t.Fatalf("Failed to initialize test schema: %v", err)
-	}
-
-	return memorySystem
+	return ms
 }
 
 func TestNewMemorySystem(t *testing.T) {

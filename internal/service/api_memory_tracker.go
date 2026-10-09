@@ -11,13 +11,13 @@ import (
 
 // APIMemoryTracker integrates the memory system with API result tracking
 type APIMemoryTracker struct {
-	memorySystem *MemorySystem
+	memorySystem ports.MemoryStore
 	logger       ports.Logger
 	instanceID   string
 }
 
 // NewAPIMemoryTracker creates a new API memory tracker
-func NewAPIMemoryTracker(memorySystem *MemorySystem, logger ports.Logger, instanceID string) *APIMemoryTracker {
+func NewAPIMemoryTracker(memorySystem ports.MemoryStore, logger ports.Logger, instanceID string) *APIMemoryTracker {
 	return &APIMemoryTracker{
 		memorySystem: memorySystem,
 		logger:       logger,
@@ -46,7 +46,7 @@ func (amt *APIMemoryTracker) TrackNetworkQuery(queryID, networkID, snapshotID st
 	}
 
 	// Create or get snapshot entity if provided
-	var snapshotEntity *Entity
+	var snapshotEntity *domain.Entity
 	if snapshotID != "" {
 		snapshotEntity, err = amt.ensureSnapshotEntity(snapshotID, networkID)
 		if err != nil {
@@ -344,7 +344,7 @@ func (amt *APIMemoryTracker) GetQueryAnalytics(networkID string) (map[string]int
 
 // Helper methods for entity management
 
-func (amt *APIMemoryTracker) ensureNetworkEntity(networkID string) (*Entity, error) {
+func (amt *APIMemoryTracker) ensureNetworkEntity(networkID string) (*domain.Entity, error) {
 	// Try to get existing network entity
 	entity, err := amt.memorySystem.GetEntity(networkID)
 	if err == nil {
@@ -360,7 +360,7 @@ func (amt *APIMemoryTracker) ensureNetworkEntity(networkID string) (*Entity, err
 	return amt.memorySystem.CreateEntity(networkID, "network", metadata)
 }
 
-func (amt *APIMemoryTracker) ensureQueryEntity(queryID string) (*Entity, error) {
+func (amt *APIMemoryTracker) ensureQueryEntity(queryID string) (*domain.Entity, error) {
 	// Try to get existing query entity
 	entity, err := amt.memorySystem.GetEntity(queryID)
 	if err == nil {
@@ -376,7 +376,7 @@ func (amt *APIMemoryTracker) ensureQueryEntity(queryID string) (*Entity, error) 
 	return amt.memorySystem.CreateEntity(queryID, "query", metadata)
 }
 
-func (amt *APIMemoryTracker) ensureSnapshotEntity(snapshotID, networkID string) (*Entity, error) {
+func (amt *APIMemoryTracker) ensureSnapshotEntity(snapshotID, networkID string) (*domain.Entity, error) {
 	// Try to get existing snapshot entity
 	entity, err := amt.memorySystem.GetEntity(snapshotID)
 	if err == nil {
@@ -393,7 +393,7 @@ func (amt *APIMemoryTracker) ensureSnapshotEntity(snapshotID, networkID string) 
 	return amt.memorySystem.CreateEntity(snapshotID, "snapshot", metadata)
 }
 
-func (amt *APIMemoryTracker) createQueryResultEntity(queryID, networkID, snapshotID string, result *domain.NQERunResult, executionTime time.Duration) (*Entity, error) {
+func (amt *APIMemoryTracker) createQueryResultEntity(queryID, networkID, snapshotID string, result *domain.NQERunResult, executionTime time.Duration) (*domain.Entity, error) {
 	// Create unique result ID
 	resultID := fmt.Sprintf("result_%s_%s_%d", queryID, networkID, time.Now().Unix())
 
