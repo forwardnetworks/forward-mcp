@@ -1,0 +1,156 @@
+# hexa architecture rules
+# - [rules]           read by `hexa enforce check-file` (forbidden path patterns)
+# - [[hex_layer_rules]] read by `hexa enforce check-file` (layer boundary rules)
+# - [[adr_rules]]     read by `hexa analyze` (ADR compliance violation patterns)
+#
+# path_pattern is an unanchored substring match (see hexa_analysis::layer_classifier),
+# so these match regardless of language or package-name nesting under src/ —
+# e.g. "/domain/" matches both "src/domain/foo.ts" and "src/mypkg/core/domain/foo.py",
+# while the trailing slash avoids false positives like "src/domainxyz/foo.py".
+
+[rules]
+forbidden_paths = ["node_modules", ".git", "dist", ".env", "target"]
+
+[[hex_layer_rules]]
+path_pattern = "/adapters/primary/"
+layer = "adapters/primary"
+
+[[hex_layer_rules]]
+path_pattern = "/adapters/secondary/"
+layer = "adapters/secondary"
+
+[[hex_layer_rules]]
+path_pattern = "/domain/"
+layer = "domain"
+
+[[hex_layer_rules]]
+path_pattern = "/ports/"
+layer = "ports"
+
+[[hex_layer_rules]]
+path_pattern = "/usecases/"
+layer = "usecases"
+
+# ── Lessons, as rules ────────────────────────────────────────────────────
+#
+# Each rule below is a mistake that generated code makes and that tests find
+# late or never. They are rules rather than prose for the reason
+# ADR-2609121400 gives: a document that cannot fail cannot be trusted, because
+# nothing separates it from a document that is wrong.
+#
+# `hexa analyze .` runs them. Delete any that do not fit your project, but
+# delete them deliberately, and read the message first.
+
+[[adr_rules]]
+adr = "ADR-2609121400"
+id = "no-hardcoded-absolute-path"
+message = "Hardcoded absolute path. A path that names one machine writes outside the repository on every other machine, and no test notices. Resolve it from the working directory or an environment variable."
+severity = "error"
+file_patterns = [".rs", ".go", ".ts", ".tsx"]
+exclude_patterns = ["test", "_test.", ".test.", "example"]
+violation_patterns = ["\"/home/", "\"/Users/", "\"C:\\\\Users"]
+
+[[adr_rules]]
+adr = "ADR-2609121400"
+id = "no-hardcoded-host-port"
+message = "Hardcoded host:port. A literal address is a daemon dependency the code never decided to have, and removing the daemon later means touching every caller. Put the address in configuration."
+severity = "warning"
+file_patterns = [".rs", ".go", ".ts", ".tsx"]
+exclude_patterns = ["test", "_test.", ".test.", "config", "example", "infer"]
+violation_patterns = ["127.0.0.1:", "localhost:", "0.0.0.0:"]
+
+[[adr_rules]]
+adr = "ADR-2609121400"
+id = "no-model-name-outside-inference"
+message = "A model or provider name outside the inference boundary. A caller that names a model cannot be re-pointed by editing configuration, which is exactly the property model-independence means. Read the tier from config instead."
+severity = "error"
+file_patterns = [".rs", ".go", ".ts", ".tsx"]
+exclude_patterns = ["infer", "inference", "test", "_test.", ".test.", "config"]
+violation_patterns = ["gpt-4", "gpt-5", "claude-3", "claude-4", "qwen", "llama-3", "mistral", "ollama"]
+
+[[adr_rules]]
+adr = "ADR-2609121400"
+id = "narrowing-cast-needs-a-check"
+message = "Narrowing `as` cast. An integer `as` silently truncates, and a truncated limit or penalty produces a check that never fires. Use try_from. A float-to-int `as` saturates and has no try_from; put the float on the same line (`x.trunc() as u32`, `(n as f64 * 0.9) as u32`) and the rule lets it through."
+severity = "warning"
+file_patterns = [".rs"]
+exclude_patterns = ["test", "_test."]
+violation_patterns = [" as u8", " as u16", " as u32", " as i8", " as i16", " as i32"]
+allow_line_patterns = ["as f64", "as f32", ".trunc()", ".round()", ".ceil()", ".floor()", "f64::", "f32::"]
+
+[[adr_rules]]
+adr = "ADR-2609121400"
+id = "no-innerhtml-with-data"
+message = "innerHTML assigns markup, not text. Any value that has been near a user is now executable. Use textContent or createElement."
+severity = "error"
+file_patterns = [".ts", ".tsx", ".js", ".jsx"]
+exclude_patterns = ["test", ".test.", ".spec."]
+violation_patterns = ["innerHTML", "outerHTML", "insertAdjacentHTML"]
+
+[[adr_rules]]
+adr = "ADR-2609121400"
+id = "test-must-not-redefine-its-subject"
+message = "A type declared inside a test file. When a test redefines its subject, every assertion holds against a copy of the design rather than the shipped code, and deleting the test costs no coverage. Import the real type."
+severity = "warning"
+file_patterns = ["_test.go", ".test.ts", ".spec.ts"]
+exclude_patterns = []
+violation_patterns = ["\ntype ", "\nclass ", "\nstruct "]
+
+# A rule that was written and then removed, which is worth recording:
+#
+#   id = "no-silent-fallback-in-a-gate"
+#   violation_patterns = ["unwrap_or(true)", "unwrap_or_else(|_| true)"]
+#
+# The lesson is real: a gate that falls back to a weaker check when its tool
+# is unreachable prints a result that means less than it says. But no pattern
+# separates that from an ordinary default for an optional flag, and every hit
+# is the ordinary kind: `task.isolate.unwrap_or(true)`.
+#
+# A rule that flags correct code is worse than no rule, because it teaches
+# people to skim past the output. The lesson lives in CLAUDE.md instead, where
+# prose is the honest form for something a machine cannot check.
+
+# ── What the domain may import from outside the project ──────────────
+#
+# Read by `hexa analyze` (ADR-2609211430 §2). Where `[[adr_rules]]` matches
+# text on a line, this reads the imports tree-sitter already parsed, so a
+# grouped `use` split over lines, a TypeScript `import type`, and a Go
+# `import ( … )` block are all seen.
+#
+# It is an allowlist, which is the opposite of what a list of banned crates
+# can express: a denylist only catches the dependencies somebody thought to
+# name, and the property worth stating is the short one — what this layer is
+# permitted to know about.
+#
+# Imports that resolve inside the project are out of scope here; the layer
+# rules above already govern those. The standard library is permitted without
+# being listed, and `deny` beats both it and `allow`, which is how `std` stays
+# available while `std::fs` does not.
+#
+# One policy covers all three languages because one rules file does. The
+# prefixes below are namespaced by language in practice — `std::fs` matches
+# nothing in a Go project — and a prefix shared by two languages is listed
+# once, because two policies naming it would report one import twice and
+# charge the grade for both.
+#
+# To let the domain use a real dependency, add it to `allow` with a reason.
+# The friction is deliberate: the allowlist is the written record of what the
+# domain depends on.
+[[import_policy]]
+adr = "ADR-2609211430"
+id = "domain-imports-only-what-it-is-allowed"
+layer = "/domain/"
+allow = []
+deny = [
+  # Rust
+  "std::fs", "std::net", "std::process", "std::env", "std::io",
+  # TypeScript / Node, in both the prefixed and bare spellings
+  "node:fs", "node:net", "node:http", "node:child_process", "node:process",
+  "fs", "child_process",
+  # Go (and the bare Node spellings it shares). `plugin` loads code at run
+  # time, which is infrastructure by definition (ADR-2609211600 §6).
+  "os", "net", "http", "net/http", "database/sql", "os/exec", "io/ioutil",
+  "plugin",
+]
+message = "The domain imported something from outside the project that it is not allowed to know about. Put the capability behind a port, or add it to `allow` in .hexa/ADR-rules.toml deliberately and say why in an ADR."
+severity = "error"
