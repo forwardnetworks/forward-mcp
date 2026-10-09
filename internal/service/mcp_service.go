@@ -632,7 +632,7 @@ func (s *ForwardMCPService) RegisterTools(server *mcp.Server) error {
 
 	// AI-Powered Query Discovery Tools
 	addTool(server, "search_nqe_queries",
-		"🧠 **AI-POWERED SEARCH**: Find relevant NQE queries using natural language.\n\nAI-powered search through 6000+ predefined NQE queries using natural language. Describe what you want to analyze and get relevant query suggestions.\n\n**Best Practices:**\n- Be specific and descriptive in your query\n- Use examples like 'AWS security issues', 'BGP routing problems'\n- Avoid vague terms like 'network' or 'config'\n- Use category filters to narrow results\n\n**Example Queries:**\n- 'show me AWS security vulnerabilities'\n- 'find BGP routing issues'\n- 'check interface utilization'\n- 'devices with high CPU usage'\n\n**Note:** For executable queries, use find_executable_query instead.",
+		"🧠 **AI-POWERED SEARCH**: Find relevant NQE queries using natural language.\n\nAI-powered search through 6000+ predefined NQE queries using natural language. Describe what you want to analyze and get relevant query suggestions.\n\n**Best Practices:**\n- Be specific and descriptive in your query\n- Use examples like 'AWS security issues', 'BGP routing problems'\n- Avoid vague terms like 'network' or 'config'\n- Use category filters to narrow results\n\n**Example Queries:**\n- 'show me AWS security vulnerabilities'\n- 'find BGP routing issues'\n- 'check interface utilization'\n- 'devices with high CPU usage'",
 		s.searchNQEQueries)
 
 	// Bulk location setup workflow (guides bulk upsert using PATCH)
@@ -658,7 +658,7 @@ func (s *ForwardMCPService) RegisterTools(server *mcp.Server) error {
 	})
 
 	addTool(server, "initialize_query_index",
-		"Initialize or rebuild the AI-powered NQE query index from the spec file. REQUIRED before using search_nqe_queries or find_executable_query. Run this once at startup or when you get 'query index is empty' errors. Can generate embeddings for semantic search if OpenAI API key is available.",
+		"Initialize or rebuild the AI-powered NQE query index from the spec file. REQUIRED before using search_nqe_queries. Run this once at startup or when you get 'query index is empty' errors. Can generate embeddings for semantic search if OpenAI API key is available.",
 		s.initializeQueryIndex)
 
 	// Database Hydration Tools
@@ -1773,10 +1773,10 @@ func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.Call
 		// Check for specific NQE query errors and provide helpful messages
 		errorStr := err.Error()
 		if strings.Contains(errorStr, "Invalid module path") {
-			return nil, fmt.Errorf("query contains outdated module imports (this is a data quality issue in the Forward Networks repository) - query ID: %s. Try using find_executable_query to discover alternative queries", args.QueryID)
+			return nil, fmt.Errorf("query contains outdated module imports (this is a data quality issue in the Forward Networks repository) - query ID: %s. Try using search_nqe_queries to discover alternative queries", args.QueryID)
 		}
 		if strings.Contains(errorStr, "NQE_RUNTIME_ERROR") {
-			return nil, fmt.Errorf("query execution failed due to code issues (this may be a data quality issue) - query ID: %s. Try using find_executable_query to find working alternatives. Error: %w", args.QueryID, err)
+			return nil, fmt.Errorf("query execution failed due to code issues (this may be a data quality issue) - query ID: %s. Try using search_nqe_queries to find working alternatives. Error: %w", args.QueryID, err)
 		}
 		if strings.Contains(errorStr, "result exceeds maximum length") {
 			// Automatic fallback to batch mode for large results
@@ -1816,8 +1816,8 @@ func (s *ForwardMCPService) runNQEQueryByID(args RunNQEQueryByIDArgs) (*mcp.Call
 			return batchResp, nil
 		}
 		if strings.Contains(errorStr, "Provided argument") && strings.Contains(errorStr, "is not a parameter to the given query") {
-			// Parameter mismatch error, suggest find_executable_query
-			return nil, fmt.Errorf("Query parameter mismatch: %s. Try using find_executable_query to find working alternatives or check the required parameters for this query.", errorStr)
+			// Parameter mismatch error, suggest search_nqe_queries
+			return nil, fmt.Errorf("Query parameter mismatch: %s. Try using search_nqe_queries to find working alternatives or check the required parameters for this query.", errorStr)
 		}
 		return nil, fmt.Errorf("failed to run NQE query: %w", err)
 	}
