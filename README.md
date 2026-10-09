@@ -1,6 +1,6 @@
 # Forward MCP
 
-**Version 4.1.1** • [![Architecture Grade](https://img.shields.io/badge/hexa-A%2B%20100%2F100-brightgreen)](https://github.com/gaberger/hexa)
+**Version 4.2.0** • [![Architecture Grade](https://img.shields.io/badge/hexa-A%2B%20100%2F100-brightgreen)](https://github.com/gaberger/hexa)
 
 Forward MCP is an open-source server that provides a set of tools and APIs for interacting with Forward Networks' platform. It enables automation, analysis, and integration with network data using the Model Context Protocol (MCP).
 
@@ -19,6 +19,26 @@ Built with hexagonal architecture for clean separation of concerns and easy exte
 - **Security Hardened**: TLS 1.3+ enforcement, SHA-256 hashing, path traversal protection, race-condition free
 - **Remote Server Mode (preview)**: Streamable HTTP transport (plus legacy SSE) with API-key or JWT (JWKS) authentication, per-user rate limits, and health endpoints
 - **BM25 Query Search**: ranks the NQE query library by term rarity and field weight, fused with embedding similarity when embeddings exist
+
+## What's New in 4.2.0
+
+### Snapshot Comparison
+New `compare_nqe_results` tool compares the same NQE query across two snapshots, showing what changed after a maintenance window or configuration update.
+
+### Enhanced Path Search
+The `search_paths` tool now accepts:
+- **ICMP**: `icmp_type` parameter for tracing ping and ICMP traffic
+- **TCP flags**: `fin`, `syn`, `rst`, `psh`, `ack`, `urg` (0 or 1 each) for connection analysis
+- **Layer 7**: `app_id`, `user_id`, `user_group_id`, `url`, `domain` for application-aware tracing
+- **Display**: `include_tags` option to show device tags in path results
+
+### NQE Query Version Control
+`run_nqe_query_by_id` now accepts:
+- `commit_id` — run a specific version of a query
+- `use_latest_data_files` — use uploaded data files instead of snapshot versions
+
+### Documentation Cleanup
+Removed 23 obsolete files (10,872 lines) including stale guides, outdated planning docs, and broken test scripts.
 
 ## What's New in 4.1.0
 
