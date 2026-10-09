@@ -1,4 +1,4 @@
-package service
+package usecases
 
 import (
 	"context"
@@ -18,7 +18,6 @@ import (
 	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/ports"
-	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // contains is a helper for substring checks in tests
@@ -416,7 +415,7 @@ func (m *MockForwardClient) CreateLocationsBulk(ctx context.Context, networkID s
 
 // TestIsCloudDevice tests the cloud device detection logic
 func TestIsCloudDevice(t *testing.T) {
-	service := &ForwardMCPService{}
+	service := &Service{}
 
 	// Test cases for physical devices that should NOT be blocked
 	physicalDevices := []string{
@@ -514,7 +513,7 @@ func (e *MockError) Error() string {
 }
 
 // Helper function for tests
-func createTestService() *ForwardMCPService {
+func createTestService() *Service {
 	cfg := &domain.Config{
 		Forward: domain.ForwardConfig{
 			APIKey:     "test-key",
@@ -553,7 +552,7 @@ func createTestService() *ForwardMCPService {
 		panic(err)
 	}
 
-	service := &ForwardMCPService{
+	service := &Service{
 		forwardClient: NewMockForwardClient(),
 		config:        cfg,
 		logger:        logger,
@@ -581,7 +580,7 @@ func createTestService() *ForwardMCPService {
 func TestListNetworks(t *testing.T) {
 	service := createTestService()
 
-	response, err := service.listNetworks(context.Background(), ListNetworksArgs{})
+	response, err := service.ListNetworks(context.Background(), ListNetworksArgs{})
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -612,7 +611,7 @@ func TestCreateNetwork(t *testing.T) {
 		Name: "New Test Network",
 	}
 
-	response, err := service.createNetwork(context.Background(), args)
+	response, err := service.CreateNetwork(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -693,7 +692,7 @@ func TestRunNQEQuery(t *testing.T) {
 		},
 	}
 
-	response, err := service.runNQEQueryByID(context.Background(), args)
+	response, err := service.RunNQEQueryByID(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -723,7 +722,7 @@ func TestRunNQEQueryByID(t *testing.T) {
 		Directory: "/L3/Basic/",
 	}
 
-	_, err := service.listNQEQueries(context.Background(), listArgs)
+	_, err := service.ListNQEQueries(context.Background(), listArgs)
 	if err != nil {
 		t.Fatalf("Failed to list NQE queries: %v", err)
 	}
@@ -740,7 +739,7 @@ func TestRunNQEQueryByID(t *testing.T) {
 		},
 	}
 
-	response, err := service.runNQEQueryByID(context.Background(), args)
+	response, err := service.RunNQEQueryByID(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -766,7 +765,7 @@ func TestListNQEQueries(t *testing.T) {
 		Directory: "/L3/Basic/",
 	}
 
-	response, err := service.listNQEQueries(context.Background(), args)
+	response, err := service.ListNQEQueries(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -790,7 +789,7 @@ func TestListDevices(t *testing.T) {
 		Limit:     10,
 	}
 
-	response, err := service.listDevices(context.Background(), args)
+	response, err := service.ListDevices(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -812,7 +811,7 @@ func TestGetDeviceLocations(t *testing.T) {
 		NetworkID: "162112",
 	}
 
-	response, err := service.getDeviceLocations(context.Background(), args)
+	response, err := service.GetDeviceLocations(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -835,7 +834,7 @@ func TestErrorHandling(t *testing.T) {
 	// Test error in listNetworks
 	mockClient.SetError(true, "API connection failed")
 
-	_, err := service.listNetworks(context.Background(), ListNetworksArgs{})
+	_, err := service.ListNetworks(context.Background(), ListNetworksArgs{})
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -845,40 +844,9 @@ func TestErrorHandling(t *testing.T) {
 	}
 }
 
-// Integration test with the official MCP go-sdk: registering all tools,
-// prompts, and resources exercises schema inference for every argument struct.
-func TestMCPIntegration(t *testing.T) {
-	// Use the proper test service creation function
+// TestToolHandlersComprehensive runs each tool handler once against the mock API.
+func TestToolHandlersComprehensive(t *testing.T) {
 	service := createTestService()
-
-	// Create MCP server
-	server := mcp.NewServer(&mcp.Implementation{Name: "forward-mcp-test", Version: "0.0.1"}, nil)
-
-	// Register tools
-	err := service.RegisterTools(server)
-	if err != nil {
-		t.Fatalf("Failed to register tools: %v", err)
-	}
-	if err := service.RegisterPrompts(server); err != nil {
-		t.Fatalf("Failed to register prompts: %v", err)
-	}
-	if err := service.RegisterResources(server); err != nil {
-		t.Fatalf("Failed to register resources: %v", err)
-	}
-}
-
-// Comprehensive test for RegisterTools function
-func TestRegisterToolsComprehensive(t *testing.T) {
-	service := createTestService()
-
-	// Create MCP server
-	server := mcp.NewServer(&mcp.Implementation{Name: "forward-mcp-test", Version: "0.0.1"}, nil)
-
-	// Test successful registration
-	err := service.RegisterTools(server)
-	if err != nil {
-		t.Fatalf("Expected no error registering tools, got: %v", err)
-	}
 
 	// Test the individual tools exist (we can't directly test the internal registration
 	// but we can test that the service methods work which indicates proper registration)
@@ -887,15 +855,15 @@ func TestRegisterToolsComprehensive(t *testing.T) {
 		test func() error
 	}{
 		{"list_networks", func() error {
-			_, err := service.listNetworks(context.Background(), ListNetworksArgs{})
+			_, err := service.ListNetworks(context.Background(), ListNetworksArgs{})
 			return err
 		}},
 		{"create_network", func() error {
-			_, err := service.createNetwork(context.Background(), CreateNetworkArgs{Name: "test"})
+			_, err := service.CreateNetwork(context.Background(), CreateNetworkArgs{Name: "test"})
 			return err
 		}},
 		{"update_network", func() error {
-			_, err := service.updateNetwork(context.Background(), UpdateNetworkArgs{NetworkID: "162112", Name: "updated"})
+			_, err := service.UpdateNetwork(context.Background(), UpdateNetworkArgs{NetworkID: "162112", Name: "updated"})
 			return err
 		}},
 		{"search_paths", func() error {
@@ -908,80 +876,86 @@ func TestRegisterToolsComprehensive(t *testing.T) {
 			return err
 		}},
 		{"run_nqe_query", func() error {
+			_, err := service.RunNQEQueryByID(context.Background(), RunNQEQueryByIDArgs{
+				QueryID:    "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029",
+				NetworkID:  "162112",
+				SnapshotID: "snapshot-123",
+			})
 			return err
 		}},
 		{"list_nqe_queries", func() error {
-			_, err := service.listNQEQueries(context.Background(), ListNQEQueriesArgs{})
+			_, err := service.ListNQEQueries(context.Background(), ListNQEQueriesArgs{})
 			return err
 		}},
 		{"list_devices", func() error {
-			_, err := service.listDevices(context.Background(), ListDevicesArgs{NetworkID: "162112"})
+			_, err := service.ListDevices(context.Background(), ListDevicesArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"get_device_locations", func() error {
-			_, err := service.getDeviceLocations(context.Background(), GetDeviceLocationsArgs{NetworkID: "162112"})
+			_, err := service.GetDeviceLocations(context.Background(), GetDeviceLocationsArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"list_snapshots", func() error {
-			_, err := service.listSnapshots(context.Background(), ListSnapshotsArgs{NetworkID: "162112"})
+			_, err := service.ListSnapshots(context.Background(), ListSnapshotsArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"get_latest_snapshot", func() error {
-			_, err := service.getLatestSnapshot(context.Background(), GetLatestSnapshotArgs{NetworkID: "162112"})
+			_, err := service.GetLatestSnapshot(context.Background(), GetLatestSnapshotArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"list_locations", func() error {
-			_, err := service.listLocations(context.Background(), ListLocationsArgs{NetworkID: "162112"})
+			_, err := service.ListLocations(context.Background(), ListLocationsArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"create_location", func() error {
-			_, err := service.createLocation(context.Background(), CreateLocationArgs{NetworkID: "162112", Name: "test location"})
+			_, err := service.CreateLocation(context.Background(), CreateLocationArgs{NetworkID: "162112", Name: "test location"})
 			return err
 		}},
 		// First-Class Query Tools
 		{"get_device_basic_info", func() error {
-			_, err := service.getDeviceBasicInfo(context.Background(), GetDeviceBasicInfoArgs{NetworkID: "162112"})
+			_, err := service.GetDeviceBasicInfo(context.Background(), GetDeviceBasicInfoArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"get_device_hardware", func() error {
-			_, err := service.getDeviceHardware(context.Background(), GetDeviceHardwareArgs{NetworkID: "162112"})
+			_, err := service.GetDeviceHardware(context.Background(), GetDeviceHardwareArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"get_hardware_support", func() error {
-			_, err := service.getHardwareSupport(context.Background(), GetHardwareSupportArgs{NetworkID: "162112"})
+			_, err := service.GetHardwareSupport(context.Background(), GetHardwareSupportArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"get_os_support", func() error {
-			_, err := service.getOSSupport(context.Background(), GetOSSupportArgs{NetworkID: "162112"})
+			_, err := service.GetOSSupport(context.Background(), GetOSSupportArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"search_configs", func() error {
-			_, err := service.searchConfigs(context.Background(), SearchConfigsArgs{NetworkID: "162112", SearchTerm: "test"})
+			_, err := service.SearchConfigs(context.Background(), SearchConfigsArgs{NetworkID: "162112", SearchTerm: "test"})
 			return err
 		}},
 		{"get_config_diff", func() error {
-			_, err := service.getConfigDiff(context.Background(), GetConfigDiffArgs{NetworkID: "162112", BeforeSnapshot: "snapshot-123", AfterSnapshot: "snapshot-456", Options: &NQEQueryOptions{Limit: 50}})
+			_, err := service.GetConfigDiff(context.Background(), GetConfigDiffArgs{NetworkID: "162112", BeforeSnapshot: "snapshot-123", AfterSnapshot: "snapshot-456", Options: &NQEQueryOptions{Limit: 50}})
 			return err
 		}},
 		// Default Settings Management Tools
 		{"get_default_settings", func() error {
-			_, err := service.getDefaultSettings(context.Background(), GetDefaultSettingsArgs{})
+			_, err := service.GetDefaultSettings(context.Background(), GetDefaultSettingsArgs{})
 			return err
 		}},
 		{"set_default_network", func() error {
-			_, err := service.setDefaultNetwork(context.Background(), SetDefaultNetworkArgs{NetworkIdentifier: "162112"})
+			_, err := service.SetDefaultNetwork(context.Background(), SetDefaultNetworkArgs{NetworkIdentifier: "162112"})
 			return err
 		}},
 		// Semantic Cache Management Tools
 		{"get_cache_stats", func() error {
-			_, err := service.getCacheStats(context.Background(), GetCacheStatsArgs{})
+			_, err := service.GetCacheStats(context.Background(), GetCacheStatsArgs{})
 			return err
 		}},
 		{"clear_cache", func() error {
-			_, err := service.clearCache(context.Background(), ClearCacheArgs{})
+			_, err := service.ClearCache(context.Background(), ClearCacheArgs{})
 			return err
 		}},
 		{"suggest_similar_queries", func() error {
+			_, err := service.SuggestSimilarQueries(context.Background(), SuggestSimilarQueriesArgs{Query: "bgp neighbors"})
 			return err
 		}},
 	}
@@ -1091,7 +1065,7 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 			SnapshotID: "snapshot-123",
 		}
 
-		response, err := service.runNQEQueryByID(context.Background(), args)
+		response, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute NQE query: %v", err)
 		}
@@ -1110,7 +1084,7 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 			SnapshotID: "snapshot-123",
 		}
 
-		response, err := service.runNQEQueryByID(context.Background(), args)
+		response, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute cached NQE query: %v", err)
 		}
@@ -1129,7 +1103,7 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 			SnapshotID: "different-snapshot", // Different snapshot
 		}
 
-		response, err := service.runNQEQueryByID(context.Background(), args)
+		response, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute NQE query with different params: %v", err)
 		}
@@ -1152,7 +1126,7 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 			},
 		}
 
-		response, err := service.runNQEQueryByID(context.Background(), args)
+		response, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute parameterized NQE query: %v", err)
 		}
@@ -1162,7 +1136,7 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 		}
 
 		// Execute same query again - should hit cache
-		response2, err := service.runNQEQueryByID(context.Background(), args)
+		response2, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute cached parameterized query: %v", err)
 		}
@@ -1193,7 +1167,7 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 
 	logger := logger.New()
 	embedder := embeddings.NewMockEmbeddingService()
-	service := NewForwardMCPService(cfg, logger, Deps{
+	service := New(cfg, logger, Deps{
 		API:        NewMockForwardClient(),
 		Cache:      semcache.NewSemanticCache(embedder, logger, "test", &cfg.Forward.SemanticCache),
 		QueryIndex: queryindex.NewNQEQueryIndex(embedder, logger),
@@ -1214,7 +1188,7 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 
 		// Test getCacheStats function
 		args := GetCacheStatsArgs{}
-		response, err := service.getCacheStats(context.Background(), args)
+		response, err := service.GetCacheStats(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to get cache stats: %v", err)
 		}
@@ -1246,7 +1220,7 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 
 		// Test clearCache function
 		args := ClearCacheArgs{ClearAll: false}
-		response, err := service.clearCache(context.Background(), args)
+		response, err := service.ClearCache(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to clear expired cache: %v", err)
 		}
@@ -1334,7 +1308,7 @@ func TestCacheEvictionPolicies(t *testing.T) {
 			SnapshotID: "snapshot-123",
 		}
 
-		response, err := service.runNQEQueryByID(context.Background(), args)
+		response, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute query %s: %v", queryID, err)
 		}
@@ -1372,7 +1346,7 @@ func TestCacheErrorHandling(t *testing.T) {
 	}
 
 	// Execute query - should not panic
-	_, _ = service.runNQEQueryByID(context.Background(), args)
+	_, _ = service.RunNQEQueryByID(context.Background(), args)
 	// No assertion on error, just ensure no panic
 
 	// Test with cache disabled
@@ -1382,12 +1356,12 @@ func TestCacheErrorHandling(t *testing.T) {
 	mockClient.SetError(false, "")
 
 	// Execute query twice - both should hit API (no caching)
-	_, err := service.runNQEQueryByID(context.Background(), args)
+	_, err := service.RunNQEQueryByID(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Failed to execute query with cache disabled: %v", err)
 	}
 
-	_, err = service.runNQEQueryByID(context.Background(), args)
+	_, err = service.RunNQEQueryByID(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Failed to execute query second time: %v", err)
 	}
@@ -1418,7 +1392,7 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 				Limit: 20,
 			},
 		}
-		response, err := service.runNQEQueryByID(context.Background(), args)
+		response, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -1435,7 +1409,7 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 			Options:    &NQEQueryOptions{Limit: 20},
 			AllResults: true,
 		}
-		response, err := service.runNQEQueryByID(context.Background(), args)
+		response, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -1454,7 +1428,7 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 				Offset: 30,
 			},
 		}
-		response, err := service.runNQEQueryByID(context.Background(), args)
+		response, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -1472,7 +1446,7 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 				Limit: 100,
 			},
 		}
-		response, err := service.runNQEQueryByID(context.Background(), args)
+		response, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -1491,7 +1465,7 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 				Offset: 100,
 			},
 		}
-		response, err := service.runNQEQueryByID(context.Background(), args)
+		response, err := service.RunNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}

@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
-	"github.com/forward-mcp/internal/service"
+	"github.com/forward-mcp/internal/usecases"
 )
 
 func main() {
@@ -63,14 +63,14 @@ func main() {
 
 		// Step 2: Map to executable queries
 		fmt.Println("\n🎯 Step 2: Mapping to executable queries...")
-		mappings := service.MapSemanticToExecutable(semanticResults)
+		mappings := usecases.MapSemanticToExecutable(semanticResults)
 
 		if len(mappings) == 0 {
 			fmt.Println("   ❌ No executable mappings found")
 
 			// Show available executable queries
 			fmt.Println("\n💡 Available executable queries:")
-			execQueries := service.GetExecutableQueries()
+			execQueries := usecases.GetExecutableQueries()
 			for _, eq := range execQueries {
 				fmt.Printf("   • %s - %s\n", eq.Name, eq.Description)
 			}

@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/forward-mcp/internal/adapters/primary/mcpserver"
 	"github.com/forward-mcp/internal/adapters/secondary/bloom"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
@@ -17,7 +18,7 @@ import (
 	"github.com/forward-mcp/internal/adapters/secondary/sqlite"
 	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/ports"
-	"github.com/forward-mcp/internal/service"
+	"github.com/forward-mcp/internal/usecases"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -96,7 +97,7 @@ func main() {
 
 	// Create Forward MCP service
 	logger.Debug("Creating Forward MCP service...")
-	forwardService := service.NewForwardMCPService(cfg, logger, newDeps(cfg, logger))
+	forwardService := usecases.New(cfg, logger, newDeps(cfg, logger))
 
 	// Create MCP server (official go-sdk); stdio transport is attached in Run below.
 	logger.Debug("Creating MCP server...")
@@ -108,26 +109,12 @@ func main() {
 		Instructions: serverInstructions,
 	})
 
-	// Register all Forward Networks tools
-	logger.Debug("Registering Forward Networks tools...")
-	if err := forwardService.RegisterTools(server); err != nil {
-		logger.Fatalf("Failed to register tools: %v", err)
+	// Serve the use cases as MCP tools, prompts and a resource
+	logger.Debug("Registering tools, prompts and resources...")
+	if err := mcpserver.Register(server, forwardService, logger); err != nil {
+		logger.Fatalf("Failed to register MCP capabilities: %v", err)
 	}
-	logger.Debug("Tools registered successfully!")
-
-	// Register prompt workflows following MCP best practices
-	logger.Debug("Registering prompt workflows...")
-	if err := forwardService.RegisterPrompts(server); err != nil {
-		logger.Fatalf("Failed to register prompts: %v", err)
-	}
-	logger.Debug("Prompt workflows registered successfully!")
-
-	// Register contextual resources following MCP best practices
-	logger.Debug("Registering contextual resources...")
-	if err := forwardService.RegisterResources(server); err != nil {
-		logger.Fatalf("Failed to register resources: %v", err)
-	}
-	logger.Debug("Contextual resources registered successfully!")
+	logger.Debug("Tools, prompts and resources registered")
 
 	// Check if we're in a TTY (interactive mode) or pipe mode
 	if fileInfo, _ := os.Stdin.Stat(); (fileInfo.Mode() & os.ModeCharDevice) != 0 {
@@ -186,8 +173,8 @@ func main() {
 }
 
 // newDeps builds the adapters the service runs on.
-func newDeps(cfg *ports.Config, log ports.Logger) service.Deps {
-	instanceID := service.InstanceID(cfg)
+func newDeps(cfg *ports.Config, log ports.Logger) usecases.Deps {
+	instanceID := usecases.InstanceID(cfg)
 	embedder := embeddings.New(cfg.Forward.SemanticCache.EmbeddingProvider, os.Getenv("OPENAI_API_KEY"), log)
 
 	// A store that cannot open stays a nil interface: the service checks for
@@ -206,7 +193,7 @@ func newDeps(cfg *ports.Config, log ports.Logger) service.Deps {
 		memory = m
 	}
 
-	return service.Deps{
+	return usecases.Deps{
 		API:        forwardapi.NewClient(&cfg.Forward, log),
 		Cache:      semcache.NewSemanticCache(embedder, log, instanceID, &cfg.Forward.SemanticCache),
 		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),

@@ -1,4 +1,4 @@
-package service
+package usecases
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/ports"
 	_ "github.com/mattn/go-sqlite3"
-	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -123,8 +122,8 @@ func (wm *WorkflowManager) Close() {
 	close(wm.stopCleanup)
 }
 
-// ForwardMCPService implements Forward Networks MCP tools using mcp-golang
-type ForwardMCPService struct {
+// Service implements Forward Networks MCP tools using mcp-golang
+type Service struct {
 	forwardClient   ports.ForwardAPI
 	config          *domain.Config
 	logger          ports.Logger
@@ -163,8 +162,8 @@ type Deps struct {
 	Bloom      ports.BloomFilters
 }
 
-// NewForwardMCPService creates the service from its configuration and deps.
-func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, deps Deps) *ForwardMCPService {
+// New creates the service from its configuration and deps.
+func New(cfg *domain.Config, logger ports.Logger, deps Deps) *Service {
 	// Use configured instance ID or generate one based on API URL
 	instanceID := cfg.Forward.InstanceID
 	if instanceID == "" {
@@ -196,7 +195,7 @@ func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, deps Deps) *F
 	// Create context for cancellation
 	ctx, cancelFunc := context.WithCancel(context.Background())
 
-	service := &ForwardMCPService{
+	service := &Service{
 		forwardClient: forwardClient,
 		config:        cfg,
 		logger:        logger,
@@ -308,9 +307,9 @@ func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, deps Deps) *F
 	return service
 }
 
-// Shutdown gracefully shuts down the ForwardMCPService
-func (s *ForwardMCPService) Shutdown(timeout time.Duration) error {
-	s.logger.Info("Shutting down ForwardMCPService...")
+// Shutdown gracefully shuts down the Service
+func (s *Service) Shutdown(timeout time.Duration) error {
+	s.logger.Info("Shutting down Service...")
 
 	// Cancel the service context
 	s.cancelFunc()
@@ -363,14 +362,14 @@ func (s *ForwardMCPService) Shutdown(timeout time.Duration) error {
 		return fmt.Errorf("shutdown error: %w", err)
 	}
 
-	s.logger.Info("ForwardMCPService shutdown complete")
+	s.logger.Info("Service shutdown complete")
 	return nil
 }
 
 // Validation helper functions - provide LLM-friendly error messages
 
 // validateNetworkID validates that a network ID is provided, with helpful guidance
-func (s *ForwardMCPService) validateNetworkID(networkID string) error {
+func (s *Service) validateNetworkID(networkID string) error {
 	if networkID == "" {
 		return fmt.Errorf("network_id is required. Use the list_networks tool to find available networks, or use set_default_network to configure a default network")
 	}
@@ -378,7 +377,7 @@ func (s *ForwardMCPService) validateNetworkID(networkID string) error {
 }
 
 // validateQueryID validates that a query ID is provided
-func (s *ForwardMCPService) validateQueryID(queryID string) error {
+func (s *Service) validateQueryID(queryID string) error {
 	if queryID == "" {
 		return fmt.Errorf("query_id is required. Use the list_nqe_queries or search_nqe_queries tool to find available queries and their IDs")
 	}
@@ -386,7 +385,7 @@ func (s *ForwardMCPService) validateQueryID(queryID string) error {
 }
 
 // validateEntityName validates that an entity name is provided
-func (s *ForwardMCPService) validateEntityName(name string) error {
+func (s *Service) validateEntityName(name string) error {
 	if name == "" {
 		return fmt.Errorf("entity name is required and cannot be empty")
 	}
@@ -394,7 +393,7 @@ func (s *ForwardMCPService) validateEntityName(name string) error {
 }
 
 // validateEntityType validates that an entity type is provided
-func (s *ForwardMCPService) validateEntityType(entityType string) error {
+func (s *Service) validateEntityType(entityType string) error {
 	if entityType == "" {
 		return fmt.Errorf("entity type is required and cannot be empty. Common types include: 'user', 'network', 'device', 'project', 'session'")
 	}
@@ -402,7 +401,7 @@ func (s *ForwardMCPService) validateEntityType(entityType string) error {
 }
 
 // validateNonEmpty validates that a required string field is not empty
-func (s *ForwardMCPService) validateNonEmpty(fieldName, value string) error {
+func (s *Service) validateNonEmpty(fieldName, value string) error {
 	if value == "" {
 		return fmt.Errorf("%s is required and cannot be empty", fieldName)
 	}
@@ -410,7 +409,7 @@ func (s *ForwardMCPService) validateNonEmpty(fieldName, value string) error {
 }
 
 // Helper function to get network ID with fallback to default
-func (s *ForwardMCPService) getNetworkID(networkID string) string {
+func (s *Service) getNetworkID(networkID string) string {
 	if networkID != "" {
 		return networkID
 	}
@@ -421,7 +420,7 @@ func (s *ForwardMCPService) getNetworkID(networkID string) string {
 }
 
 // Helper function to get snapshot ID with fallback to default
-func (s *ForwardMCPService) getSnapshotID(snapshotID string) string {
+func (s *Service) getSnapshotID(snapshotID string) string {
 	if snapshotID != "" {
 		return snapshotID
 	}
@@ -432,7 +431,7 @@ func (s *ForwardMCPService) getSnapshotID(snapshotID string) string {
 }
 
 // Helper function to get query limit with fallback to default
-func (s *ForwardMCPService) getQueryLimit(limit int) int {
+func (s *Service) getQueryLimit(limit int) int {
 	if limit > 0 {
 		return limit
 	}
@@ -443,18 +442,18 @@ func (s *ForwardMCPService) getQueryLimit(limit int) int {
 }
 
 // Helper function to log tool calls with detailed information (legacy compatibility)
-func (s *ForwardMCPService) logToolCall(toolName string, args interface{}, err error) {
+func (s *Service) logToolCall(toolName string, args interface{}, err error) {
 	// Use zero duration for legacy calls - timing will be handled at a higher level
 	s.logger.LogToolCall(toolName, args, 0, err)
 }
 
 // Enhanced function to log tool calls with performance metrics
-func (s *ForwardMCPService) logToolCallWithTiming(toolName string, args interface{}, duration time.Duration, err error) {
+func (s *Service) logToolCallWithTiming(toolName string, args interface{}, duration time.Duration, err error) {
 	s.logger.LogToolCall(toolName, args, duration, err)
 }
 
 // Wrapper function to time and log tool execution
-func (s *ForwardMCPService) timeAndLogTool(toolName string, args interface{}, fn func() error) error {
+func (s *Service) timeAndLogTool(toolName string, args interface{}, fn func() error) error {
 	start := time.Now()
 	err := fn()
 	duration := time.Since(start)
@@ -462,381 +461,8 @@ func (s *ForwardMCPService) timeAndLogTool(toolName string, args interface{}, fn
 	return err
 }
 
-// RegisterTools registers all Forward Networks tools with the MCP server
-func (s *ForwardMCPService) RegisterTools(server *mcp.Server) error {
-	// Network Management Tools
-	addTool(server, "list_networks",
-		"List all networks in the Forward platform. Returns network IDs, names, and descriptions. Use this to discover available networks or find network IDs for other operations. Supports pagination (limit/offset) and memory storage for large datasets.",
-		s.listNetworks)
-
-	addTool(server, "create_network",
-		"Create a new network in the Forward platform. Requires a network name. Returns the new network with ID for subsequent operations.",
-		s.createNetwork)
-
-	// addTool(server, "delete_network",
-	// 	"Delete a network from the Forward platform. Requires network_id. WARNING: This permanently deletes all associated data.",
-	// 	s.deleteNetwork)
-
-	addTool(server, "update_network",
-		"Update network properties in the Forward platform. Requires network_id and at least one property to update (name or description).",
-		s.updateNetwork)
-
-	// Path Search Tools
-	addTool(server, "search_paths",
-		"🔍 **SINGLE PATH SEARCH**: Execute a single path search by tracing packets through the network.\n\nExecute path searches by tracing packets through the network. This tool is optimized for single path queries.\n\n**Source Specification Rules:**\n- **Option 1**: Use 'from' (device name) - API will use the device as source\n- **Option 2**: Use 'src_ip' (IP address/subnet) - API will resolve the IP to source locations\n- **Option 3**: Use both 'from' + 'src_ip' for precise packet header specification\n\n**Destination Specification:**\n- **REQUIRED**: 'dst_ip' must be a valid IP address or CIDR\n- **IMPORTANT**: Device names are NOT supported in dst_ip - use actual IP addresses\n\n**Best Practices:**\n- Use 'intent' parameter to control search behavior (PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY)\n- Set 'max_results' and 'max_candidates' to control response size and performance\n- Use 'max_seconds' for timeout control\n- 'snapshot_id' is optional - API uses latest processed snapshot if omitted\n\n**For multiple paths, use search_paths_bulk for better performance.**",
-		s.searchPathsEntry)
-
-	addTool(server, "search_paths_bulk",
-		"🚀 **RECOMMENDED**: Use this tool for path searches (single or bulk) with better performance.\n\nExecute path searches by tracing packets through the network. Supports both single and bulk path searches.\n\n**Source Specification Rules:**\n- **Option 1**: Use 'from' (device name) - API will use the device as source\n- **Option 2**: Use 'src_ip' (IP address/subnet) - API will resolve the IP to source locations\n- **Option 3**: Use both 'from' + 'src_ip' for precise packet header specification\n\n**Destination Specification:**\n- **REQUIRED**: 'dst_ip' must be a valid IP address or CIDR\n- **IMPORTANT**: Device names are NOT supported in dst_ip - use actual IP addresses\n\n**Best Practices:**\n- Use 'intent' parameter to control search behavior (PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY)\n- Set 'max_results' and 'max_candidates' to control response size and performance\n- Use 'max_seconds' and 'max_overall_seconds' for timeout control\n- 'snapshot_id' is optional - API uses latest processed snapshot if omitted\n\n**Request Format:** Provide an array of path search queries, each with 'dst_ip' and either 'from' or 'src_ip'.",
-		s.searchPathsBulkEntry)
-
-	// Register network prefix analysis tool
-	addTool(server, "analyze_network_prefixes",
-		"🔍 **Network Prefix Discovery & Connectivity Analysis**\n\nDiscover network prefixes, map them to devices, and analyze connectivity between sites using different aggregation levels.\n\n**Capabilities:**\n- Discover network prefixes (/8, /16, /24, etc.) and map to devices\n- Analyze connectivity between sites using aggregated prefixes\n- Identify network topology patterns and connectivity gaps\n- Generate connectivity matrices for different aggregation levels\n\n**Use Cases:**\n- Site-to-site connectivity analysis\n- Network segmentation validation\n- Route aggregation verification\n- Multi-site network planning\n\n**Parameters:**\n- network_id: Target network for analysis\n- prefix_levels: Aggregation levels to analyze (e.g., ['/8', '/16', '/24'])\n- from_devices/to_devices: Specific devices to analyze\n- intent: Search intent (PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY)\n- max_results: Maximum results per analysis",
-		s.analyzeNetworkPrefixes)
-
-	// NQE Tools
-	addTool(server, "run_nqe_query_by_id",
-		"🚀 **RECOMMENDED**: Use this tool for standard network analysis and compliance checks.\n\nRun a Network Query Engine (NQE) query using a predefined query ID from the library. This is the preferred method for consistent, reliable network analysis.\n\n**Best Practices:**\n- Use 'all_results: true' to fetch complete datasets\n- Set appropriate 'limit' and 'offset' for pagination\n- Use 'parameters' for dynamic query customization\n- Check query descriptions with list_nqe_queries first\n\n**Performance Tips:**\n- Large results are automatically cached and chunked\n- Use semantic search to find relevant queries\n- Set reasonable limits to avoid timeouts",
-		s.runNQEQueryByID)
-
-	addTool(server, "list_nqe_queries",
-		"🔍 **DISCOVERY TOOL**: Find available NQE queries for your analysis needs.\n\nList available NQE queries from the Forward Networks query library. Use this to discover predefined queries for reports and analysis.\n\n**Usage Tips:**\n- Filter by directory (e.g., '/L3/Basic/', '/L3/Advanced/', '/L3/Security/')\n- Use search_nqe_queries for semantic search\n- Check query descriptions before running\n- Use query IDs with run_nqe_query_by_id",
-		s.listNQEQueries)
-
-	// First-Class Query Tools - Most Important Network Operations
-	addTool(server, "get_device_basic_info",
-		"📊 **ESSENTIAL**: Get comprehensive device inventory information.\n\nGet basic device information including names, platforms, and management IPs. This is the primary tool for device discovery and inventory management.\n\n**What you get:**\n- Device names and types\n- Platform and OS information\n- Management IP addresses\n- Interface details\n- Device status and properties\n\n**Best Practices:**\n- Use this as your first step in network analysis\n- Set appropriate limits for large networks\n- Use filters to focus on specific device types\n- Combine with get_device_hardware for complete inventory",
-		s.getDeviceBasicInfo)
-
-	addTool(server, "get_device_hardware",
-		"🔧 **HARDWARE INVENTORY**: Get detailed hardware information for lifecycle management.\n\nGet device hardware information including models, serial numbers, and hardware details. Critical for hardware inventory and lifecycle management.\n\n**What you get:**\n- Device models and serial numbers\n- Hardware specifications\n- Vendor and platform details\n- Interface hardware information\n- Asset tracking data\n\n**Use Cases:**\n- Hardware refresh planning\n- Asset inventory management\n- Support contract validation\n- Capacity planning",
-		s.getDeviceHardware)
-
-	addTool(server, "get_hardware_support",
-		"⚠️ **COMPLIANCE CRITICAL**: Check hardware support status for security and compliance.\n\nGet hardware support status including end-of-life and support dates. Essential for compliance and planning hardware refreshes.\n\n**What you get:**\n- End-of-life dates\n- Support contract status\n- Security vulnerability information\n- Recommended upgrade paths\n- Compliance status\n\n**Critical Use Cases:**\n- Security compliance audits\n- Hardware refresh planning\n- Risk assessment\n- Budget planning for upgrades",
-		s.getHardwareSupport)
-
-	addTool(server, "get_os_support",
-		"🔒 **SECURITY ESSENTIAL**: Check OS support status for security compliance.\n\nGet operating system support status including OS versions and support dates. Critical for security compliance and OS upgrade planning.\n\n**What you get:**\n- OS version information\n- Support end dates\n- Security patch status\n- Upgrade recommendations\n- Compliance status\n\n**Security Use Cases:**\n- Security compliance audits\n- Vulnerability assessment\n- Patch management planning\n- OS upgrade planning",
-		s.getOSSupport)
-
-	addTool(server, "search_configs",
-		"🔍 **CONFIGURATION SEARCH**: Search device configurations for specific patterns and settings.\n\nSearch device configurations for specific patterns, commands, or settings. Use this to find specific configurations across your network.\n\n**Pattern Examples:**\n```\ninterface\n  zone-member security\n  ip address {ip:string}\n```\n\n**Best Practices:**\n- Use hierarchical patterns with indentation\n- Extract variables with {name:type} syntax\n- Filter by device names for targeted searches\n- Use specific patterns for better results\n\n**Common Use Cases:**\n- Find specific interface configurations\n- Locate security policies\n- Identify routing configurations\n- Audit configuration compliance",
-		s.searchConfigs)
-
-	addTool(server, "get_config_diff",
-		"Compare network configurations between snapshots to identify changes. Essential for change tracking and troubleshooting configuration drift.",
-		s.getConfigDiff)
-
-	// Device Management Tools
-	addTool(server, "list_devices",
-		"List devices in a network. Requires network_id. Returns basic device inventory with names, types, and status. Supports pagination with limit and offset. Use for device discovery and inventory management.",
-		s.listDevices)
-
-	addTool(server, "get_device_locations",
-		"Get device location mappings for a network. Requires network_id. Shows which devices are assigned to which physical locations. Use for topology planning and device organization.",
-		s.getDeviceLocations)
-
-	// Snapshot Management Tools
-	addTool(server, "list_snapshots",
-		"List network configuration snapshots. Requires network_id. Shows historical network states with timestamps and status. Use to view configuration history and find specific snapshots for queries. Supports pagination (limit/offset) and memory storage for large datasets.",
-		s.listSnapshots)
-
-	addTool(server, "get_latest_snapshot",
-		"Get the latest processed snapshot for a network. Requires network_id. Returns the most recent network state. Use to ensure queries run against current configuration.",
-		s.getLatestSnapshot)
-
-	addTool(server, "delete_snapshot",
-		"Delete a network snapshot. Requires snapshot_id. WARNING: This permanently removes the snapshot and associated historical data. Use with caution for cleanup of old snapshots.",
-		s.deleteSnapshot)
-
-	// Location Management Tools
-	addTool(server, "list_locations",
-		"List locations in a network. Requires network_id. Returns physical locations with names and coordinates. Use to view network topology and organize devices by location. Supports pagination (limit/offset) and memory storage for large datasets. Default limit is 25 to prevent token overflow.",
-		s.listLocations)
-
-	addTool(server, "create_location",
-		"Create a new location in a network. Requires network_id, location name, latitude, and longitude. Optional city, adminDivision, and country. Use to set up new sites or data centers for device organization.",
-		s.createLocation)
-
-	addTool(server, "update_location",
-		"Update an existing location in a network. Requires network_id and location_id. Optional new name, description, latitude, and longitude. Use to modify location details.",
-		s.updateLocation)
-
-	addTool(server, "delete_location",
-		"Delete a location from a network. Requires network_id and location_id. Use to remove locations that are no longer needed.",
-		s.deleteLocation)
-
-	addTool(server, "create_locations_bulk",
-		"Create or update multiple network locations in a single operation. Requires network_id and an array of locations. Uses PATCH /api/networks/{networkId}/locations. Locations with existing IDs will be updated, others will be created.",
-		s.createLocationsBulk)
-
-	addTool(server, "update_device_locations",
-		"Update device location assignments in bulk. Requires network_id and a map of device IDs to location IDs. Use to assign multiple devices to their physical locations efficiently. Note: Cloud devices (CSR1KV, PAN-FW, etc.) cannot be moved to physical locations.",
-		s.updateDeviceLocations)
-
-	// Default Settings Management Tools
-	addTool(server, "get_default_settings",
-		"View current default settings for network operations. Shows the default network ID, snapshot ID, and query limits configured for this session.",
-		s.getDefaultSettings)
-
-	addTool(server, "set_default_network",
-		"Set the default network for all operations. Accepts either a network ID or network name. This will be used when network_id is not specified in other tools.",
-		s.setDefaultNetwork)
-
-	// Semantic Cache and AI Enhancement Tools
-	addTool(server, "get_cache_stats",
-		"View semantic cache performance statistics including hit rates, total queries, and cache efficiency metrics.",
-		s.getCacheStats)
-
-	addTool(server, "suggest_similar_queries",
-		"Get suggestions for similar NQE queries based on semantic similarity to your query intent. Helps discover relevant existing queries.",
-		s.suggestSimilarQueries)
-
-	addTool(server, "clear_cache",
-		"Clear expired entries from the semantic cache to free up memory and improve performance.",
-		s.clearCache)
-
-	// AI-Powered Query Discovery Tools
-	addTool(server, "search_nqe_queries",
-		"🧠 **AI-POWERED SEARCH**: Find relevant NQE queries using natural language.\n\nAI-powered search through 6000+ predefined NQE queries using natural language. Describe what you want to analyze and get relevant query suggestions.\n\n**Best Practices:**\n- Be specific and descriptive in your query\n- Use examples like 'AWS security issues', 'BGP routing problems'\n- Avoid vague terms like 'network' or 'config'\n- Use category filters to narrow results\n\n**Example Queries:**\n- 'show me AWS security vulnerabilities'\n- 'find BGP routing issues'\n- 'check interface utilization'\n- 'devices with high CPU usage'",
-		s.searchNQEQueries)
-
-	// Bulk location setup workflow (guides bulk upsert using PATCH)
-	server.AddPrompt(&mcp.Prompt{
-		Name:        "bulk_location_setup",
-		Description: "Guide to bulk create or update network locations",
-		Arguments:   []*mcp.PromptArgument{{Name: "session_id", Description: "Session ID for tracking workflow state"}},
-	}, func(_ context.Context, _ *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		content := "" +
-			"You can create or update multiple locations in bulk using PATCH.\n\n" +
-			"- Use create_locations_bulk for both creating new locations and updating existing ones.\n" +
-			"- Locations with existing IDs will be updated, others will be created.\n" +
-			"- Either 'id' (for updates) or 'name' (for creates) must be provided for each location.\n\n" +
-			"Example request for create_locations_bulk:\n" +
-			"{" +
-			"\"network_id\": \"12345\",\n" +
-			"\"locations\": [\n" +
-			"  { \"id\": \"dyt-a\", \"name\": \"Dayton DC Updated\", \"lat\": 39.8113, \"lng\": -84.2722 },\n" +
-			"  { \"name\": \"NY Edge\", \"lat\": 40.7128, \"lng\": -74.0060, \"city\": \"New York\" }\n" +
-			"]}\n\n" +
-			"Tip: This is safe to run multiple times - existing locations will be updated, new ones created."
-		return promptResult("Bulk Location Setup", newTextContent(content)), nil
-	})
-
-	addTool(server, "initialize_query_index",
-		"Initialize or rebuild the AI-powered NQE query index from the spec file. REQUIRED before using search_nqe_queries. Run this once at startup or when you get 'query index is empty' errors. Can generate embeddings for semantic search if OpenAI API key is available.",
-		s.initializeQueryIndex)
-
-	// Database Hydration Tools
-	addTool(server, "hydrate_database",
-		"Hydrate the NQE database by loading queries from the Forward Networks API. Use this to refresh the database with latest query metadata and ensure optimal performance for search operations. Automatically refreshes the query index and optionally regenerates AI embeddings.",
-		s.hydrateDatabase)
-
-	addTool(server, "refresh_query_index",
-		"Refresh the query index from the current database content. Use this after hydrating the database to ensure the search index reflects the latest data.",
-		s.refreshQueryIndex)
-
-	addTool(server, "get_database_status",
-		"Get the current status of the database and query index including query counts, last update times, and performance metrics.",
-		s.getDatabaseStatus)
-
-	// Memory Management Tools
-	addTool(server, "create_entity",
-		"Create a new entity in the knowledge graph memory system. Entities represent people, networks, devices, projects, or any other important concept to remember.",
-		s.createEntity)
-
-	addTool(server, "create_relation",
-		"Create a relation between two entities in the knowledge graph. Relations represent how entities are connected (e.g., 'owns', 'manages', 'depends_on').",
-		s.createRelation)
-
-	addTool(server, "add_observation",
-		"Add an observation to an entity. Observations are additional facts, notes, preferences, or behaviors associated with an entity.",
-		s.addObservation)
-
-	addTool(server, "search_entities",
-		"Search for entities in the knowledge graph by name, type, or observation content. Use this to find information you've stored about people, networks, or concepts.",
-		s.searchEntities)
-
-	addTool(server, "get_entity",
-		"Retrieve a specific entity by ID or name. Use this to get detailed information about a specific person, network, device, or concept.",
-		s.getEntity)
-
-	addTool(server, "get_relations",
-		"Get all relations for a specific entity. Use this to understand how an entity is connected to others in the knowledge graph.",
-		s.getRelations)
-
-	addTool(server, "get_observations",
-		"Get all observations for a specific entity. Use this to retrieve all stored facts, notes, and preferences about an entity.",
-		s.getObservations)
-
-	addTool(server, "delete_entity",
-		"Delete an entity and all its relations and observations. Use with caution as this permanently removes all stored information about the entity.",
-		s.deleteEntity)
-
-	addTool(server, "delete_relation",
-		"Delete a specific relation between entities. Use this to remove connections that are no longer relevant.",
-		s.deleteRelation)
-
-	addTool(server, "delete_observation",
-		"Delete a specific observation from an entity. Use this to remove outdated or incorrect information.",
-		s.deleteObservation)
-
-	addTool(server, "get_memory_stats",
-		"Get statistics about the memory system including counts of entities, relations, and observations by type.",
-		s.getMemoryStats)
-
-	// API Analytics Tools
-	addTool(server, "get_query_analytics",
-		"Get analytics about query patterns and performance for a specific network. Shows query counts, execution times, result patterns, and usage trends from the memory system.",
-		s.getQueryAnalytics)
-
-	// Instance Management Tools
-	addTool(server, "list_instance_ids",
-		"List all available Forward Networks instance IDs in the database. Shows instance IDs with query counts and sync dates. Use this to find the correct instance ID to configure in FORWARD_INSTANCE_ID environment variable.",
-		s.listInstanceIDs)
-
-	// Tool handler for get_nqe_result_chunks
-	addTool(server, "get_nqe_result_chunks",
-		"Retrieve chunked NQE query results from the memory system. Provide either entity_id or (query_id, network_id, snapshot_id). Optionally, specify chunk_index to fetch a single chunk.",
-		s.getNQEResultChunks)
-
-	// Add get_nqe_result_summary tool handler
-	addTool(server, "get_nqe_result_summary",
-		"Get a summary of a stored NQE result (row count, columns, preview rows) by entity_id or (query_id, network_id, snapshot_id).",
-		s.getNQEResultSummary)
-
-	// Add analyze_nqe_result_sql tool handler
-	addTool(server, "analyze_nqe_result_sql",
-		"Run a SQL query on a stored NQE result (by entity_id). Example: SELECT COUNT(*) FROM nqe_result;",
-		s.analyzeNQEResultSQL)
-
-	// Add bloom search tool handlers
-	addTool(server, "build_bloom_filter",
-		"Build a bloom filter from NQE query results for efficient large dataset searching",
-		s.buildBloomFilter)
-
-	addTool(server, "search_bloom_filter",
-		"Search a bloom filter for matching items with sub-millisecond performance",
-		s.searchBloomFilter)
-
-	addTool(server, "get_bloom_filter_stats",
-		"Get statistics and performance metrics for all bloom filters",
-		s.getBloomFilterStats)
-
-	return nil
-}
-
-// addWorkflowPrompt registers an interactive workflow prompt whose single
-// "session_id" argument is forwarded to the underlying workflow handler.
-func addWorkflowPrompt(server *mcp.Server, name, description, title, fallback string, run func(ctx context.Context, sessionID string) (*Result, error)) {
-	server.AddPrompt(&mcp.Prompt{
-		Name:        name,
-		Description: description,
-		Arguments:   []*mcp.PromptArgument{{Name: "session_id", Description: "Session ID for tracking workflow state"}},
-	}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		response, err := run(ctx, req.Params.Arguments["session_id"])
-		if err != nil {
-			return nil, err
-		}
-		if response != nil {
-			return promptResult(title, newTextContent(response.Text)), nil
-		}
-		return promptResult(title, newTextContent(fallback)), nil
-	})
-}
-
-// RegisterPrompts registers workflow prompts with the MCP server
-func (s *ForwardMCPService) RegisterPrompts(server *mcp.Server) error {
-	addWorkflowPrompt(server, "nqe_discovery",
-		"Interactive NQE query discovery workflow to help find and run network queries",
-		"NQE Query Discovery", "Welcome to NQE Query Discovery!",
-		func(ctx context.Context, sessionID string) (*Result, error) {
-			return s.nqeQueryDiscoveryWorkflow(ctx, NQEDiscoveryArgs{SessionID: sessionID})
-		})
-
-	addWorkflowPrompt(server, "network_discovery",
-		"Interactive network discovery workflow to explore available networks and devices",
-		"Network Discovery", "Network discovery workflow",
-		func(ctx context.Context, sessionID string) (*Result, error) {
-			return s.networkDiscoveryWorkflow(ctx, NetworkDiscoveryArgs{SessionID: sessionID})
-		})
-
-	addWorkflowPrompt(server, "large_nqe_results_workflow",
-		"Interactive workflow for handling large NQE query results with memory system storage and SQL analysis",
-		"Large NQE Results Workflow", "Welcome to Large NQE Results Workflow!",
-		func(ctx context.Context, sessionID string) (*Result, error) {
-			return s.largeNQEResultsWorkflow(LargeNQEResultsWorkflowArgs{SessionID: sessionID})
-		})
-
-	addWorkflowPrompt(server, "path_search_workflow",
-		"Interactive workflow for effective path search using best practices including 'from' property and bulk operations",
-		"Path Search Workflow", "Welcome to Path Search Workflow!",
-		func(ctx context.Context, sessionID string) (*Result, error) {
-			return s.pathSearchWorkflow(PathSearchWorkflowArgs{SessionID: sessionID})
-		})
-
-	// The prefix discovery workflow also accepts a "step" argument.
-	server.AddPrompt(&mcp.Prompt{
-		Name:        "network_prefix_discovery_workflow",
-		Description: "Interactive workflow for discovering network prefixes, mapping them to devices, and analyzing connectivity between sites using different aggregation levels",
-		Arguments: []*mcp.PromptArgument{
-			{Name: "session_id", Description: "Session ID for tracking workflow state"},
-			{Name: "step", Description: "Current step in the workflow"},
-		},
-	}, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		response, err := s.networkPrefixDiscoveryWorkflow(NetworkPrefixDiscoveryArgs{
-			SessionID: req.Params.Arguments["session_id"],
-			Step:      req.Params.Arguments["step"],
-		})
-		if err != nil {
-			return nil, err
-		}
-		if response != nil {
-			return promptResult("Network Prefix Discovery Workflow", newTextContent(response.Text)), nil
-		}
-		return promptResult("Network Prefix Discovery Workflow", newTextContent("Welcome to Network Prefix Discovery Workflow!")), nil
-	})
-
-	s.logger.Info("MCP ready - Forward Networks tools registered")
-	return nil
-}
-
-// RegisterResources registers contextual resources with the MCP server
-func (s *ForwardMCPService) RegisterResources(server *mcp.Server) error {
-	// Register network context as a resource
-	server.AddResource(&mcp.Resource{
-		URI:         "forward://network/context",
-		Name:        "network_context",
-		Description: "Current network context including available networks and queries",
-		MIMEType:    "application/json",
-	}, func(ctx context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		networkContext, err := s.getNetworkContext(ctx, NetworkContextArgs{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get network context: %w", err)
-		}
-
-		contextStr, ok := networkContext.(string)
-		if !ok {
-			return nil, fmt.Errorf("network context is not a string")
-		}
-
-		return &mcp.ReadResourceResult{
-			Contents: []*mcp.ResourceContents{{
-				URI:      "forward://network/context",
-				MIMEType: "application/json",
-				Text:     contextStr,
-			}},
-		}, nil
-	})
-
-	s.logger.Debug("Successfully registered MCP resources")
-	return nil
-}
-
-// nqeQueryDiscoveryWorkflow implements the NQE query discovery workflow
-func (s *ForwardMCPService) nqeQueryDiscoveryWorkflow(ctx context.Context, args NQEDiscoveryArgs) (*Result, error) {
+// NqeQueryDiscoveryWorkflow implements the NQE query discovery workflow
+func (s *Service) NqeQueryDiscoveryWorkflow(ctx context.Context, args NQEDiscoveryArgs) (*Result, error) {
 	sessionID := fmt.Sprintf("session_%v", args.SessionID) // In practice, extract from context
 	state := s.workflowManager.GetState(sessionID)
 
@@ -854,8 +480,8 @@ func (s *ForwardMCPService) nqeQueryDiscoveryWorkflow(ctx context.Context, args 
 	}
 }
 
-// networkDiscoveryWorkflow implements the network discovery workflow
-func (s *ForwardMCPService) networkDiscoveryWorkflow(ctx context.Context, args NetworkDiscoveryArgs) (*Result, error) {
+// NetworkDiscoveryWorkflow implements the network discovery workflow
+func (s *Service) NetworkDiscoveryWorkflow(ctx context.Context, args NetworkDiscoveryArgs) (*Result, error) {
 	networks, err := s.forwardClient.GetNetworks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get networks: %w", err)
@@ -870,8 +496,8 @@ func (s *ForwardMCPService) networkDiscoveryWorkflow(ctx context.Context, args N
 	return textResult(promptText), nil
 }
 
-// largeNQEResultsWorkflow implements the large NQE results workflow
-func (s *ForwardMCPService) largeNQEResultsWorkflow(args LargeNQEResultsWorkflowArgs) (*Result, error) {
+// LargeNQEResultsWorkflow implements the large NQE results workflow
+func (s *Service) LargeNQEResultsWorkflow(args LargeNQEResultsWorkflowArgs) (*Result, error) {
 	sessionID := fmt.Sprintf("session_%v", args.SessionID)
 	state := s.workflowManager.GetState(sessionID)
 
@@ -890,7 +516,7 @@ func (s *ForwardMCPService) largeNQEResultsWorkflow(args LargeNQEResultsWorkflow
 }
 
 // startLargeResultsWorkflow begins the large NQE results workflow
-func (s *ForwardMCPService) startLargeResultsWorkflow(sessionID string) (*Result, error) {
+func (s *Service) startLargeResultsWorkflow(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "explain_process",
 		Parameters:  make(map[string]interface{}),
@@ -925,7 +551,7 @@ Which would you prefer?`
 }
 
 // explainLargeResultsProcess explains the large results workflow process
-func (s *ForwardMCPService) explainLargeResultsProcess(sessionID string) (*Result, error) {
+func (s *Service) explainLargeResultsProcess(sessionID string) (*Result, error) {
 	state := s.workflowManager.GetState(sessionID)
 	state.CurrentStep = "show_example"
 	s.workflowManager.SetState(sessionID, state)
@@ -970,7 +596,7 @@ Would you like to see a practical example of this workflow?`
 }
 
 // showLargeResultsExample shows a practical example
-func (s *ForwardMCPService) showLargeResultsExample(sessionID string) (*Result, error) {
+func (s *Service) showLargeResultsExample(sessionID string) (*Result, error) {
 	state := s.workflowManager.GetState(sessionID)
 	state.CurrentStep = "demonstrate_sql"
 	s.workflowManager.SetState(sessionID, state)
@@ -1026,7 +652,7 @@ Would you like to try SQL analysis on some existing data?`
 }
 
 // demonstrateSQLAnalysis demonstrates SQL analysis capabilities
-func (s *ForwardMCPService) demonstrateSQLAnalysis(sessionID string) (*Result, error) {
+func (s *Service) demonstrateSQLAnalysis(sessionID string) (*Result, error) {
 	state := s.workflowManager.GetState(sessionID)
 	state.CurrentStep = "start"
 	s.workflowManager.SetState(sessionID, state)
@@ -1072,8 +698,8 @@ Ready to try this workflow with your own data? Start by running a query with "al
 	return textResult(promptText), nil
 }
 
-// getNetworkContext provides contextual network information as a resource
-func (s *ForwardMCPService) getNetworkContext(ctx context.Context, args NetworkContextArgs) (interface{}, error) {
+// GetNetworkContext provides contextual network information as a resource
+func (s *Service) GetNetworkContext(ctx context.Context, args NetworkContextArgs) (interface{}, error) {
 	networks, err := s.forwardClient.GetNetworks(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get network context: %w", err)
@@ -1090,7 +716,7 @@ func (s *ForwardMCPService) getNetworkContext(ctx context.Context, args NetworkC
 }
 
 // startQueryDiscovery begins the NQE query discovery workflow
-func (s *ForwardMCPService) startQueryDiscovery(sessionID string) (*Result, error) {
+func (s *Service) startQueryDiscovery(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "category_selection",
 		Parameters:  make(map[string]interface{}),
@@ -1102,7 +728,7 @@ func (s *ForwardMCPService) startQueryDiscovery(sessionID string) (*Result, erro
 }
 
 // listQueriesInCategory lists available queries in the selected category
-func (s *ForwardMCPService) listQueriesInCategory(ctx context.Context, sessionID, directory string) (*Result, error) {
+func (s *Service) listQueriesInCategory(ctx context.Context, sessionID, directory string) (*Result, error) {
 	queries, err := s.forwardClient.GetNQEQueries(ctx, directory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get queries: %w", err)
@@ -1123,7 +749,7 @@ func (s *ForwardMCPService) listQueriesInCategory(ctx context.Context, sessionID
 }
 
 // collectQueryParameters collects parameters needed for the selected query
-func (s *ForwardMCPService) collectQueryParameters(sessionID string) (*Result, error) {
+func (s *Service) collectQueryParameters(sessionID string) (*Result, error) {
 	state := s.workflowManager.GetState(sessionID)
 
 	// Check if we have network_id
@@ -1145,7 +771,7 @@ func (s *ForwardMCPService) collectQueryParameters(sessionID string) (*Result, e
 
 // executeSelectedQuery executes the query with collected parameters
 // This function is part of the workflow system that is now activated via MCP prompt registration
-func (s *ForwardMCPService) executeSelectedQuery(ctx context.Context, sessionID string) (*Result, error) {
+func (s *Service) executeSelectedQuery(ctx context.Context, sessionID string) (*Result, error) {
 	state := s.workflowManager.GetState(sessionID)
 
 	params := &domain.NQEQueryParams{
@@ -1166,7 +792,7 @@ func (s *ForwardMCPService) executeSelectedQuery(ctx context.Context, sessionID 
 }
 
 // Network Observability Tool Implementations
-func (s *ForwardMCPService) listNetworks(ctx context.Context, args ListNetworksArgs) (*Result, error) {
+func (s *Service) ListNetworks(ctx context.Context, args ListNetworksArgs) (*Result, error) {
 	s.logToolCall("list_networks", args, nil)
 
 	// Get all networks from API
@@ -1258,7 +884,7 @@ func (s *ForwardMCPService) listNetworks(ctx context.Context, args ListNetworksA
 	return textResult(responseText.String()), nil
 }
 
-func (s *ForwardMCPService) createNetwork(ctx context.Context, args CreateNetworkArgs) (*Result, error) {
+func (s *Service) CreateNetwork(ctx context.Context, args CreateNetworkArgs) (*Result, error) {
 	s.logToolCall("create_network", args, nil)
 
 	// Validate required fields
@@ -1275,7 +901,7 @@ func (s *ForwardMCPService) createNetwork(ctx context.Context, args CreateNetwor
 	return textResult(fmt.Sprintf("Network created successfully:\n%s", string(result))), nil
 }
 
-func (s *ForwardMCPService) deleteNetwork(ctx context.Context, args DeleteNetworkArgs) (*Result, error) {
+func (s *Service) deleteNetwork(ctx context.Context, args DeleteNetworkArgs) (*Result, error) {
 	s.logToolCall("delete_network", args, nil)
 
 	// Validate required fields
@@ -1292,7 +918,7 @@ func (s *ForwardMCPService) deleteNetwork(ctx context.Context, args DeleteNetwor
 	return textResult(fmt.Sprintf("Network deleted successfully:\n%s", string(result))), nil
 }
 
-func (s *ForwardMCPService) updateNetwork(ctx context.Context, args UpdateNetworkArgs) (*Result, error) {
+func (s *Service) UpdateNetwork(ctx context.Context, args UpdateNetworkArgs) (*Result, error) {
 	s.logToolCall("update_network", args, nil)
 
 	// Validate required fields
@@ -1343,7 +969,7 @@ type PathSearchQueryArgs struct {
 	DstPort string `json:"dst_port,omitempty" jsonschema:"Destination port"`
 }
 
-func (s *ForwardMCPService) searchPathsBulk(ctx context.Context, args SearchPathsBulkArgs) (*Result, error) {
+func (s *Service) searchPathsBulk(ctx context.Context, args SearchPathsBulkArgs) (*Result, error) {
 	s.logToolCall("search_paths_bulk", args, nil)
 
 	// Use defaults if not specified
@@ -1535,7 +1161,7 @@ func (s *ForwardMCPService) searchPathsBulk(ctx context.Context, args SearchPath
 }
 
 // Helper function to convert service NQEQueryOptions to forward NQEQueryOptions
-func (s *ForwardMCPService) convertNQEQueryOptions(options *NQEQueryOptions) *domain.NQEQueryOptions {
+func (s *Service) convertNQEQueryOptions(options *NQEQueryOptions) *domain.NQEQueryOptions {
 	if options == nil {
 		return nil
 	}
@@ -1577,7 +1203,7 @@ func (s *ForwardMCPService) convertNQEQueryOptions(options *NQEQueryOptions) *do
 }
 
 // NQE Tool Implementations
-func (s *ForwardMCPService) runNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs) (*Result, error) {
+func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs) (*Result, error) {
 	s.logToolCall("run_nqe_query_by_id", args, nil)
 
 	// Validate required fields
@@ -1752,7 +1378,7 @@ func (s *ForwardMCPService) runNQEQueryByID(ctx context.Context, args RunNQEQuer
 			args.AllResults = true
 			// Inform the user that we're retrying in batch mode
 			msg := "The result was too large to return directly. Fetching all results in batches for local analysis. A summary will be provided.\n"
-			batchResp, batchErr := s.runNQEQueryByID(ctx, args)
+			batchResp, batchErr := s.RunNQEQueryByID(ctx, args)
 			if batchErr != nil {
 				return nil, batchErr
 			}
@@ -1771,7 +1397,7 @@ func (s *ForwardMCPService) runNQEQueryByID(ctx context.Context, args RunNQEQuer
 				}
 				if entityID != "" {
 					summaryArgs := GetNQEResultChunksArgs{EntityID: entityID}
-					summaryResp, summaryErr := s.getNQEResultSummary(ctx, summaryArgs)
+					summaryResp, summaryErr := s.GetNQEResultSummary(ctx, summaryArgs)
 					if summaryErr == nil && summaryResp != nil {
 						msg += "\n" + summaryResp.Text
 					}
@@ -1837,7 +1463,7 @@ func (s *ForwardMCPService) runNQEQueryByID(ctx context.Context, args RunNQEQuer
 	return textResult(response), nil
 }
 
-func (s *ForwardMCPService) listNQEQueries(ctx context.Context, args ListNQEQueriesArgs) (*Result, error) {
+func (s *Service) ListNQEQueries(ctx context.Context, args ListNQEQueriesArgs) (*Result, error) {
 	s.logToolCall("list_nqe_queries", args, nil)
 
 	// Inline readiness check
@@ -1914,7 +1540,7 @@ func (s *ForwardMCPService) listNQEQueries(ctx context.Context, args ListNQEQuer
 }
 
 // Device Management Tool Implementations
-func (s *ForwardMCPService) listDevices(ctx context.Context, args ListDevicesArgs) (*Result, error) {
+func (s *Service) ListDevices(ctx context.Context, args ListDevicesArgs) (*Result, error) {
 	s.logToolCall("list_devices", args, nil)
 
 	// Apply default limit if not specified
@@ -1945,7 +1571,7 @@ func (s *ForwardMCPService) listDevices(ctx context.Context, args ListDevicesArg
 	return textResult(fmt.Sprintf("Found %d devices (total: %d):\n%s", len(response.Devices), response.TotalCount, result)), nil
 }
 
-func (s *ForwardMCPService) getDeviceLocations(ctx context.Context, args GetDeviceLocationsArgs) (*Result, error) {
+func (s *Service) GetDeviceLocations(ctx context.Context, args GetDeviceLocationsArgs) (*Result, error) {
 	s.logToolCall("get_device_locations", args, nil)
 
 	// Get all device locations from API
@@ -2044,7 +1670,7 @@ func (s *ForwardMCPService) getDeviceLocations(ctx context.Context, args GetDevi
 }
 
 // Snapshot Management Tool Implementations
-func (s *ForwardMCPService) listSnapshots(ctx context.Context, args ListSnapshotsArgs) (*Result, error) {
+func (s *Service) ListSnapshots(ctx context.Context, args ListSnapshotsArgs) (*Result, error) {
 	s.logToolCall("list_snapshots", args, nil)
 
 	// Get all snapshots from API
@@ -2137,7 +1763,7 @@ func (s *ForwardMCPService) listSnapshots(ctx context.Context, args ListSnapshot
 	return textResult(responseText.String()), nil
 }
 
-func (s *ForwardMCPService) getLatestSnapshot(ctx context.Context, args GetLatestSnapshotArgs) (*Result, error) {
+func (s *Service) GetLatestSnapshot(ctx context.Context, args GetLatestSnapshotArgs) (*Result, error) {
 	s.logToolCall("get_latest_snapshot", args, nil)
 	snapshot, err := s.forwardClient.GetLatestSnapshot(ctx, args.NetworkID)
 	if err != nil {
@@ -2149,7 +1775,7 @@ func (s *ForwardMCPService) getLatestSnapshot(ctx context.Context, args GetLates
 }
 
 // Location Management Tool Implementations
-func (s *ForwardMCPService) listLocations(ctx context.Context, args ListLocationsArgs) (*Result, error) {
+func (s *Service) ListLocations(ctx context.Context, args ListLocationsArgs) (*Result, error) {
 	s.logToolCall("list_locations", args, nil)
 
 	// Get all locations from API
@@ -2242,7 +1868,7 @@ func (s *ForwardMCPService) listLocations(ctx context.Context, args ListLocation
 	return textResult(responseText.String()), nil
 }
 
-func (s *ForwardMCPService) createLocation(ctx context.Context, args CreateLocationArgs) (*Result, error) {
+func (s *Service) CreateLocation(ctx context.Context, args CreateLocationArgs) (*Result, error) {
 	s.logToolCall("create_location", args, nil)
 
 	// Log the received parameters for debugging
@@ -2288,7 +1914,7 @@ func (s *ForwardMCPService) createLocation(ctx context.Context, args CreateLocat
 	return textResult(fmt.Sprintf("Location created successfully:\n%s", string(result))), nil
 }
 
-func (s *ForwardMCPService) createLocationsBulk(ctx context.Context, args CreateLocationsBulkArgs) (*Result, error) {
+func (s *Service) CreateLocationsBulk(ctx context.Context, args CreateLocationsBulkArgs) (*Result, error) {
 	s.logToolCall("create_locations_bulk", args, nil)
 
 	if len(args.Locations) == 0 {
@@ -2333,7 +1959,7 @@ func (s *ForwardMCPService) createLocationsBulk(ctx context.Context, args Create
 	return textResult("Bulk locations patched successfully (204 No Content)."), nil
 }
 
-func (s *ForwardMCPService) updateLocation(ctx context.Context, args UpdateLocationArgs) (*Result, error) {
+func (s *Service) UpdateLocation(ctx context.Context, args UpdateLocationArgs) (*Result, error) {
 	s.logToolCall("update_location", args, nil)
 	update := &domain.LocationUpdate{
 		Name:          &args.Name,
@@ -2353,7 +1979,7 @@ func (s *ForwardMCPService) updateLocation(ctx context.Context, args UpdateLocat
 	return textResult(fmt.Sprintf("Location updated successfully:\n%s", string(result))), nil
 }
 
-func (s *ForwardMCPService) deleteLocation(ctx context.Context, args DeleteLocationArgs) (*Result, error) {
+func (s *Service) DeleteLocation(ctx context.Context, args DeleteLocationArgs) (*Result, error) {
 	s.logToolCall("delete_location", args, nil)
 	deletedLocation, err := s.forwardClient.DeleteLocation(ctx, args.NetworkID, args.LocationID)
 	if err != nil {
@@ -2364,7 +1990,7 @@ func (s *ForwardMCPService) deleteLocation(ctx context.Context, args DeleteLocat
 	return textResult(fmt.Sprintf("Location deleted successfully:\n%s", string(result))), nil
 }
 
-func (s *ForwardMCPService) deleteSnapshot(ctx context.Context, args DeleteSnapshotArgs) (*Result, error) {
+func (s *Service) DeleteSnapshot(ctx context.Context, args DeleteSnapshotArgs) (*Result, error) {
 	s.logToolCall("delete_snapshot", args, nil)
 	err := s.forwardClient.DeleteSnapshot(ctx, args.SnapshotID)
 	if err != nil {
@@ -2375,7 +2001,7 @@ func (s *ForwardMCPService) deleteSnapshot(ctx context.Context, args DeleteSnaps
 }
 
 // isCloudDevice checks if a device name suggests it's a cloud device
-func (s *ForwardMCPService) isCloudDevice(deviceName string) bool {
+func (s *Service) isCloudDevice(deviceName string) bool {
 	deviceNameLower := strings.ToLower(deviceName)
 
 	// Debug logging for troubleshooting
@@ -2475,7 +2101,7 @@ func (s *ForwardMCPService) isCloudDevice(deviceName string) bool {
 	return false
 }
 
-func (s *ForwardMCPService) updateDeviceLocations(ctx context.Context, args UpdateDeviceLocationsArgs) (*Result, error) {
+func (s *Service) UpdateDeviceLocations(ctx context.Context, args UpdateDeviceLocationsArgs) (*Result, error) {
 	s.logToolCall("update_device_locations", args, nil)
 
 	// Log the devices being moved for debugging
@@ -2534,7 +2160,7 @@ func (s *ForwardMCPService) updateDeviceLocations(ctx context.Context, args Upda
 }
 
 // resolveNetworkIDByName resolves a network name to its networkId using a case-insensitive match.
-func (s *ForwardMCPService) resolveNetworkIDByName(ctx context.Context, name string) (string, error) {
+func (s *Service) resolveNetworkIDByName(ctx context.Context, name string) (string, error) {
 	networks, err := s.forwardClient.GetNetworks(ctx)
 	if err != nil {
 		return "", err
@@ -2556,7 +2182,7 @@ func (s *ForwardMCPService) resolveNetworkIDByName(ctx context.Context, name str
 // First-Class Query Tool Implementations - Critical Network Operations
 // These wrap the most important predefined queries as dedicated tools
 
-func (s *ForwardMCPService) getDeviceBasicInfo(ctx context.Context, args GetDeviceBasicInfoArgs) (*Result, error) {
+func (s *Service) GetDeviceBasicInfo(ctx context.Context, args GetDeviceBasicInfoArgs) (*Result, error) {
 	s.logToolCall("get_device_basic_info", args, nil)
 
 	queryArgs := RunNQEQueryByIDArgs{
@@ -2566,10 +2192,10 @@ func (s *ForwardMCPService) getDeviceBasicInfo(ctx context.Context, args GetDevi
 		Options:    args.Options,
 	}
 
-	return s.runNQEQueryByID(ctx, queryArgs)
+	return s.RunNQEQueryByID(ctx, queryArgs)
 }
 
-func (s *ForwardMCPService) getDeviceHardware(ctx context.Context, args GetDeviceHardwareArgs) (*Result, error) {
+func (s *Service) GetDeviceHardware(ctx context.Context, args GetDeviceHardwareArgs) (*Result, error) {
 	s.logToolCall("get_device_hardware", args, nil)
 
 	queryArgs := RunNQEQueryByIDArgs{
@@ -2579,10 +2205,10 @@ func (s *ForwardMCPService) getDeviceHardware(ctx context.Context, args GetDevic
 		Options:    args.Options,
 	}
 
-	return s.runNQEQueryByID(ctx, queryArgs)
+	return s.RunNQEQueryByID(ctx, queryArgs)
 }
 
-func (s *ForwardMCPService) getHardwareSupport(ctx context.Context, args GetHardwareSupportArgs) (*Result, error) {
+func (s *Service) GetHardwareSupport(ctx context.Context, args GetHardwareSupportArgs) (*Result, error) {
 	s.logToolCall("get_hardware_support", args, nil)
 
 	queryArgs := RunNQEQueryByIDArgs{
@@ -2592,10 +2218,10 @@ func (s *ForwardMCPService) getHardwareSupport(ctx context.Context, args GetHard
 		Options:    args.Options,
 	}
 
-	return s.runNQEQueryByID(ctx, queryArgs)
+	return s.RunNQEQueryByID(ctx, queryArgs)
 }
 
-func (s *ForwardMCPService) getOSSupport(ctx context.Context, args GetOSSupportArgs) (*Result, error) {
+func (s *Service) GetOSSupport(ctx context.Context, args GetOSSupportArgs) (*Result, error) {
 	s.logToolCall("get_os_support", args, nil)
 
 	queryArgs := RunNQEQueryByIDArgs{
@@ -2605,10 +2231,10 @@ func (s *ForwardMCPService) getOSSupport(ctx context.Context, args GetOSSupportA
 		Options:    args.Options,
 	}
 
-	return s.runNQEQueryByID(ctx, queryArgs)
+	return s.RunNQEQueryByID(ctx, queryArgs)
 }
 
-func (s *ForwardMCPService) searchConfigs(ctx context.Context, args SearchConfigsArgs) (*Result, error) {
+func (s *Service) SearchConfigs(ctx context.Context, args SearchConfigsArgs) (*Result, error) {
 	s.logToolCall("search_configs", args, nil)
 
 	queryArgs := RunNQEQueryByIDArgs{
@@ -2621,10 +2247,10 @@ func (s *ForwardMCPService) searchConfigs(ctx context.Context, args SearchConfig
 		Options: args.Options,
 	}
 
-	return s.runNQEQueryByID(ctx, queryArgs)
+	return s.RunNQEQueryByID(ctx, queryArgs)
 }
 
-func (s *ForwardMCPService) getConfigDiff(ctx context.Context, args GetConfigDiffArgs) (*Result, error) {
+func (s *Service) GetConfigDiff(ctx context.Context, args GetConfigDiffArgs) (*Result, error) {
 	s.logToolCall("get_config_diff", args, nil)
 
 	params := map[string]interface{}{}
@@ -2640,12 +2266,12 @@ func (s *ForwardMCPService) getConfigDiff(ctx context.Context, args GetConfigDif
 		Options:    args.Options,
 	}
 
-	return s.runNQEQueryByID(ctx, queryArgs)
+	return s.RunNQEQueryByID(ctx, queryArgs)
 }
 
 // Default Settings Management Tool Implementations
 
-func (s *ForwardMCPService) getDefaultSettings(ctx context.Context, args GetDefaultSettingsArgs) (*Result, error) {
+func (s *Service) GetDefaultSettings(ctx context.Context, args GetDefaultSettingsArgs) (*Result, error) {
 	s.logToolCall("get_default_settings", args, nil)
 
 	// Get network name if possible
@@ -2685,7 +2311,7 @@ func (s *ForwardMCPService) getDefaultSettings(ctx context.Context, args GetDefa
 	return textResult(response), nil
 }
 
-func (s *ForwardMCPService) setDefaultNetwork(ctx context.Context, args SetDefaultNetworkArgs) (*Result, error) {
+func (s *Service) SetDefaultNetwork(ctx context.Context, args SetDefaultNetworkArgs) (*Result, error) {
 	s.logToolCall("set_default_network", args, nil)
 
 	var networkID string
@@ -2749,8 +2375,8 @@ func (s *ForwardMCPService) setDefaultNetwork(ctx context.Context, args SetDefau
 
 // Semantic Cache and AI Enhancement Tool Implementations
 
-// getCacheStats returns semantic cache performance statistics
-func (s *ForwardMCPService) getCacheStats(ctx context.Context, args GetCacheStatsArgs) (*Result, error) {
+// GetCacheStats returns semantic cache performance statistics
+func (s *Service) GetCacheStats(ctx context.Context, args GetCacheStatsArgs) (*Result, error) {
 	s.logToolCall("get_cache_stats", args, nil)
 
 	stats := s.semanticCache.GetStats()
@@ -2766,8 +2392,8 @@ func (s *ForwardMCPService) getCacheStats(ctx context.Context, args GetCacheStat
 	return textResult(summary), nil
 }
 
-// suggestSimilarQueries provides intelligent query suggestions based on cache history
-func (s *ForwardMCPService) suggestSimilarQueries(ctx context.Context, args SuggestSimilarQueriesArgs) (*Result, error) {
+// SuggestSimilarQueries provides intelligent query suggestions based on cache history
+func (s *Service) SuggestSimilarQueries(ctx context.Context, args SuggestSimilarQueriesArgs) (*Result, error) {
 	s.logToolCall("suggest_similar_queries", args, nil)
 
 	if args.Query == "" {
@@ -2806,8 +2432,8 @@ func (s *ForwardMCPService) suggestSimilarQueries(ctx context.Context, args Sugg
 	return textResult(response), nil
 }
 
-// clearCache removes expired or all cache entries
-func (s *ForwardMCPService) clearCache(ctx context.Context, args ClearCacheArgs) (*Result, error) {
+// ClearCache removes expired or all cache entries
+func (s *Service) ClearCache(ctx context.Context, args ClearCacheArgs) (*Result, error) {
 	s.logToolCall("clear_cache", args, nil)
 
 	var removed int
@@ -2839,8 +2465,8 @@ func (s *ForwardMCPService) clearCache(ctx context.Context, args ClearCacheArgs)
 
 // AI-Powered Query Discovery Tool Implementations
 
-// searchNQEQueries performs AI-powered search through the NQE query library
-func (s *ForwardMCPService) searchNQEQueries(ctx context.Context, args SearchNQEQueriesArgs) (*Result, error) {
+// SearchNQEQueries performs AI-powered search through the NQE query library
+func (s *Service) SearchNQEQueries(ctx context.Context, args SearchNQEQueriesArgs) (*Result, error) {
 	s.logToolCall("search_nqe_queries", args, nil)
 
 	// Inline readiness check
@@ -2908,8 +2534,8 @@ func (s *ForwardMCPService) searchNQEQueries(ctx context.Context, args SearchNQE
 	return textResult(response), nil
 }
 
-// initializeQueryIndex builds or rebuilds the AI-powered query index
-func (s *ForwardMCPService) initializeQueryIndex(ctx context.Context, args InitializeQueryIndexArgs) (*Result, error) {
+// InitializeQueryIndex builds or rebuilds the AI-powered query index
+func (s *Service) InitializeQueryIndex(ctx context.Context, args InitializeQueryIndexArgs) (*Result, error) {
 	s.logToolCall("initialize_query_index", args, nil)
 
 	response := "🔧 Initializing AI-powered NQE query index...\n\n"
@@ -3048,8 +2674,8 @@ func (s *ForwardMCPService) initializeQueryIndex(ctx context.Context, args Initi
 	return textResult(response), nil
 }
 
-// hydrateDatabase hydrates the database by loading queries from the Forward Networks API
-func (s *ForwardMCPService) hydrateDatabase(ctx context.Context, args HydrateDatabaseArgs) (*Result, error) {
+// HydrateDatabase hydrates the database by loading queries from the Forward Networks API
+func (s *Service) HydrateDatabase(ctx context.Context, args HydrateDatabaseArgs) (*Result, error) {
 	if s.database == nil {
 		return nil, fmt.Errorf("database is not available")
 	}
@@ -3144,8 +2770,8 @@ func (s *ForwardMCPService) hydrateDatabase(ctx context.Context, args HydrateDat
 	return textResult("Database hydration has started in the background. This process may take several minutes. You can continue using other tools, or check the status with get_database_status. Once hydration is complete, the query index will be refreshed automatically."), nil
 }
 
-// refreshQueryIndex refreshes the query index from the current database content
-func (s *ForwardMCPService) refreshQueryIndex(ctx context.Context, args RefreshQueryIndexArgs) (*Result, error) {
+// RefreshQueryIndex refreshes the query index from the current database content
+func (s *Service) RefreshQueryIndex(ctx context.Context, args RefreshQueryIndexArgs) (*Result, error) {
 	if s.database == nil {
 		return nil, fmt.Errorf("database is not available")
 	}
@@ -3176,8 +2802,8 @@ func (s *ForwardMCPService) refreshQueryIndex(ctx context.Context, args RefreshQ
 	return textResult(fmt.Sprintf("Query index refreshed successfully with %d queries.", len(queries))), nil
 }
 
-// getDatabaseStatus returns the current status of the database and query index
-func (s *ForwardMCPService) getDatabaseStatus(ctx context.Context, args GetDatabaseStatusArgs) (*Result, error) {
+// GetDatabaseStatus returns the current status of the database and query index
+func (s *Service) GetDatabaseStatus(ctx context.Context, args GetDatabaseStatusArgs) (*Result, error) {
 	status := map[string]interface{}{
 		"database_available":    s.database != nil,
 		"query_index_available": s.queryIndex != nil,
@@ -3226,8 +2852,8 @@ func (s *ForwardMCPService) getDatabaseStatus(ctx context.Context, args GetDatab
 
 // Memory Management Tool Implementations
 
-// createEntity creates a new entity in the knowledge graph
-func (s *ForwardMCPService) createEntity(ctx context.Context, args CreateEntityArgs) (*Result, error) {
+// CreateEntity creates a new entity in the knowledge graph
+func (s *Service) CreateEntity(ctx context.Context, args CreateEntityArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3253,8 +2879,8 @@ func (s *ForwardMCPService) createEntity(ctx context.Context, args CreateEntityA
 	return textResult(fmt.Sprintf("Entity created successfully:\n%s", string(entityJSON))), nil
 }
 
-// createRelation creates a relation between two entities
-func (s *ForwardMCPService) createRelation(ctx context.Context, args CreateRelationArgs) (*Result, error) {
+// CreateRelation creates a relation between two entities
+func (s *Service) CreateRelation(ctx context.Context, args CreateRelationArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3272,8 +2898,8 @@ func (s *ForwardMCPService) createRelation(ctx context.Context, args CreateRelat
 	return textResult(fmt.Sprintf("Relation created successfully:\n%s", string(relationJSON))), nil
 }
 
-// addObservation adds an observation to an entity
-func (s *ForwardMCPService) addObservation(ctx context.Context, args AddObservationArgs) (*Result, error) {
+// AddObservation adds an observation to an entity
+func (s *Service) AddObservation(ctx context.Context, args AddObservationArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3291,8 +2917,8 @@ func (s *ForwardMCPService) addObservation(ctx context.Context, args AddObservat
 	return textResult(fmt.Sprintf("Observation added successfully:\n%s", string(observationJSON))), nil
 }
 
-// searchEntities searches for entities in the knowledge graph with automatic bloom filter optimization
-func (s *ForwardMCPService) searchEntities(ctx context.Context, args SearchEntitiesArgs) (*Result, error) {
+// SearchEntities searches for entities in the knowledge graph with automatic bloom filter optimization
+func (s *Service) SearchEntities(ctx context.Context, args SearchEntitiesArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3358,8 +2984,8 @@ func (s *ForwardMCPService) searchEntities(ctx context.Context, args SearchEntit
 	return textResult(fmt.Sprintf("Found %d entities:\n%s", len(entities), string(entitiesJSON))), nil
 }
 
-// getEntity retrieves a specific entity by ID or name
-func (s *ForwardMCPService) getEntity(ctx context.Context, args GetEntityArgs) (*Result, error) {
+// GetEntity retrieves a specific entity by ID or name
+func (s *Service) GetEntity(ctx context.Context, args GetEntityArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3377,8 +3003,8 @@ func (s *ForwardMCPService) getEntity(ctx context.Context, args GetEntityArgs) (
 	return textResult(fmt.Sprintf("Entity found:\n%s", string(entityJSON))), nil
 }
 
-// getRelations retrieves relations for an entity
-func (s *ForwardMCPService) getRelations(ctx context.Context, args GetRelationsArgs) (*Result, error) {
+// GetRelations retrieves relations for an entity
+func (s *Service) GetRelations(ctx context.Context, args GetRelationsArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3474,8 +3100,8 @@ func (s *ForwardMCPService) getRelations(ctx context.Context, args GetRelationsA
 	return textResult(responseText.String()), nil
 }
 
-// getObservations retrieves observations for an entity
-func (s *ForwardMCPService) getObservations(ctx context.Context, args GetObservationsArgs) (*Result, error) {
+// GetObservations retrieves observations for an entity
+func (s *Service) GetObservations(ctx context.Context, args GetObservationsArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3571,8 +3197,8 @@ func (s *ForwardMCPService) getObservations(ctx context.Context, args GetObserva
 	return textResult(responseText.String()), nil
 }
 
-// deleteEntity deletes an entity and all its relations and observations
-func (s *ForwardMCPService) deleteEntity(ctx context.Context, args DeleteEntityArgs) (*Result, error) {
+// DeleteEntity deletes an entity and all its relations and observations
+func (s *Service) DeleteEntity(ctx context.Context, args DeleteEntityArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3591,8 +3217,8 @@ func (s *ForwardMCPService) deleteEntity(ctx context.Context, args DeleteEntityA
 	return textResult(fmt.Sprintf("Entity '%s' (%s) deleted successfully, including all its relations and observations.", entity.Name, entity.Type)), nil
 }
 
-// deleteRelation deletes a specific relation
-func (s *ForwardMCPService) deleteRelation(ctx context.Context, args DeleteRelationArgs) (*Result, error) {
+// DeleteRelation deletes a specific relation
+func (s *Service) DeleteRelation(ctx context.Context, args DeleteRelationArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3605,8 +3231,8 @@ func (s *ForwardMCPService) deleteRelation(ctx context.Context, args DeleteRelat
 	return textResult(fmt.Sprintf("Relation '%s' deleted successfully.", args.RelationID)), nil
 }
 
-// deleteObservation deletes a specific observation
-func (s *ForwardMCPService) deleteObservation(ctx context.Context, args DeleteObservationArgs) (*Result, error) {
+// DeleteObservation deletes a specific observation
+func (s *Service) DeleteObservation(ctx context.Context, args DeleteObservationArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3619,8 +3245,8 @@ func (s *ForwardMCPService) deleteObservation(ctx context.Context, args DeleteOb
 	return textResult(fmt.Sprintf("Observation '%s' deleted successfully.", args.ObservationID)), nil
 }
 
-// getMemoryStats returns statistics about the memory system
-func (s *ForwardMCPService) getMemoryStats(ctx context.Context, args GetMemoryStatsArgs) (*Result, error) {
+// GetMemoryStats returns statistics about the memory system
+func (s *Service) GetMemoryStats(ctx context.Context, args GetMemoryStatsArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3638,8 +3264,8 @@ func (s *ForwardMCPService) getMemoryStats(ctx context.Context, args GetMemorySt
 	return textResult(fmt.Sprintf("Memory system statistics:\n%s", string(statsJSON))), nil
 }
 
-// getQueryAnalytics gets analytics about query patterns for a network
-func (s *ForwardMCPService) getQueryAnalytics(ctx context.Context, args GetQueryAnalyticsArgs) (*Result, error) {
+// GetQueryAnalytics gets analytics about query patterns for a network
+func (s *Service) GetQueryAnalytics(ctx context.Context, args GetQueryAnalyticsArgs) (*Result, error) {
 	if s.apiTracker == nil {
 		return nil, fmt.Errorf("API memory tracker is not available")
 	}
@@ -3657,8 +3283,8 @@ func (s *ForwardMCPService) getQueryAnalytics(ctx context.Context, args GetQuery
 	return textResult(fmt.Sprintf("Query analytics for network %s:\n%s", args.NetworkID, string(analyticsJSON))), nil
 }
 
-// getNQEResultChunks retrieves chunked NQE query results from the memory system
-func (s *ForwardMCPService) getNQEResultChunks(ctx context.Context, args GetNQEResultChunksArgs) (*Result, error) {
+// GetNQEResultChunks retrieves chunked NQE query results from the memory system
+func (s *Service) GetNQEResultChunks(ctx context.Context, args GetNQEResultChunksArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3699,7 +3325,7 @@ func (s *ForwardMCPService) getNQEResultChunks(ctx context.Context, args GetNQER
 
 // Add get_nqe_result_summary tool handler
 // Arguments: entity_id OR (query_id, network_id, snapshot_id)
-func (s *ForwardMCPService) getNQEResultSummary(ctx context.Context, args GetNQEResultChunksArgs) (*Result, error) {
+func (s *Service) GetNQEResultSummary(ctx context.Context, args GetNQEResultChunksArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3751,7 +3377,7 @@ type AnalyzeNQEResultSQLArgs struct {
 	SQLQuery string `json:"sql_query" jsonschema:"SQL query to execute against the NQE results"`
 }
 
-func (s *ForwardMCPService) analyzeNQEResultSQL(ctx context.Context, args AnalyzeNQEResultSQLArgs) (*Result, error) {
+func (s *Service) AnalyzeNQEResultSQL(ctx context.Context, args AnalyzeNQEResultSQLArgs) (*Result, error) {
 	if s.memorySystem == nil {
 		return nil, fmt.Errorf("memory system is not available")
 	}
@@ -3853,8 +3479,8 @@ func (s *ForwardMCPService) analyzeNQEResultSQL(ctx context.Context, args Analyz
 	return textResult(response), nil
 }
 
-// buildBloomFilter builds a bloom filter from NQE query results
-func (s *ForwardMCPService) buildBloomFilter(ctx context.Context, args BuildBloomFilterArgs) (*Result, error) {
+// BuildBloomFilter builds a bloom filter from NQE query results
+func (s *Service) BuildBloomFilter(ctx context.Context, args BuildBloomFilterArgs) (*Result, error) {
 	s.logToolCall("build_bloom_filter", args, nil)
 
 	if s.bloomManager == nil {
@@ -3914,8 +3540,8 @@ func (s *ForwardMCPService) buildBloomFilter(ctx context.Context, args BuildBloo
 	return textResult(response), nil
 }
 
-// searchBloomFilter searches a bloom filter for matching items
-func (s *ForwardMCPService) searchBloomFilter(ctx context.Context, args SearchBloomFilterArgs) (*Result, error) {
+// SearchBloomFilter searches a bloom filter for matching items
+func (s *Service) SearchBloomFilter(ctx context.Context, args SearchBloomFilterArgs) (*Result, error) {
 	s.logToolCall("search_bloom_filter", args, nil)
 
 	if s.bloomManager == nil {
@@ -3997,8 +3623,8 @@ func (s *ForwardMCPService) searchBloomFilter(ctx context.Context, args SearchBl
 	return textResult(response), nil
 }
 
-// getBloomFilterStats returns statistics for all bloom filters
-func (s *ForwardMCPService) getBloomFilterStats(ctx context.Context, args GetBloomFilterStatsArgs) (*Result, error) {
+// GetBloomFilterStats returns statistics for all bloom filters
+func (s *Service) GetBloomFilterStats(ctx context.Context, args GetBloomFilterStatsArgs) (*Result, error) {
 	s.logToolCall("get_bloom_filter_stats", args, nil)
 
 	if s.bloomManager == nil {
@@ -4043,7 +3669,7 @@ func (s *ForwardMCPService) getBloomFilterStats(ctx context.Context, args GetBlo
 }
 
 // determineFilterType determines the appropriate filter type based on query ID and data content
-func (s *ForwardMCPService) determineFilterType(queryID string, items []map[string]interface{}) string {
+func (s *Service) determineFilterType(queryID string, items []map[string]interface{}) string {
 	// Check query ID patterns first
 	if strings.Contains(queryID, "device") || strings.Contains(queryID, "devices") {
 		return "device"
@@ -4083,7 +3709,7 @@ func (s *ForwardMCPService) determineFilterType(queryID string, items []map[stri
 }
 
 // extractSearchTerms extracts meaningful search terms from a query string
-func (s *ForwardMCPService) extractSearchTerms(query string) []string {
+func (s *Service) extractSearchTerms(query string) []string {
 	if query == "" {
 		return nil
 	}
@@ -4106,7 +3732,7 @@ func (s *ForwardMCPService) extractSearchTerms(query string) []string {
 }
 
 // isStopWord checks if a word is a common stop word
-func (s *ForwardMCPService) isStopWord(word string) bool {
+func (s *Service) isStopWord(word string) bool {
 	stopWords := map[string]bool{
 		"the": true, "and": true, "or": true, "but": true, "in": true, "on": true, "at": true,
 		"to": true, "for": true, "of": true, "with": true, "by": true, "is": true, "are": true,
@@ -4132,7 +3758,7 @@ func formatBytes(bytes int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
-func (s *ForwardMCPService) pathSearchWorkflow(args PathSearchWorkflowArgs) (*Result, error) {
+func (s *Service) PathSearchWorkflow(args PathSearchWorkflowArgs) (*Result, error) {
 	sessionID := fmt.Sprintf("path_session_%v", args.SessionID)
 	state := s.workflowManager.GetState(sessionID)
 
@@ -4152,7 +3778,7 @@ func (s *ForwardMCPService) pathSearchWorkflow(args PathSearchWorkflowArgs) (*Re
 	}
 }
 
-func (s *ForwardMCPService) startPathSearchWorkflow(sessionID string) (*Result, error) {
+func (s *Service) startPathSearchWorkflow(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "explain_best_practices",
 		Parameters:  make(map[string]interface{}),
@@ -4179,7 +3805,7 @@ Would you like to continue with the best practices explanation?`
 	return textResult(content), nil
 }
 
-func (s *ForwardMCPService) explainPathSearchBestPractices(sessionID string) (*Result, error) {
+func (s *Service) explainPathSearchBestPractices(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "show_bulk_example",
 		Parameters:  make(map[string]interface{}),
@@ -4217,7 +3843,7 @@ Would you like to see a bulk path search example?`
 	return textResult(content), nil
 }
 
-func (s *ForwardMCPService) showBulkPathSearchExample(sessionID string) (*Result, error) {
+func (s *Service) showBulkPathSearchExample(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "guide_request_building",
 		Parameters:  make(map[string]interface{}),
@@ -4266,7 +3892,7 @@ Would you like guidance on building your own requests?`
 	return textResult(content), nil
 }
 
-func (s *ForwardMCPService) guidePathSearchRequestBuilding(sessionID string) (*Result, error) {
+func (s *Service) guidePathSearchRequestBuilding(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "network_scope_discovery",
 		Parameters:  make(map[string]interface{}),
@@ -4312,7 +3938,7 @@ Would you like to learn how to discover network scopes and locations for more ef
 	return textResult(content), nil
 }
 
-func (s *ForwardMCPService) guideNetworkScopeDiscovery(sessionID string) (*Result, error) {
+func (s *Service) guideNetworkScopeDiscovery(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "complete",
 		Parameters:  make(map[string]interface{}),
@@ -4464,7 +4090,7 @@ func NormalizePathSearchRequest(input map[string]interface{}) (isBulk bool, bulk
 }
 
 // Single path search entry point - converts to bulk format
-func (s *ForwardMCPService) searchPathsEntry(ctx context.Context, args SearchPathsArgs) (*Result, error) {
+func (s *Service) SearchPathsEntry(ctx context.Context, args SearchPathsArgs) (*Result, error) {
 	// Convert single path search to bulk format
 	bulkArgs := SearchPathsBulkArgs{
 		NetworkID:               args.NetworkID,
@@ -4490,13 +4116,13 @@ func (s *ForwardMCPService) searchPathsEntry(ctx context.Context, args SearchPat
 }
 
 // Update the searchPathsBulk entrypoint to route single queries to searchPaths
-func (s *ForwardMCPService) searchPathsBulkEntry(ctx context.Context, args SearchPathsBulkArgs) (*Result, error) {
+func (s *Service) SearchPathsBulkEntry(ctx context.Context, args SearchPathsBulkArgs) (*Result, error) {
 	return s.searchPathsBulk(ctx, args)
 }
 
 // Network Prefix Discovery and Analysis Methods
 
-func (s *ForwardMCPService) networkPrefixDiscoveryWorkflow(args NetworkPrefixDiscoveryArgs) (*Result, error) {
+func (s *Service) NetworkPrefixDiscoveryWorkflow(args NetworkPrefixDiscoveryArgs) (*Result, error) {
 	sessionID := fmt.Sprintf("session_%v", args.SessionID)
 	state := s.workflowManager.GetState(sessionID)
 
@@ -4514,7 +4140,7 @@ func (s *ForwardMCPService) networkPrefixDiscoveryWorkflow(args NetworkPrefixDis
 	}
 }
 
-func (s *ForwardMCPService) startNetworkPrefixDiscovery(sessionID string) (*Result, error) {
+func (s *Service) startNetworkPrefixDiscovery(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "explain_process",
 		Parameters:  make(map[string]interface{}),
@@ -4555,7 +4181,7 @@ What would you like to explore first? Type the step name or ask questions about 
 	return textResult(content), nil
 }
 
-func (s *ForwardMCPService) explainNetworkPrefixProcess(sessionID string) (*Result, error) {
+func (s *Service) explainNetworkPrefixProcess(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "show_example",
 		Parameters:  make(map[string]interface{}),
@@ -4607,7 +4233,7 @@ Ready to see an example? Type "show_example" to continue.`
 	return textResult(content), nil
 }
 
-func (s *ForwardMCPService) showNetworkPrefixExample(sessionID string) (*Result, error) {
+func (s *Service) showNetworkPrefixExample(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "guide_analysis",
 		Parameters:  make(map[string]interface{}),
@@ -4658,7 +4284,7 @@ func (s *ForwardMCPService) showNetworkPrefixExample(sessionID string) (*Result,
 	return textResult(content), nil
 }
 
-func (s *ForwardMCPService) guideNetworkPrefixAnalysis(sessionID string) (*Result, error) {
+func (s *Service) guideNetworkPrefixAnalysis(sessionID string) (*Result, error) {
 	state := &WorkflowState{
 		CurrentStep: "run_analysis",
 		Parameters:  make(map[string]interface{}),
@@ -4704,7 +4330,7 @@ func (s *ForwardMCPService) guideNetworkPrefixAnalysis(sessionID string) (*Resul
 	return textResult(content), nil
 }
 
-func (s *ForwardMCPService) analyzeNetworkPrefixes(ctx context.Context, args NetworkPrefixAnalysisArgs) (*Result, error) {
+func (s *Service) AnalyzeNetworkPrefixes(ctx context.Context, args NetworkPrefixAnalysisArgs) (*Result, error) {
 	s.logToolCall("analyze_network_prefixes", args, nil)
 
 	// Use defaults if not specified
@@ -4752,7 +4378,7 @@ func (s *ForwardMCPService) analyzeNetworkPrefixes(ctx context.Context, args Net
 	return textResult(report), nil
 }
 
-func (s *ForwardMCPService) discoverNetworkPrefixes(ctx context.Context, networkID, snapshotID string) ([]NetworkPrefixInfo, error) {
+func (s *Service) discoverNetworkPrefixes(ctx context.Context, networkID, snapshotID string) ([]NetworkPrefixInfo, error) {
 	// Use device inventory to discover all interface IPs and aggregate to prefixes
 	params := &domain.DeviceQueryParams{}
 	if snapshotID != "" {
@@ -4860,7 +4486,7 @@ func (s *ForwardMCPService) discoverNetworkPrefixes(ctx context.Context, network
 	return prefixInfo, nil
 }
 
-func (s *ForwardMCPService) analyzePrefixConnectivity(ctx context.Context, networkID string, prefixInfo []NetworkPrefixInfo, prefixLevels []string, fromDevices, toDevices []string, intent string, maxResults int) ([]ConnectivityAnalysisResult, error) {
+func (s *Service) analyzePrefixConnectivity(ctx context.Context, networkID string, prefixInfo []NetworkPrefixInfo, prefixLevels []string, fromDevices, toDevices []string, intent string, maxResults int) ([]ConnectivityAnalysisResult, error) {
 	var results []ConnectivityAnalysisResult
 
 	// Create connectivity test queries
@@ -4932,7 +4558,7 @@ func (s *ForwardMCPService) analyzePrefixConnectivity(ctx context.Context, netwo
 	return results, nil
 }
 
-func (s *ForwardMCPService) createConnectivityQueries(prefixInfo []NetworkPrefixInfo, prefixLevels []string, fromDevices, toDevices []string) []PathSearchQueryArgs {
+func (s *Service) createConnectivityQueries(prefixInfo []NetworkPrefixInfo, prefixLevels []string, fromDevices, toDevices []string) []PathSearchQueryArgs {
 	var queries []PathSearchQueryArgs
 
 	// Create queries for each prefix level
@@ -4962,7 +4588,7 @@ func (s *ForwardMCPService) createConnectivityQueries(prefixInfo []NetworkPrefix
 	return queries
 }
 
-func (s *ForwardMCPService) aggregatePrefixes(prefixInfo []NetworkPrefixInfo, level string) []string {
+func (s *Service) aggregatePrefixes(prefixInfo []NetworkPrefixInfo, level string) []string {
 	// Simple aggregation logic - in a real implementation, this would be more sophisticated
 	var aggregated []string
 	prefixMap := make(map[string]bool)
@@ -4979,7 +4605,7 @@ func (s *ForwardMCPService) aggregatePrefixes(prefixInfo []NetworkPrefixInfo, le
 	return aggregated
 }
 
-func (s *ForwardMCPService) extractNetworkPortion(prefix, level string) string {
+func (s *Service) extractNetworkPortion(prefix, level string) string {
 	// Simple implementation - extract network portion based on CIDR level
 	// In a real implementation, this would use proper IP network calculations
 	if strings.Contains(prefix, "/") {
@@ -4994,7 +4620,7 @@ func (s *ForwardMCPService) extractNetworkPortion(prefix, level string) string {
 	return prefix
 }
 
-func (s *ForwardMCPService) findRepresentativeDevice(prefix string, preferredDevices []string) string {
+func (s *Service) findRepresentativeDevice(prefix string, preferredDevices []string) string {
 	// Find a representative device for the prefix
 	// Prefer devices from the preferredDevices list if available
 	for _, preferred := range preferredDevices {
@@ -5009,7 +4635,7 @@ func (s *ForwardMCPService) findRepresentativeDevice(prefix string, preferredDev
 	return ""
 }
 
-func (s *ForwardMCPService) determineAggregationLevel(prefix string) string {
+func (s *Service) determineAggregationLevel(prefix string) string {
 	if strings.Contains(prefix, "/8") {
 		return "/8"
 	} else if strings.Contains(prefix, "/16") {
@@ -5020,7 +4646,7 @@ func (s *ForwardMCPService) determineAggregationLevel(prefix string) string {
 	return "/32"
 }
 
-func (s *ForwardMCPService) generateConnectivityReport(prefixInfo []NetworkPrefixInfo, connectivityResults []ConnectivityAnalysisResult, prefixLevels []string) string {
+func (s *Service) generateConnectivityReport(prefixInfo []NetworkPrefixInfo, connectivityResults []ConnectivityAnalysisResult, prefixLevels []string) string {
 	var report strings.Builder
 
 	report.WriteString("# 🔍 Network Prefix Discovery & Connectivity Analysis Report\n\n")
@@ -5104,7 +4730,7 @@ func (s *ForwardMCPService) generateConnectivityReport(prefixInfo []NetworkPrefi
 	return report.String()
 }
 
-func (s *ForwardMCPService) filterResultsByLevel(results []ConnectivityAnalysisResult, level string) []ConnectivityAnalysisResult {
+func (s *Service) filterResultsByLevel(results []ConnectivityAnalysisResult, level string) []ConnectivityAnalysisResult {
 	var filtered []ConnectivityAnalysisResult
 	for _, result := range results {
 		if result.AggregationLevel == level {
@@ -5117,7 +4743,7 @@ func (s *ForwardMCPService) filterResultsByLevel(results []ConnectivityAnalysisR
 // resolveDeviceToIP attempts to resolve a device name to an IP address
 // If the input looks like an IP address, it returns it as-is
 // If it looks like a device name, it tries to find any IP address bound to the device
-func (s *ForwardMCPService) resolveDeviceToIP(ctx context.Context, networkID, deviceOrIP string) (string, error) {
+func (s *Service) resolveDeviceToIP(ctx context.Context, networkID, deviceOrIP string) (string, error) {
 	// If it looks like an IP address, return as-is
 	if net.ParseIP(deviceOrIP) != nil {
 		return deviceOrIP, nil
@@ -5245,8 +4871,8 @@ func (s *ForwardMCPService) resolveDeviceToIP(ctx context.Context, networkID, de
 	return "", fmt.Errorf("device %s not found in network %s", deviceOrIP, networkID)
 }
 
-// listInstanceIDs lists all available Forward Networks instance IDs in the database
-func (s *ForwardMCPService) listInstanceIDs(ctx context.Context, args ListInstanceIDsArgs) (*Result, error) {
+// ListInstanceIDs lists all available Forward Networks instance IDs in the database
+func (s *Service) ListInstanceIDs(ctx context.Context, args ListInstanceIDsArgs) (*Result, error) {
 	s.logToolCall("list_instance_ids", args, nil)
 
 	if s.database == nil {

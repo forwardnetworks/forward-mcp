@@ -1,4 +1,4 @@
-package service
+package usecases
 
 import (
 	"context"
@@ -34,7 +34,7 @@ func getProjectRoot() string {
 }
 
 // setupIntegrationTest loads environment variables and creates a real service
-func setupIntegrationTest(t *testing.T) *ForwardMCPService {
+func setupIntegrationTest(t *testing.T) *Service {
 	rootDir := getProjectRoot()
 	envPath := filepath.Join(rootDir, ".env")
 
@@ -61,7 +61,7 @@ func setupIntegrationTest(t *testing.T) *ForwardMCPService {
 	}
 
 	embedder := embeddings.NewKeywordEmbeddingService()
-	return NewForwardMCPService(cfg, log, Deps{
+	return New(cfg, log, Deps{
 		API:        forwardapi.NewClient(&cfg.Forward, log),
 		Cache:      semcache.NewSemanticCache(embedder, log, InstanceID(cfg), &cfg.Forward.SemanticCache),
 		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
@@ -73,7 +73,7 @@ func setupIntegrationTest(t *testing.T) *ForwardMCPService {
 func TestIntegrationListNetworks(t *testing.T) {
 	service := setupIntegrationTest(t)
 
-	response, err := service.listNetworks(context.Background(), ListNetworksArgs{})
+	response, err := service.ListNetworks(context.Background(), ListNetworksArgs{})
 	if err != nil {
 		t.Fatalf("Failed to list networks: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestIntegrationRunNQEQuery(t *testing.T) {
 		},
 	}
 
-	response, err := service.runNQEQueryByID(context.Background(), args)
+	response, err := service.RunNQEQueryByID(context.Background(), args)
 	if err != nil {
 		// NQE query might fail if no devices exist or query is invalid, which is OK for testing
 		t.Logf("NQE query failed (this may be expected): %v", err)
@@ -667,7 +667,7 @@ func TestIntegrationListDevices(t *testing.T) {
 		Limit:     5,
 	}
 
-	response, err := service.listDevices(context.Background(), args)
+	response, err := service.ListDevices(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Failed to list devices: %v", err)
 	}
@@ -701,7 +701,7 @@ func TestIntegrationListSnapshots(t *testing.T) {
 		NetworkID: networkID,
 	}
 
-	response, err := service.listSnapshots(context.Background(), args)
+	response, err := service.ListSnapshots(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Failed to list snapshots: %v", err)
 	}

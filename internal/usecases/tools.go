@@ -1,4 +1,4 @@
-package service
+package usecases
 
 // Network Management Tool Arguments
 type ListNetworksArgs struct {

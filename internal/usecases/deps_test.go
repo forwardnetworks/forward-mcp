@@ -1,4 +1,4 @@
-package service
+package usecases
 
 import (
 	"context"
@@ -18,17 +18,17 @@ func TestServiceRunsWithoutStores(t *testing.T) {
 	cfg := &domain.Config{Forward: domain.ForwardConfig{APIBaseURL: "https://test.example.com"}}
 	log := logger.New()
 	embedder := embeddings.NewMockEmbeddingService()
-	svc := NewForwardMCPService(cfg, log, Deps{
+	svc := New(cfg, log, Deps{
 		API:        NewMockForwardClient(),
 		Cache:      semcache.NewSemanticCache(embedder, log, "test", &cfg.Forward.SemanticCache),
 		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
 	})
 	defer svc.Shutdown(5 * time.Second)
 
-	if _, err := svc.getMemoryStats(context.Background(), GetMemoryStatsArgs{}); err == nil {
+	if _, err := svc.GetMemoryStats(context.Background(), GetMemoryStatsArgs{}); err == nil {
 		t.Error("get_memory_stats without a memory store: want an error, got nil")
 	}
-	res, err := svc.getDatabaseStatus(context.Background(), GetDatabaseStatusArgs{})
+	res, err := svc.GetDatabaseStatus(context.Background(), GetDatabaseStatusArgs{})
 	if err != nil {
 		t.Fatalf("get_database_status without a query store: %v", err)
 	}
