@@ -44,7 +44,7 @@ type Tool struct {
 
 func main() {
 	fmt.Println("🧪 MCP Protocol Tool Quality Test")
-	fmt.Println("==================================\n")
+	fmt.Print("==================================\n\n")
 
 	// Start MCP server
 	fmt.Println("Starting MCP server...")
@@ -85,7 +85,7 @@ func main() {
 
 	// Give server time to start
 	time.Sleep(500 * time.Millisecond)
-	fmt.Println("✅ Server started\n")
+	fmt.Print("✅ Server started\n\n")
 
 	// Send initialize request
 	fmt.Println("Sending initialize request...")
@@ -117,7 +117,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	fmt.Println("✅ Initialize successful\n")
+	fmt.Print("✅ Initialize successful\n\n")
 
 	// Request tools list
 	fmt.Println("Requesting tools list...")
@@ -158,7 +158,7 @@ func main() {
 
 	// Verify tool quality standards
 	fmt.Println("Verifying ADR-2610091555 compliance...")
-	fmt.Println("=====================================\n")
+	fmt.Print("=====================================\n\n")
 
 	templateCount := 0
 	tooLongCount := 0

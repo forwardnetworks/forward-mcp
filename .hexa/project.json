@@ -7,7 +7,6 @@
       "internal/usecases": "usecases",
       "internal/adapters/primary": "adapters/primary",
       "internal/adapters/secondary": "adapters/secondary",
-      "scripts/demo-smart-search.go": "entry-point",
       "cmd/server/main.go": "composition-root",
       "examples/test_mcp.go": "composition-root",
       "cmd/test-client/main.go": "composition-root"
