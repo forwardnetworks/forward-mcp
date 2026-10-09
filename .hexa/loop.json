@@ -5,7 +5,9 @@
       "files": [
         "docs/adrs/ADR-2610091315-forward-mcp-is-a-hexagon.md",
         "internal/ports/forward.go",
-        "internal/adapters/secondary/forwardapi/client_test.go"
+        "internal/adapters/secondary/forwardapi/client_test.go",
+        "internal/adapters/primary/mcpserver/server_test.go",
+        "internal/adapters/secondary/sqlite/rowquery.go"
       ],
       "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go vet ./internal/... ./cmd/... && CGO_ENABLED=1 go test -race -count=1 -skip TestIntegration ./internal/... && hexa analyze . --violations-only --exit-code",
       "pid": 87684,
@@ -23,15 +25,16 @@
           "title": "Phase 2: logger, config and storage ports and adapters"
         },
         {
-          "status": "doing",
+          "done_at": "2026-10-09T17:45:16.575697+00:00",
+          "status": "done",
           "title": "Phase 3: split mcp_service.go into usecases and adapters/primary/mcp; compose in main.go"
         },
         {
-          "status": "todo",
+          "status": "doing",
           "title": "Phase 4: harden to grade A; docs"
         }
       ],
-      "updated": "2026-10-09T17:32:29.553577+00:00"
+      "updated": "2026-10-09T17:45:16.575836+00:00"
     }
   }
 }
