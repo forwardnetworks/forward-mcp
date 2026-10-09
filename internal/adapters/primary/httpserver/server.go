@@ -13,12 +13,22 @@ import (
 )
 
 const (
-	defaultReadTimeout  = 30 * time.Second
-	defaultWriteTimeout = 30 * time.Second
-	defaultIdleTimeout  = 120 * time.Second
+	defaultReadTimeout       = 30 * time.Second
+	defaultWriteTimeout      = 30 * time.Second
+	defaultIdleTimeout       = 120 * time.Second
+	defaultReadHeaderTimeout = 10 * time.Second
+	defaultSessionTimeout    = 30 * time.Minute
+	serverVersion            = "4.0.0"
 )
 
-// Server represents the HTTP/SSE server
+// MCP endpoints. /mcp is Streamable HTTP (current spec); /sse is the legacy
+// HTTP+SSE transport kept for older clients.
+const (
+	MCPPath       = "/mcp"
+	LegacySSEPath = "/sse"
+)
+
+// Server represents the HTTP server for the MCP transports
 type Server struct {
 	config      *ports.HTTPConfig
 	log         ports.Logger
@@ -26,7 +36,7 @@ type Server struct {
 	rateLimiter *RateLimiter
 }
 
-// New creates a new HTTP/SSE server
+// New creates a new HTTP server
 func New(cfg *ports.HTTPConfig, log ports.Logger) *Server {
 	return &Server{
 		config:      cfg,
@@ -35,94 +45,78 @@ func New(cfg *ports.HTTPConfig, log ports.Logger) *Server {
 	}
 }
 
-// Start starts the HTTP server with MCP SSE handler
+// Handler builds the full HTTP handler: health probes, both MCP transports,
+// auth, rate limiting, CORS and security headers.
+func (s *Server) Handler(mcpServer *mcp.Server) (http.Handler, error) {
+	getServer := func(*http.Request) *mcp.Server { return mcpServer }
+
+	streamable := mcp.NewStreamableHTTPHandler(getServer, &mcp.StreamableHTTPOptions{
+		SessionTimeout: defaultSessionTimeout,
+	})
+	legacySSE := mcp.NewSSEHandler(getServer, &mcp.SSEOptions{})
+
+	// Browser cross-origin POSTs are refused unless the origin is trusted.
+	csrf := http.NewCrossOriginProtection()
+	for _, origin := range s.config.CORSOrigins {
+		if err := csrf.AddTrustedOrigin(origin); err != nil {
+			return nil, fmt.Errorf("invalid CORS origin %q: %w", origin, err)
+		}
+	}
+
+	// One auth middleware for both endpoints, so JWT mode runs one JWKS cache.
+	protect := s.protectMiddleware()
+
+	writeTimeout := s.seconds(s.config.WriteTimeout, defaultWriteTimeout)
+
+	mux := http.NewServeMux()
+	mux.Handle("/health", http.TimeoutHandler(HealthHandler(serverVersion), writeTimeout, "timeout"))
+	mux.Handle("/ready", http.TimeoutHandler(ReadinessHandler(serverVersion), writeTimeout, "timeout"))
+	mux.Handle(MCPPath, csrf.Handler(protect(streamable)))
+	mux.Handle(LegacySSEPath, csrf.Handler(protect(legacySSE)))
+
+	return s.buildHandlerChain(mux), nil
+}
+
+// Start starts the HTTP server
 func (s *Server) Start(ctx context.Context, mcpServer *mcp.Server) error {
 	if !s.config.Enabled {
 		return fmt.Errorf("HTTP server is not enabled")
 	}
 
-	// Create HTTP router
-	mux := http.NewServeMux()
+	tlsEnabled := s.config.TLSCertFile != "" && s.config.TLSKeyFile != ""
+	if !tlsEnabled && !s.config.AllowInsecure {
+		return fmt.Errorf("SECURITY ERROR: TLS certificates required. Set FORWARD_HTTP_TLS_CERT and FORWARD_HTTP_TLS_KEY, " +
+			"or set FORWARD_HTTP_ALLOW_INSECURE=true for development only")
+	}
 
-	// Health and metrics endpoints (no auth required)
-	mux.HandleFunc("/health", HealthHandler("4.0.0"))
-	mux.HandleFunc("/ready", ReadinessHandler("4.0.0"))
+	handler, err := s.Handler(mcpServer)
+	if err != nil {
+		return err
+	}
 
-	// Create MCP SSE handler
-	// The handler creates a new server instance for each connection
-	// This allows per-connection state and authentication
-	sseHandler := mcp.NewSSEHandler(
-		func(r *http.Request) *mcp.Server {
-			// Return the provided MCP server
-			// In the future, this could create per-user servers based on auth
-			return mcpServer
-		},
-		&mcp.SSEOptions{},
-	)
-
-	// Register SSE endpoint with authentication and rate limiting
-	sseEndpoint := s.applyMiddleware(sseHandler, true)
-	mux.Handle("/sse", sseEndpoint)
-
-	// Build final handler chain
-	handler := s.buildHandlerChain(mux)
-
-	// Configure HTTP server
 	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
-
-	readTimeout := time.Duration(s.config.ReadTimeout) * time.Second
-	if readTimeout == 0 {
-		readTimeout = defaultReadTimeout
-	}
-
-	writeTimeout := time.Duration(s.config.WriteTimeout) * time.Second
-	if writeTimeout == 0 {
-		writeTimeout = defaultWriteTimeout
-	}
-
 	s.httpServer = &http.Server{
-		Addr:         addr,
-		Handler:      handler,
-		ReadTimeout:  readTimeout,
-		WriteTimeout: writeTimeout,
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: defaultReadHeaderTimeout,
+		ReadTimeout:       s.seconds(s.config.ReadTimeout, defaultReadTimeout),
+		// No server-wide WriteTimeout: it would cut long-lived MCP streams.
+		// Short endpoints get a per-route timeout in Handler instead.
+		WriteTimeout: 0,
 		IdleTimeout:  defaultIdleTimeout,
-		BaseContext: func(listener net.Listener) context.Context {
-			return ctx
-		},
+		BaseContext:  func(net.Listener) context.Context { return ctx },
 	}
 
-	// Configure TLS if certificates are provided
-	if s.config.TLSCertFile != "" && s.config.TLSKeyFile != "" {
+	if tlsEnabled {
+		s.httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS13}
 		s.log.Info("Starting HTTPS server on %s (TLS 1.3+)", addr)
-
-		// Configure TLS with strict security settings
-		s.httpServer.TLSConfig = &tls.Config{
-			MinVersion: tls.VersionTLS13,
-			CipherSuites: []uint16{
-				tls.TLS_AES_128_GCM_SHA256,
-				tls.TLS_AES_256_GCM_SHA384,
-				tls.TLS_CHACHA20_POLY1305_SHA256,
-			},
-			PreferServerCipherSuites: true,
-		}
-
-		// Start HTTPS server
 		go func() {
 			if err := s.httpServer.ListenAndServeTLS(s.config.TLSCertFile, s.config.TLSKeyFile); err != nil && err != http.ErrServerClosed {
 				s.log.Error("HTTPS server error: %v", err)
 			}
 		}()
 	} else {
-		// SECURITY: Require explicit opt-in for insecure HTTP
-		// This should NEVER be used in production
-		if !s.config.AllowInsecure {
-			return fmt.Errorf("SECURITY ERROR: TLS certificates required. Set FORWARD_HTTP_TLS_CERT and FORWARD_HTTP_TLS_KEY, " +
-				"or set FORWARD_HTTP_ALLOW_INSECURE=true for development only")
-		}
-
 		s.log.Warn("SECURITY WARNING: Starting HTTP server on %s without TLS - DEVELOPMENT ONLY, NEVER USE IN PRODUCTION", addr)
-
-		// Start HTTP server (insecure, development only)
 		go func() {
 			if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				s.log.Error("HTTP server error: %v", err)
@@ -130,7 +124,7 @@ func (s *Server) Start(ctx context.Context, mcpServer *mcp.Server) error {
 		}()
 	}
 
-	s.log.Info("HTTP/SSE server started successfully")
+	s.log.Info("MCP HTTP server started: Streamable HTTP at %s, legacy SSE at %s", MCPPath, LegacySSEPath)
 	return nil
 }
 
@@ -141,49 +135,37 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 
 	s.log.Info("Stopping HTTP server...")
-
-	// Attempt graceful shutdown
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		s.log.Error("HTTP server shutdown error: %v", err)
-		// Force close if graceful shutdown fails
 		return s.httpServer.Close()
 	}
-
 	s.log.Info("HTTP server stopped")
 	return nil
 }
 
-// buildHandlerChain builds the middleware chain for all requests
+// buildHandlerChain wraps every route with security headers, CORS and logging
 func (s *Server) buildHandlerChain(handler http.Handler) http.Handler {
-	// Apply middleware in order (innermost to outermost)
-	// Order matters: logging should be outermost to capture everything
-
-	// Security headers (innermost)
 	handler = SecurityHeadersMiddleware()(handler)
-
-	// CORS
 	if len(s.config.CORSOrigins) > 0 {
-		corsMiddleware := CORSMiddleware(s.config)
-		handler = corsMiddleware.Handler(handler)
+		handler = CORSMiddleware(s.config).Handler(handler)
 	}
-
-	// Logging (outermost - logs everything)
-	handler = LoggingMiddleware(s.log)(handler)
-
-	return handler
+	return LoggingMiddleware(s.log)(handler)
 }
 
-// applyMiddleware applies authentication and rate limiting to an endpoint
-func (s *Server) applyMiddleware(handler http.Handler, requireAuth bool) http.Handler {
-	// Apply rate limiting first (after auth)
-	if s.config.RateLimit > 0 {
-		handler = s.rateLimiter.Middleware()(handler)
+// protectMiddleware returns auth followed by per-user rate limiting
+func (s *Server) protectMiddleware() func(http.Handler) http.Handler {
+	auth := AuthMiddleware(s.config, s.log)
+	return func(next http.Handler) http.Handler {
+		if s.config.RateLimit > 0 {
+			next = s.rateLimiter.Middleware()(next)
+		}
+		return auth(next)
 	}
+}
 
-	// Apply authentication if required
-	if requireAuth {
-		handler = AuthMiddleware(s.config, s.log)(handler)
+func (s *Server) seconds(v int, fallback time.Duration) time.Duration {
+	if v <= 0 {
+		return fallback
 	}
-
-	return handler
+	return time.Duration(v) * time.Second
 }

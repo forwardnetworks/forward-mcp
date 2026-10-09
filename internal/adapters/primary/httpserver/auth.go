@@ -95,7 +95,7 @@ func jwtAuthMiddleware(cfg *ports.HTTPConfig, log ports.Logger) func(http.Handle
 				}
 
 				// Add user to context
-				ctx := context.WithValue(r.Context(), userContextKey, user)
+				ctx := withUser(r.Context(), user)
 				log.Debug("JWT authenticated: user=%s (sub=%s)", user.Username, user.UserID)
 				next.ServeHTTP(w, r.WithContext(ctx))
 			} else {
@@ -144,7 +144,7 @@ func apiKeyAuthMiddleware(cfg *ports.HTTPConfig, log ports.Logger) func(http.Han
 			}
 
 			// Add user to context
-			ctx := context.WithValue(r.Context(), userContextKey, user)
+			ctx := withUser(r.Context(), user)
 			log.Debug("API key authenticated: user=%s", username)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -161,7 +161,7 @@ func noAuthMiddleware() func(http.Handler) http.Handler {
 				UserID:   "anonymous",
 			}
 
-			ctx := context.WithValue(r.Context(), userContextKey, user)
+			ctx := withUser(r.Context(), user)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -171,4 +171,17 @@ func noAuthMiddleware() func(http.Handler) http.Handler {
 func GetUserFromContext(ctx context.Context) (*UserInfo, bool) {
 	user, ok := ctx.Value(userContextKey).(*UserInfo)
 	return user, ok
+}
+
+// userSlot lets the outer logging middleware see who auth let in.
+type userSlot struct{ user *UserInfo }
+
+const userSlotKey contextKey = "user-slot"
+
+// withUser stores the user in the context and fills the logging slot if present.
+func withUser(ctx context.Context, user *UserInfo) context.Context {
+	if slot, ok := ctx.Value(userSlotKey).(*userSlot); ok {
+		slot.user = user
+	}
+	return context.WithValue(ctx, userContextKey, user)
 }

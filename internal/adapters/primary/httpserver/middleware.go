@@ -1,7 +1,9 @@
 package httpserver
 
 import (
+	"context"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -37,11 +39,12 @@ func CORSMiddleware(cfg *ports.HTTPConfig) *cors.Cors {
 
 // RateLimiter implements per-user rate limiting using token bucket algorithm
 type RateLimiter struct {
-	limiters map[string]*rate.Limiter
-	mu       sync.RWMutex
-	rate     rate.Limit
-	burst    int
-	log      ports.Logger
+	limiters  map[string]*rate.Limiter
+	mu        sync.RWMutex
+	rate      rate.Limit
+	burst     int
+	perMinute int
+	log       ports.Logger
 }
 
 // NewRateLimiter creates a new rate limiter
@@ -55,10 +58,11 @@ func NewRateLimiter(requestsPerMinute int, log ports.Logger) *RateLimiter {
 	}
 
 	return &RateLimiter{
-		limiters: make(map[string]*rate.Limiter),
-		rate:     r,
-		burst:    burst,
-		log:      log,
+		limiters:  make(map[string]*rate.Limiter),
+		rate:      r,
+		burst:     burst,
+		perMinute: requestsPerMinute,
+		log:       log,
 	}
 }
 
@@ -103,7 +107,7 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 			// Check if request is allowed
 			if !limiter.Allow() {
 				rl.log.Debug("Rate limit exceeded for user: %s", user.Username)
-				w.Header().Set("X-RateLimit-Limit", "100")
+				w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.perMinute))
 				w.Header().Set("X-RateLimit-Remaining", "0")
 				w.Header().Set("Retry-After", "60")
 				http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
@@ -124,14 +128,16 @@ func LoggingMiddleware(log ports.Logger) func(http.Handler) http.Handler {
 			// Wrap response writer to capture status code
 			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-			next.ServeHTTP(wrapped, r)
+			// Auth runs deeper in the chain and fills this slot, so the log
+			// line can name the user.
+			slot := &userSlot{}
+			next.ServeHTTP(wrapped, r.WithContext(context.WithValue(r.Context(), userSlotKey, slot)))
 
 			duration := time.Since(start)
 
-			// Get user if available
 			username := "anonymous"
-			if user, ok := GetUserFromContext(r.Context()); ok {
-				username = user.Username
+			if slot.user != nil {
+				username = slot.user.Username
 			}
 
 			log.Info("HTTP %s %s %d %s user=%s",
@@ -154,6 +160,18 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Flush passes through so streamed MCP events reach the client immediately.
+func (rw *responseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
 }
 
 // SecurityHeadersMiddleware adds security headers to all responses

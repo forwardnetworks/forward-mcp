@@ -147,7 +147,7 @@ func main() {
 	// Start server transports using errgroup for coordinated lifecycle
 	g, gctx := errgroup.WithContext(ctx)
 
-	// Start HTTP/SSE server if enabled
+	// Start the HTTP server (Streamable HTTP + legacy SSE) if enabled
 	var httpSrv *httpserver.Server
 	if httpEnabled {
 		httpSrv = httpserver.New(&cfg.HTTP, logger)
@@ -155,7 +155,7 @@ func main() {
 			logger.Fatalf("Failed to start HTTP server: %v", err)
 		}
 
-		logger.Info("HTTP/SSE transport started on http://%s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
+		logger.Info("HTTP transport started on %s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
 		logger.Info("HTTP auth mode: %s", cfg.HTTP.AuthMode)
 		if cfg.HTTP.TLSCertFile != "" {
 			logger.Info("TLS enabled: https://%s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
@@ -190,7 +190,7 @@ func main() {
 
 	logger.Info("Forward Networks MCP server is running...")
 	if httpEnabled {
-		logger.Info("  - HTTP/SSE: http://%s:%d/sse", cfg.HTTP.Host, cfg.HTTP.Port)
+		logger.Info("  - Streamable HTTP: %s:%d%s (legacy SSE: %s)", cfg.HTTP.Host, cfg.HTTP.Port, httpserver.MCPPath, httpserver.LegacySSEPath)
 		logger.Info("  - Health: http://%s:%d/health", cfg.HTTP.Host, cfg.HTTP.Port)
 	}
 	if stdinAvailable && !httpEnabled {
