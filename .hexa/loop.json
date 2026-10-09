@@ -55,13 +55,14 @@
         "scripts/test-tool-quality.sh",
         "scripts/test-mcp-tools.go",
         "test-skill-loading.md",
-        "docs/tool-quality-test-results.md"
+        "docs/tool-quality-test-results.md",
+        "CHANGELOG-v4.0.0.md"
       ],
       "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go test -count=1 -skip TestIntegration ./internal/... && hexa analyze . --grade A+",
       "pid": 51545,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-09T18:58:39.816364+00:00"
+      "updated": "2026-10-09T19:01:14.204449+00:00"
     }
   }
 }
