@@ -194,3 +194,44 @@ func TestStartRefusesPlainHTTPWithoutOptIn(t *testing.T) {
 		t.Fatal("Start succeeded without TLS or FORWARD_HTTP_ALLOW_INSECURE")
 	}
 }
+
+func TestConnectionLimitRejectsExtraStreams(t *testing.T) {
+	cfg := apiKeyConfig()
+	cfg.MaxConnections = 1
+	ts := newTestServer(t, cfg, &captureLog{})
+
+	open := func() *http.Response {
+		req, _ := http.NewRequest(http.MethodGet, ts.URL+LegacySSEPath, nil)
+		req.Header.Set("Authorization", "Bearer good-key")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	first := open() // a legacy SSE stream stays open until closed
+	if first.StatusCode != http.StatusOK {
+		t.Fatalf("first stream: status %d", first.StatusCode)
+	}
+	second := open()
+	second.Body.Close()
+	if second.StatusCode != http.StatusServiceUnavailable || second.Header.Get("Retry-After") == "" {
+		t.Fatalf("second stream: status %d, Retry-After %q; want 503 with Retry-After",
+			second.StatusCode, second.Header.Get("Retry-After"))
+	}
+
+	first.Body.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		third := open()
+		third.Body.Close()
+		if third.StatusCode == http.StatusOK {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("slot not released after the first stream closed: status %d", third.StatusCode)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

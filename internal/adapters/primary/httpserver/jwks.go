@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ type JWKSCache struct {
 	log         ports.Logger
 	lastRefresh time.Time
 	refreshTTL  time.Duration
+	client      *http.Client // nil uses the default client
 }
 
 // NewJWKSCache creates a new JWKS cache with automatic refresh
@@ -72,7 +74,11 @@ func (j *JWKSCache) refresh(ctx context.Context) error {
 	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	keySet, err := jwk.Fetch(fetchCtx, j.url)
+	var fetchOpts []jwk.FetchOption
+	if j.client != nil {
+		fetchOpts = append(fetchOpts, jwk.WithHTTPClient(j.client))
+	}
+	keySet, err := jwk.Fetch(fetchCtx, j.url, fetchOpts...)
 	if err != nil {
 		return fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
@@ -92,14 +98,15 @@ func (j *JWKSCache) ValidateToken(ctx context.Context, tokenString string, issue
 		return nil, fmt.Errorf("failed to get JWKS: %w", err)
 	}
 
-	// Parse and validate token
-	token, err := jwt.Parse(
-		[]byte(tokenString),
-		jwt.WithKeySet(keySet),
-		jwt.WithValidate(true),
-		jwt.WithIssuer(issuer),
-		jwt.WithAudience(audience),
-	)
+	// Signature, exp and nbf are always checked; iss and aud when configured.
+	opts := []jwt.ParseOption{jwt.WithKeySet(keySet), jwt.WithValidate(true)}
+	if issuer != "" {
+		opts = append(opts, jwt.WithIssuer(issuer))
+	}
+	if audience != "" {
+		opts = append(opts, jwt.WithAudience(audience))
+	}
+	token, err := jwt.Parse([]byte(tokenString), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("token validation failed: %w", err)
 	}
@@ -107,25 +114,6 @@ func (j *JWKSCache) ValidateToken(ctx context.Context, tokenString string, issue
 	return token, nil
 }
 
-// StartBackgroundRefresh starts a background goroutine to refresh JWKS periodically
-func (j *JWKSCache) StartBackgroundRefresh(ctx context.Context) {
-	ticker := time.NewTicker(j.refreshTTL)
-	defer ticker.Stop()
-
-	// Initial refresh
-	if err := j.refresh(ctx); err != nil {
-		j.log.Error("Initial JWKS refresh failed: %v", err)
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			j.log.Debug("JWKS background refresh stopped")
-			return
-		case <-ticker.C:
-			if err := j.refresh(ctx); err != nil {
-				j.log.Error("JWKS refresh failed: %v", err)
-			}
-		}
-	}
-}
+// jwksHTTPClient is the client used to fetch JWKS. nil means the default
+// client; tests replace it to trust their own TLS server.
+var jwksHTTPClient *http.Client

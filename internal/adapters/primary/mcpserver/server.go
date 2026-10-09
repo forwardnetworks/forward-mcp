@@ -38,7 +38,10 @@ func addTool[In any](server *mcp.Server, name, description string, h func(contex
 		Name:        name,
 		Description: description,
 		Annotations: toolAnnotations[name],
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+	}, func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+		if req != nil && req.Session != nil {
+			ctx = ports.WithSessionID(ctx, req.Session.ID())
+		}
 		res, err := h(ctx, in)
 		return toCallToolResult(res), nil, err
 	})

@@ -44,12 +44,14 @@ func jwtAuthMiddleware(cfg *ports.HTTPConfig, log ports.Logger) func(http.Handle
 	var jwksCache *JWKSCache
 	if cfg.JWTPublicKeyURL != "" {
 		jwksCache = NewJWKSCache(cfg.JWTPublicKeyURL, log)
-
-		// Start background refresh in a goroutine
-		// Note: This will keep running until the process exits
-		// In production, you might want to manage this lifecycle more carefully
-		ctx := context.Background()
-		go jwksCache.StartBackgroundRefresh(ctx)
+		jwksCache.client = jwksHTTPClient
+		// Fetch keys once at startup so the first request is fast. After that,
+		// GetKeySet refreshes them when they are older than the TTL.
+		go func() {
+			if _, err := jwksCache.GetKeySet(context.Background()); err != nil {
+				log.Warn("Initial JWKS fetch failed; will retry on first request: %v", err)
+			}
+		}()
 	}
 
 	return func(next http.Handler) http.Handler {

@@ -558,10 +558,10 @@ func createTestService() *Service {
 		logger:        logger,
 		instanceID:    "test", // Add instance ID for test service
 		defaults: &ServiceDefaults{
-			NetworkID:  "162112",
 			SnapshotID: "",
 			QueryLimit: 100,
 		},
+		networks:        newSessionNetworks("162112"),
 		workflowManager: NewWorkflowManager(100, 1*time.Hour), // Test with smaller limits
 		semanticCache:   semanticCache,
 		queryIndex:      queryIndex,
@@ -1715,7 +1715,7 @@ func TestBloomFilterAutoBuild(t *testing.T) {
 	service.bloomManager = bloom.NewBloomSearchManager(service.logger, "test")
 
 	// Set default network ID
-	service.defaults.NetworkID = "test-network"
+	service.networks = newSessionNetworks("test-network")
 
 	t.Run("auto_build_bloom_filter_for_large_results", func(t *testing.T) {
 		// Test the determineFilterType method directly since the full integration

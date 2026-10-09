@@ -222,7 +222,7 @@ func (s *Service) AnalyzeNetworkPrefixes(ctx context.Context, args NetworkPrefix
 	s.logToolCall("analyze_network_prefixes", args, nil)
 
 	// Use defaults if not specified
-	networkID := s.getNetworkID(args.NetworkID)
+	networkID := s.getNetworkID(ctx, args.NetworkID)
 	snapshotID := s.getSnapshotID(args.SnapshotID)
 	maxResults := s.getQueryLimit(args.MaxResults)
 

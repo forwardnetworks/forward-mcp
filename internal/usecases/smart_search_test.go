@@ -40,6 +40,7 @@ func setupSmartSearchTestService() *Service {
 		logger:          testLogger,
 		instanceID:      "test", // Add instance ID for test service
 		defaults:        &ServiceDefaults{},
+		networks:        newSessionNetworks(""),
 		workflowManager: NewWorkflowManager(100, 1*time.Hour), // Test with smaller limits
 		semanticCache:   semcache.NewSemanticCache(embeddingService, testLogger, "test", nil),
 		queryIndex:      queryIndex,

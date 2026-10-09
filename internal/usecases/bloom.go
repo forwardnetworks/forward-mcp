@@ -18,7 +18,7 @@ func (s *Service) BuildBloomFilter(ctx context.Context, args BuildBloomFilterArg
 	}
 
 	// Use defaults if not specified
-	networkID := s.getNetworkID(args.NetworkID)
+	networkID := s.getNetworkID(ctx, args.NetworkID)
 	chunkSize := args.ChunkSize
 	if chunkSize <= 0 {
 		chunkSize = 200 // Default chunk size
@@ -83,7 +83,7 @@ func (s *Service) SearchBloomFilter(ctx context.Context, args SearchBloomFilterA
 	}
 
 	// Use defaults if not specified
-	networkID := s.getNetworkID(args.NetworkID)
+	networkID := s.getNetworkID(ctx, args.NetworkID)
 
 	// Check if filter exists
 	if !s.bloomManager.IsFilterAvailable(networkID, args.FilterType) {

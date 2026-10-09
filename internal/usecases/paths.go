@@ -37,7 +37,7 @@ func (s *Service) searchPathsBulk(ctx context.Context, args SearchPathsBulkArgs)
 	s.logToolCall("search_paths_bulk", args, nil)
 
 	// Use defaults if not specified
-	networkID := s.getNetworkID(args.NetworkID)
+	networkID := s.getNetworkID(ctx, args.NetworkID)
 	snapshotID := s.getSnapshotID(args.SnapshotID)
 
 	// Note: snapshotId is optional for bulk API - if omitted, the network's latest processed Snapshot is used

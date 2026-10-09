@@ -190,13 +190,15 @@ func (s *Service) resolveNetworkIDByName(ctx context.Context, name string) (stri
 func (s *Service) GetDefaultSettings(ctx context.Context, args GetDefaultSettingsArgs) (*Result, error) {
 	s.logToolCall("get_default_settings", args, nil)
 
+	defaultNetworkID := s.getNetworkID(ctx, "")
+
 	// Get network name if possible
 	networkName := "Not set"
-	if s.defaults.NetworkID != "" {
+	if defaultNetworkID != "" {
 		networks, err := s.forwardClient.GetNetworks(ctx)
 		if err == nil {
 			for _, network := range networks {
-				if network.ID == s.defaults.NetworkID {
+				if network.ID == defaultNetworkID {
 					networkName = fmt.Sprintf("%s (%s)", network.Name, network.ID)
 					break
 				}
@@ -205,7 +207,7 @@ func (s *Service) GetDefaultSettings(ctx context.Context, args GetDefaultSetting
 	}
 
 	settings := map[string]interface{}{
-		"default_network_id":   s.defaults.NetworkID,
+		"default_network_id":   defaultNetworkID,
 		"default_network_name": networkName,
 		"default_snapshot_id":  s.defaults.SnapshotID,
 		"default_query_limit":  s.defaults.QueryLimit,
@@ -220,7 +222,7 @@ func (s *Service) GetDefaultSettings(ctx context.Context, args GetDefaultSetting
 	response += "• Update environment variables (FORWARD_DEFAULT_NETWORK_ID, etc.)\n"
 	response += "• Modify your .env file or config.json\n\n"
 
-	if s.defaults.NetworkID == "" {
+	if defaultNetworkID == "" {
 		response += " No default network is set. Consider setting FORWARD_DEFAULT_NETWORK_ID in your environment."
 	}
 
@@ -276,8 +278,8 @@ func (s *Service) SetDefaultNetwork(ctx context.Context, args SetDefaultNetworkA
 		}
 	}
 
-	// Update the default (for this session)
-	s.defaults.NetworkID = networkID
+	// Update the default for this MCP session only
+	s.networks.set(ctx, networkID)
 
 	response := "Default network updated successfully!\n\n"
 	response += fmt.Sprintf("New default: %s (ID: %s)\n\n", networkName, networkID)

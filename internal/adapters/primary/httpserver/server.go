@@ -154,9 +154,16 @@ func (s *Server) buildHandlerChain(handler http.Handler) http.Handler {
 // protectMiddleware returns auth followed by per-user rate limiting
 func (s *Server) protectMiddleware() func(http.Handler) http.Handler {
 	auth := AuthMiddleware(s.config, s.log)
+	var limit func(http.Handler) http.Handler
+	if s.config.MaxConnections > 0 {
+		limit = ConnectionLimit(s.config.MaxConnections, s.log)
+	}
 	return func(next http.Handler) http.Handler {
 		if s.config.RateLimit > 0 {
 			next = s.rateLimiter.Middleware()(next)
+		}
+		if limit != nil {
+			next = limit(next)
 		}
 		return auth(next)
 	}

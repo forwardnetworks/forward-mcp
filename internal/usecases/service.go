@@ -112,6 +112,7 @@ type Service struct {
 	logger          ports.Logger
 	instanceID      string // Unique identifier for this Forward Networks instance
 	defaults        *ServiceDefaults
+	networks        *sessionNetworks // default network per MCP session
 	workflowManager *WorkflowManager
 	semanticCache   ports.ResultCache
 	queryIndex      ports.QueryIndex
@@ -127,7 +128,6 @@ type Service struct {
 
 // ServiceDefaults holds default values for the MCP service
 type ServiceDefaults struct {
-	NetworkID  string
 	SnapshotID string
 	QueryLimit int
 }
@@ -186,10 +186,10 @@ func New(cfg *domain.Config, logger ports.Logger, deps Deps) *Service {
 		logger:        logger,
 		instanceID:    instanceID,
 		defaults: &ServiceDefaults{
-			NetworkID:  cfg.Forward.DefaultNetworkID,
 			SnapshotID: cfg.Forward.DefaultSnapshotID,
 			QueryLimit: cfg.Forward.DefaultQueryLimit,
 		},
+		networks:        newSessionNetworks(cfg.Forward.DefaultNetworkID),
 		workflowManager: NewWorkflowManager(1000, 24*time.Hour), // Max 1000 sessions, 24h TTL
 		semanticCache:   semanticCache,
 		queryIndex:      queryIndex,
@@ -394,13 +394,13 @@ func (s *Service) validateNonEmpty(fieldName, value string) error {
 	return nil
 }
 
-// Helper function to get network ID with fallback to default
-func (s *Service) getNetworkID(networkID string) string {
+// getNetworkID returns networkID, or the caller's session default when it is empty.
+func (s *Service) getNetworkID(ctx context.Context, networkID string) string {
 	if networkID != "" {
 		return networkID
 	}
-	if s.defaults != nil {
-		return s.defaults.NetworkID
+	if s.networks != nil {
+		return s.networks.get(ctx)
 	}
 	return ""
 }

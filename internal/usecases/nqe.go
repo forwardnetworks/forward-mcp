@@ -62,7 +62,7 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 	}
 
 	// Use defaults if not specified
-	networkID := s.getNetworkID(args.NetworkID)
+	networkID := s.getNetworkID(ctx, args.NetworkID)
 	if err := s.validateNetworkID(networkID); err != nil {
 		return nil, err
 	}

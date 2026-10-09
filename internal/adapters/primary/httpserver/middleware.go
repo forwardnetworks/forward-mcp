@@ -200,3 +200,22 @@ func SecurityHeadersMiddleware() func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// ConnectionLimit caps concurrent requests (including open streams) to the
+// wrapped handler. Requests beyond the cap get 503 instead of queueing.
+func ConnectionLimit(max int, log ports.Logger) func(http.Handler) http.Handler {
+	slots := make(chan struct{}, max)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case slots <- struct{}{}:
+				defer func() { <-slots }()
+				next.ServeHTTP(w, r)
+			default:
+				log.Warn("Connection limit reached (%d); rejecting %s %s", max, r.Method, r.URL.Path)
+				w.Header().Set("Retry-After", "5")
+				http.Error(w, "Too many open connections, retry shortly", http.StatusServiceUnavailable)
+			}
+		})
+	}
+}

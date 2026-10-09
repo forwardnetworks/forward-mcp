@@ -96,7 +96,7 @@ func (s *Service) SearchEntities(ctx context.Context, args SearchEntitiesArgs) (
 	// Check if we have bloom filters available for NQE result entities
 	if args.EntityType == "nqe_result" && s.bloomManager != nil {
 		// Try to use bloom filter for faster searching
-		networkID := s.getNetworkID("")
+		networkID := s.getNetworkID(ctx, "")
 		if networkID != "" {
 			// Check if we have any bloom filters for this network
 			stats := s.bloomManager.GetFilterStats()
@@ -521,7 +521,7 @@ func (s *Service) GetNQEResultSummary(ctx context.Context, args GetNQEResultChun
 
 	// Check if bloom filter is available for this data
 	if s.bloomManager != nil {
-		networkID := s.getNetworkID(args.NetworkID)
+		networkID := s.getNetworkID(ctx, args.NetworkID)
 		if networkID != "" {
 			stats := s.bloomManager.GetFilterStats()
 			for filterKey, metadata := range stats {
