@@ -17,16 +17,16 @@ type DeleteNetworkArgs struct {
 }
 
 type UpdateNetworkArgs struct {
-	NetworkID   string `json:"network_id" jsonschema:"Network UUID to update. Required.;format=uuid"`
+	NetworkID   string `json:"network_id" jsonschema:"Network ID to update. Required."`
 	Name        string `json:"name,omitempty" jsonschema:"New name for the network. Optional; at least one of name or description required."`
 	Description string `json:"description,omitempty" jsonschema:"New description for the network. Optional; at least one of name or description required."`
 }
 
 // NQE Tool Arguments
 type RunNQEQueryByIDArgs struct {
-	NetworkID  string                 `json:"network_id,omitempty" jsonschema:"Network UUID. Optional if default network is set.;format=uuid"`
+	NetworkID  string                 `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
 	QueryID    string                 `json:"query_id" jsonschema:"Query ID from NQE library. Required. Use list_nqe_queries or search_nqe_queries to find query IDs."`
-	SnapshotID string                 `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	SnapshotID string                 `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
 	Parameters map[string]interface{} `json:"parameters,omitempty" jsonschema:"Query parameters for dynamic queries. Optional; depends on query definition."`
 	Options    *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for sorting, filtering, pagination. Optional."`
 	AllResults bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results with automatic pagination. Optional; default false."`
@@ -71,7 +71,7 @@ type GetDeviceLocationsArgs struct {
 
 // Snapshot Management Tool Arguments
 type ListSnapshotsArgs struct {
-	NetworkID  string `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
+	NetworkID  string `json:"network_id" jsonschema:"Network ID. Required."`
 	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of snapshots to return. Optional; default 25, max 100."`
 	Offset     int    `json:"offset,omitempty" jsonschema:"Number of snapshots to skip for pagination. Optional; default 0."`
 	AllResults bool   `json:"all_results,omitempty" jsonschema:"If true, fetch all snapshots with automatic pagination and store in memory. Optional; default false."`
@@ -143,33 +143,33 @@ type CreateLocationItemArgs struct {
 
 // First-Class Query Tool Arguments - Critical Network Operations
 type GetDeviceBasicInfoArgs struct {
-	NetworkID  string           `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
-	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	NetworkID  string           `json:"network_id" jsonschema:"Network ID. Required."`
+	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
 	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
 }
 
 type GetDeviceHardwareArgs struct {
-	NetworkID  string           `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
-	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	NetworkID  string           `json:"network_id" jsonschema:"Network ID. Required."`
+	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
 	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
 }
 
 type GetHardwareSupportArgs struct {
-	NetworkID  string           `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
-	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	NetworkID  string           `json:"network_id" jsonschema:"Network ID. Required."`
+	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
 	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
 }
 
 type GetOSSupportArgs struct {
-	NetworkID  string           `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
-	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	NetworkID  string           `json:"network_id" jsonschema:"Network ID. Required."`
+	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
 	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
 }
 
 // SearchConfigsArgs represents arguments for configuration search
 type SearchConfigsArgs struct {
-	NetworkID    string                 `json:"network_id,omitempty" jsonschema:"Network UUID. Optional if default network is set.;format=uuid"`
-	SnapshotID   string                 `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	NetworkID    string                 `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
+	SnapshotID   string                 `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
 	SearchTerm   string                 `json:"search_term" jsonschema:"Text pattern to search for in configurations. Required. Supports hierarchical format with indentation."`
 	DeviceFilter string                 `json:"device_filter,omitempty" jsonschema:"Device name pattern to filter results. Optional; searches all devices if omitted."`
 	Parameters   map[string]interface{} `json:"parameters,omitempty" jsonschema:"Additional query parameters. Optional."`
@@ -179,9 +179,9 @@ type SearchConfigsArgs struct {
 
 // GetConfigDiffArgs represents arguments for configuration comparison
 type GetConfigDiffArgs struct {
-	NetworkID      string                 `json:"network_id,omitempty" jsonschema:"Network UUID. Optional if default network is set.;format=uuid"`
-	BeforeSnapshot string                 `json:"before_snapshot" jsonschema:"Earlier snapshot UUID for comparison. Required.;format=uuid"`
-	AfterSnapshot  string                 `json:"after_snapshot" jsonschema:"Later snapshot UUID for comparison. Required.;format=uuid"`
+	NetworkID      string                 `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
+	BeforeSnapshot string                 `json:"before_snapshot" jsonschema:"Earlier snapshot UUID for comparison. Required."`
+	AfterSnapshot  string                 `json:"after_snapshot" jsonschema:"Later snapshot UUID for comparison. Required."`
 	DeviceFilter   string                 `json:"device_filter,omitempty" jsonschema:"Device name pattern to filter results. Optional; compares all devices if omitted."`
 	Parameters     map[string]interface{} `json:"parameters,omitempty" jsonschema:"Additional query parameters. Optional."`
 	Options        *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
@@ -351,8 +351,8 @@ type LargeNQEResultsWorkflowArgs struct {
 
 // Path Search Arguments
 type SearchPathsArgs struct {
-	NetworkID               string `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
-	SnapshotID              string `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	NetworkID               string `json:"network_id" jsonschema:"Network ID. Required."`
+	SnapshotID              string `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
 	From                    string `json:"from,omitempty" jsonschema:"Source device name. Optional; can use src_ip instead. At least one of 'from' or 'src_ip' recommended."`
 	SrcIP                   string `json:"src_ip,omitempty" jsonschema:"Source IP address or CIDR subnet. Optional; can use 'from' instead.;format=ipv4"`
 	DstIP                   string `json:"dst_ip" jsonschema:"Destination IP address or CIDR. Required. Must be valid IP, not device name.;format=ipv4"`
@@ -398,8 +398,8 @@ type NetworkPrefixDiscoveryArgs struct {
 }
 
 type NetworkPrefixAnalysisArgs struct {
-	NetworkID    string   `json:"network_id,omitempty" jsonschema:"Network UUID. Optional if default network is set.;format=uuid"`
-	SnapshotID   string   `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	NetworkID    string   `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
+	SnapshotID   string   `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
 	PrefixLevels []string `json:"prefix_levels,omitempty" jsonschema:"Aggregation levels to analyze. Example: ['/8', '/16', '/24']. Optional; defaults to common levels."`
 	FromDevices  []string `json:"from_devices,omitempty" jsonschema:"Source device names for connectivity analysis. Optional; analyzes all devices if omitted."`
 	ToDevices    []string `json:"to_devices,omitempty" jsonschema:"Destination device names for connectivity analysis. Optional; analyzes all devices if omitted."`
