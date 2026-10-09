@@ -114,9 +114,16 @@ func (s *Server) Start(ctx context.Context, mcpServer *mcp.Server) error {
 			}
 		}()
 	} else {
-		s.log.Warn("Starting HTTP server on %s (TLS not configured - use only for development)", addr)
+		// SECURITY: Require explicit opt-in for insecure HTTP
+		// This should NEVER be used in production
+		if !s.config.AllowInsecure {
+			return fmt.Errorf("SECURITY ERROR: TLS certificates required. Set FORWARD_HTTP_TLS_CERT and FORWARD_HTTP_TLS_KEY, " +
+				"or set FORWARD_HTTP_ALLOW_INSECURE=true for development only")
+		}
 
-		// Start HTTP server
+		s.log.Warn("SECURITY WARNING: Starting HTTP server on %s without TLS - DEVELOPMENT ONLY, NEVER USE IN PRODUCTION", addr)
+
+		// Start HTTP server (insecure, development only)
 		go func() {
 			if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				s.log.Error("HTTP server error: %v", err)

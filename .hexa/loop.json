@@ -38,7 +38,6 @@
     },
     "b5d1991e-03f1-4b13-a13f-a1eb6b14c176": {
       "files": [
-        "internal/domain/config.go",
         "internal/usecases/executable_queries.go",
         "internal/usecases/paths.go",
         "examples/test_mcp.go",
@@ -56,13 +55,22 @@
         "scripts/test-mcp-tools.go",
         "test-skill-loading.md",
         "docs/tool-quality-test-results.md",
-        "CHANGELOG-v4.0.0.md"
+        "CHANGELOG-v4.0.0.md",
+        "README.md",
+        "docs/adrs/ADR-2610091600-http-sse-transport.md",
+        "internal/adapters/primary/httpserver/auth.go",
+        "internal/adapters/primary/httpserver/health.go",
+        "internal/adapters/primary/httpserver/middleware.go",
+        "internal/ports/config.go",
+        "internal/domain/config.go",
+        "internal/adapters/primary/httpserver/server.go",
+        "internal/adapters/secondary/envconfig/config.go"
       ],
       "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go test -count=1 -skip TestIntegration ./internal/... && hexa analyze . --grade A+",
       "pid": 51545,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-09T19:01:14.204449+00:00"
+      "updated": "2026-10-09T19:19:48.157195+00:00"
     }
   }
 }

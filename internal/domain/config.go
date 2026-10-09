@@ -85,7 +85,8 @@ type HTTPConfig struct {
 	Host            string            `json:"host" env:"FORWARD_HTTP_HOST"`
 	TLSCertFile     string            `json:"tlsCertFile" env:"FORWARD_HTTP_TLS_CERT"`
 	TLSKeyFile      string            `json:"tlsKeyFile" env:"FORWARD_HTTP_TLS_KEY"`
-	AuthMode        string            `json:"authMode" env:"FORWARD_HTTP_AUTH_MODE"` // "jwt", "api-key", "none"
+	AllowInsecure   bool              `json:"allowInsecure" env:"FORWARD_HTTP_ALLOW_INSECURE"` // DEVELOPMENT ONLY - allows unencrypted HTTP
+	AuthMode        string            `json:"authMode" env:"FORWARD_HTTP_AUTH_MODE"`           // "jwt", "api-key", "none"
 	JWTIssuer       string            `json:"jwtIssuer" env:"FORWARD_HTTP_JWT_ISSUER"`
 	JWTAudience     string            `json:"jwtAudience" env:"FORWARD_HTTP_JWT_AUDIENCE"`
 	JWTPublicKeyURL string            `json:"jwtPublicKeyUrl" env:"FORWARD_HTTP_JWT_PUBLIC_KEY_URL"`
