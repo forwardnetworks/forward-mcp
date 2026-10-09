@@ -1,8 +1,51 @@
-# ADR-2610091600: HTTP/SSE Transport for Remote MCP Server
+# ADR-2610091600: HTTP Transport for Remote MCP Server
 
-**Status:** Proposed  
+**Status:** Accepted, amended (phases 1, 2, 4 and 5 done; phase 3 not started)  
 **Date:** 2026-10-09  
 **Context:** Hexagonal architecture (ADR-2610091315)
+
+---
+
+## Amendment (2026-10-09): what was built
+
+The decision below was written before implementation. Parts of it are now
+wrong; this section takes precedence over them.
+
+**Transport: Streamable HTTP, not SSE.** The current MCP specification
+replaced HTTP+SSE with Streamable HTTP. The primary endpoint is `/mcp`
+(`mcp.NewStreamableHTTPHandler`). HTTP+SSE remains at `/sse` for older
+clients only. The "Transport Layer" section, the endpoint list, the client
+configuration, and the "WebSocket instead of SSE" alternative describe the
+original plan.
+
+**No server-wide write timeout.** It cut long-lived streams. Only `/health`
+and `/ready` have a write timeout.
+
+**Session state.** The default network (`set_default_network`) is per MCP
+session. The result cache and the memory graph are shared by all users, by
+design: every user reaches Forward with the server's credentials.
+
+**Security as built** (`internal/adapters/secondary/envconfig/validate.go`
+refuses unsafe settings at startup):
+- TLS 1.3 is required. `FORWARD_HTTP_ALLOW_INSECURE=true` opts out, for a
+  TLS-terminating proxy or local development only.
+- Self-signed and internal-CA certificates are trusted explicitly, never by
+  disabling verification: `FORWARD_CA_CERT_PATH` for the Forward API, and
+  `FORWARD_HTTP_JWKS_CA_CERT` for the identity provider.
+- CORS `*` is rejected. Cross-origin browser POSTs are blocked unless the
+  origin is trusted.
+- JWT: signature, `exp` and `nbf` are always checked; `iss` and `aud` are
+  checked when configured. The JWKS URL must be `https://`.
+- `FORWARD_HTTP_MAX_CONNECTIONS` caps open requests and streams (503 with
+  `Retry-After`). Per-user token-bucket rate limit.
+
+**Dependencies actually used:** `github.com/lestrrat-go/jwx/v3` (JWT and
+JWKS; v2 is deprecated), `github.com/rs/cors`, `golang.org/x/time/rate`.
+The OpenTelemetry and `golang-jwt` modules listed under "New Components"
+are not used.
+
+**Not built:** phase 3 (OpenTelemetry tracing, Prometheus metrics) and the
+Kubernetes manifests. The `Dockerfile` is written but has not been built.
 
 ---
 

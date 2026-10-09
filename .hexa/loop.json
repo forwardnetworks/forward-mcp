@@ -42,7 +42,6 @@
         "test-skill-loading.md",
         "docs/tool-quality-test-results.md",
         "CHANGELOG-v4.0.0.md",
-        "docs/adrs/ADR-2610091600-http-sse-transport.md",
         "internal/adapters/primary/httpserver/health.go",
         "internal/ports/config.go",
         "internal/domain/config.go",
@@ -77,13 +76,14 @@
         "internal/adapters/secondary/envconfig/validate_test.go",
         "env.example",
         "README.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "docs/adrs/ADR-2610091600-http-sse-transport.md"
       ],
       "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go test -count=1 -skip TestIntegration ./internal/... && hexa analyze . --grade A+",
       "pid": 51545,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-09T20:29:17.843221+00:00"
+      "updated": "2026-10-09T20:30:19.204530+00:00"
     }
   }
 }
