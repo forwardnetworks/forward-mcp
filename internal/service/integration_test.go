@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"github.com/forward-mcp/internal/adapters/secondary/bloom"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
@@ -64,6 +65,7 @@ func setupIntegrationTest(t *testing.T) *ForwardMCPService {
 		API:        forwardapi.NewClient(&cfg.Forward, log),
 		Cache:      semcache.NewSemanticCache(embedder, log, InstanceID(cfg), &cfg.Forward.SemanticCache),
 		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
+		Bloom:      bloom.NewBloomSearchManager(log, InstanceID(cfg)),
 	})
 }
 

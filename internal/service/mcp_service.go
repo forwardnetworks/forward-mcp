@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -126,19 +125,18 @@ func (wm *WorkflowManager) Close() {
 
 // ForwardMCPService implements Forward Networks MCP tools using mcp-golang
 type ForwardMCPService struct {
-	forwardClient     ports.ForwardAPI
-	config            *domain.Config
-	logger            ports.Logger
-	instanceID        string // Unique identifier for this Forward Networks instance
-	defaults          *ServiceDefaults
-	workflowManager   *WorkflowManager
-	semanticCache     ports.ResultCache
-	queryIndex        ports.QueryIndex
-	database          ports.QueryStore
-	memorySystem      ports.MemoryStore   // Knowledge graph memory system
-	apiTracker        *APIMemoryTracker   // API result tracking using memory system
-	bloomManager      *BloomSearchManager // Bloom filter for efficient large result filtering
-	bloomIndexManager *BloomIndexManager  // Persistent bloom index for large NQE results
+	forwardClient   ports.ForwardAPI
+	config          *domain.Config
+	logger          ports.Logger
+	instanceID      string // Unique identifier for this Forward Networks instance
+	defaults        *ServiceDefaults
+	workflowManager *WorkflowManager
+	semanticCache   ports.ResultCache
+	queryIndex      ports.QueryIndex
+	database        ports.QueryStore
+	memorySystem    ports.MemoryStore  // Knowledge graph memory system
+	apiTracker      *APIMemoryTracker  // API result tracking using memory system
+	bloomManager    ports.BloomFilters // Bloom filters for efficient large result filtering
 	// Context cancellation for graceful shutdown
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -162,6 +160,7 @@ type Deps struct {
 	// pointer of a concrete type.
 	QueryStore ports.QueryStore
 	Memory     ports.MemoryStore
+	Bloom      ports.BloomFilters
 }
 
 // NewForwardMCPService creates the service from its configuration and deps.
@@ -192,14 +191,7 @@ func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, deps Deps) *F
 		logger.Info("API memory tracker initialized for tracking API results and relationships")
 	}
 
-	// Create bloom search manager for efficient large result filtering
-	bloomManager := NewBloomSearchManager(logger, instanceID)
-	logger.Info("Bloom search manager initialized for efficient large result filtering")
-
-	// Create persistent bloom index manager for large NQE results
-	bloomIndexDir := filepath.Join("data", "bloom_indexes", instanceID)
-	bloomIndexManager := NewBloomIndexManager(logger, bloomIndexDir)
-	logger.Info("Persistent bloom index manager initialized for large NQE results")
+	bloomManager := deps.Bloom
 
 	// Create context for cancellation
 	ctx, cancelFunc := context.WithCancel(context.Background())
@@ -214,16 +206,15 @@ func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, deps Deps) *F
 			SnapshotID: cfg.Forward.DefaultSnapshotID,
 			QueryLimit: cfg.Forward.DefaultQueryLimit,
 		},
-		workflowManager:   NewWorkflowManager(1000, 24*time.Hour), // Max 1000 sessions, 24h TTL
-		semanticCache:     semanticCache,
-		queryIndex:        queryIndex,
-		database:          database,
-		memorySystem:      memorySystem,
-		apiTracker:        apiTracker,
-		bloomManager:      bloomManager,
-		bloomIndexManager: bloomIndexManager,
-		ctx:               ctx,
-		cancelFunc:        cancelFunc,
+		workflowManager: NewWorkflowManager(1000, 24*time.Hour), // Max 1000 sessions, 24h TTL
+		semanticCache:   semanticCache,
+		queryIndex:      queryIndex,
+		database:        database,
+		memorySystem:    memorySystem,
+		apiTracker:      apiTracker,
+		bloomManager:    bloomManager,
+		ctx:             ctx,
+		cancelFunc:      cancelFunc,
 	}
 
 	// Set up database callback to automatically refresh query index when database is updated
@@ -348,17 +339,6 @@ func (s *ForwardMCPService) Shutdown(timeout time.Duration) error {
 			if err := s.memorySystem.Close(); err != nil {
 				s.logger.Error("Failed to close memory system: %v", err)
 				return fmt.Errorf("failed to close memory system: %w", err)
-			}
-			return nil
-		})
-	}
-
-	// Close bloom index manager
-	if s.bloomIndexManager != nil {
-		g.Go(func() error {
-			if err := s.bloomIndexManager.Close(); err != nil {
-				s.logger.Error("Failed to close bloom index manager: %v", err)
-				return fmt.Errorf("failed to close bloom index manager: %w", err)
 			}
 			return nil
 		})

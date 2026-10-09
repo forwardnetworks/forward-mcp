@@ -1,4 +1,6 @@
-package service
+// Package bloom is the ports.BloomFilters adapter: in-memory bloom filters
+// over large NQE results, built on danthegoodman1/bloomsearch.
+package bloom
 
 import (
 	"fmt"
@@ -8,7 +10,6 @@ import (
 	"time"
 
 	"github.com/danthegoodman1/bloomsearch"
-	"github.com/forward-mcp/internal/domain"
 )
 
 // BloomSearchManager integrates bloomsearch library for efficient large result filtering
@@ -17,30 +18,10 @@ type BloomSearchManager struct {
 	engine *bloomsearch.BloomSearchEngine
 
 	// Metadata tracking
-	filterMetadata map[string]*FilterMetadata
+	filterMetadata map[string]*ports.FilterMetadata
 	mutex          sync.RWMutex
 	logger         ports.Logger
 	instanceID     string
-}
-
-// FilterMetadata tracks bloom filter statistics and configuration
-type FilterMetadata struct {
-	NetworkID         string    `json:"network_id"`
-	FilterType        string    `json:"filter_type"`
-	ItemCount         int64     `json:"item_count"`
-	FalsePositiveRate float64   `json:"false_positive_rate"`
-	MemoryUsage       int64     `json:"memory_usage_bytes"`
-	LastUpdated       time.Time `json:"last_updated"`
-	ChunkCount        int       `json:"chunk_count"`
-}
-
-// BloomSearchResult represents a filtered result from bloomsearch
-type BloomSearchResult struct {
-	MatchedItems []map[string]interface{} `json:"matched_items"`
-	FilterStats  *FilterMetadata          `json:"filter_stats"`
-	SearchTime   time.Duration            `json:"search_time"`
-	TotalItems   int                      `json:"total_items"`
-	MatchedCount int                      `json:"matched_count"`
 }
 
 // NewBloomSearchManager creates a new bloom search manager
@@ -54,7 +35,7 @@ func NewBloomSearchManager(logger ports.Logger, instanceID string) *BloomSearchM
 	if err != nil {
 		logger.Error("Failed to create bloom search engine: %v", err)
 		return &BloomSearchManager{
-			filterMetadata: make(map[string]*FilterMetadata),
+			filterMetadata: make(map[string]*ports.FilterMetadata),
 			logger:         logger,
 			instanceID:     instanceID,
 		}
@@ -62,7 +43,7 @@ func NewBloomSearchManager(logger ports.Logger, instanceID string) *BloomSearchM
 
 	return &BloomSearchManager{
 		engine:         engine,
-		filterMetadata: make(map[string]*FilterMetadata),
+		filterMetadata: make(map[string]*ports.FilterMetadata),
 		logger:         logger,
 		instanceID:     instanceID,
 	}
@@ -72,7 +53,7 @@ func NewBloomSearchManager(logger ports.Logger, instanceID string) *BloomSearchM
 func (bsm *BloomSearchManager) BuildFilterFromNQEResult(
 	networkID string,
 	filterType string,
-	result *domain.NQERunResult,
+	result *ports.NQERunResult,
 	chunkSize int,
 ) error {
 	bsm.mutex.Lock()
@@ -94,7 +75,7 @@ func (bsm *BloomSearchManager) BuildFilterFromNQEResult(
 
 	// Update metadata
 	filterKey := fmt.Sprintf("%s-%s", networkID, filterType)
-	bsm.filterMetadata[filterKey] = &FilterMetadata{
+	bsm.filterMetadata[filterKey] = &ports.FilterMetadata{
 		NetworkID:         networkID,
 		FilterType:        filterType,
 		ItemCount:         int64(totalItems),
@@ -116,7 +97,7 @@ func (bsm *BloomSearchManager) SearchFilter(
 	filterType string,
 	searchTerms []string,
 	allItems []map[string]interface{},
-) (*BloomSearchResult, error) {
+) (*ports.BloomSearchResult, error) {
 	bsm.mutex.RLock()
 	defer bsm.mutex.RUnlock()
 
@@ -156,7 +137,7 @@ func (bsm *BloomSearchManager) SearchFilter(
 	bsm.logger.Debug("Bloom search completed - %d/%d items matched for terms %v in %v",
 		len(matchedItems), len(allItems), searchTerms, searchTime)
 
-	return &BloomSearchResult{
+	return &ports.BloomSearchResult{
 		MatchedItems: matchedItems,
 		FilterStats:  metadata,
 		SearchTime:   searchTime,
@@ -199,11 +180,11 @@ func (bsm *BloomSearchManager) createSearchableText(item map[string]interface{})
 }
 
 // GetFilterStats returns statistics for all filters
-func (bsm *BloomSearchManager) GetFilterStats() map[string]*FilterMetadata {
+func (bsm *BloomSearchManager) GetFilterStats() map[string]*ports.FilterMetadata {
 	bsm.mutex.RLock()
 	defer bsm.mutex.RUnlock()
 
-	stats := make(map[string]*FilterMetadata)
+	stats := make(map[string]*ports.FilterMetadata)
 	for key, metadata := range bsm.filterMetadata {
 		stats[key] = metadata
 	}
@@ -227,7 +208,7 @@ func (bsm *BloomSearchManager) ClearAllFilters() {
 	bsm.mutex.Lock()
 	defer bsm.mutex.Unlock()
 
-	bsm.filterMetadata = make(map[string]*FilterMetadata)
+	bsm.filterMetadata = make(map[string]*ports.FilterMetadata)
 
 	bsm.logger.Info("Cleared all bloom filters")
 }
@@ -259,3 +240,6 @@ func (bsm *BloomSearchManager) IsFilterAvailable(networkID, filterType string) b
 func containsString(text, substring string) bool {
 	return strings.Contains(strings.ToLower(text), strings.ToLower(substring))
 }
+
+// BloomSearchManager implements the BloomFilters port.
+var _ ports.BloomFilters = (*BloomSearchManager)(nil)

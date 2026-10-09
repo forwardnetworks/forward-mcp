@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/forward-mcp/internal/adapters/secondary/bloom"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/adapters/secondary/semcache"
@@ -562,16 +563,15 @@ func createTestService() *ForwardMCPService {
 			SnapshotID: "",
 			QueryLimit: 100,
 		},
-		workflowManager:   NewWorkflowManager(100, 1*time.Hour), // Test with smaller limits
-		semanticCache:     semanticCache,
-		queryIndex:        queryIndex,
-		database:          nil, // No database for tests
-		memorySystem:      memory,
-		apiTracker:        NewAPIMemoryTracker(memory, logger, "test"),
-		bloomManager:      NewBloomSearchManager(logger, "test"),
-		bloomIndexManager: NewBloomIndexManager(logger, "/tmp"),
-		ctx:               ctx,
-		cancelFunc:        cancel,
+		workflowManager: NewWorkflowManager(100, 1*time.Hour), // Test with smaller limits
+		semanticCache:   semanticCache,
+		queryIndex:      queryIndex,
+		database:        nil, // No database for tests
+		memorySystem:    memory,
+		apiTracker:      NewAPIMemoryTracker(memory, logger, "test"),
+		bloomManager:    bloom.NewBloomSearchManager(logger, "test"),
+		ctx:             ctx,
+		cancelFunc:      cancel,
 	}
 
 	return service
@@ -1738,12 +1738,7 @@ func TestFormatBytes(t *testing.T) {
 func TestBloomFilterAutoBuild(t *testing.T) {
 	service := createTestService()
 
-	// Mock bloom manager
-	service.bloomManager = &BloomSearchManager{
-		filterMetadata: make(map[string]*FilterMetadata),
-		logger:         service.logger,
-		instanceID:     "test",
-	}
+	service.bloomManager = bloom.NewBloomSearchManager(service.logger, "test")
 
 	// Set default network ID
 	service.defaults.NetworkID = "test-network"

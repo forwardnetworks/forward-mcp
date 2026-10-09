@@ -18,11 +18,12 @@
           "title": "Phase 1: domain, ports, forwardapi adapter, contexts threaded"
         },
         {
-          "status": "doing",
+          "done_at": "2026-10-09T17:32:29.552903+00:00",
+          "status": "done",
           "title": "Phase 2: logger, config and storage ports and adapters"
         },
         {
-          "status": "todo",
+          "status": "doing",
           "title": "Phase 3: split mcp_service.go into usecases and adapters/primary/mcp; compose in main.go"
         },
         {
@@ -30,7 +31,7 @@
           "title": "Phase 4: harden to grade A; docs"
         }
       ],
-      "updated": "2026-10-09T17:18:28.676220+00:00"
+      "updated": "2026-10-09T17:32:29.553577+00:00"
     }
   }
 }

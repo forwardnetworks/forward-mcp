@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/forward-mcp/internal/adapters/secondary/bloom"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
@@ -211,5 +212,6 @@ func newDeps(cfg *ports.Config, log ports.Logger) service.Deps {
 		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
 		QueryStore: queryStore,
 		Memory:     memory,
+		Bloom:      bloom.NewBloomSearchManager(log, instanceID),
 	}
 }
