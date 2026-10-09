@@ -76,23 +76,3 @@ type MCPConfig struct {
 	Version    string
 	MaxRetries int
 }
-
-// RedisConfig holds Redis-specific configuration for distributed caching and storage
-type RedisConfig struct {
-	Enabled  bool   `json:"enabled" env:"REDIS_ENABLED"`
-	Address  string `json:"address" env:"REDIS_ADDRESS"`
-	Port     int    `json:"port" env:"REDIS_PORT"`
-	Password string `json:"password" env:"REDIS_PASSWORD"`
-	Database int    `json:"database" env:"REDIS_DATABASE"`
-	PoolSize int    `json:"poolSize" env:"REDIS_POOL_SIZE"`
-
-	// TLS Configuration
-	TLSEnabled bool   `json:"tlsEnabled" env:"REDIS_TLS_ENABLED"`
-	CACertPath string `json:"caCertPath" env:"REDIS_CA_CERT_PATH"`
-
-	// Connection settings
-	MaxRetries      int `json:"maxRetries" env:"REDIS_MAX_RETRIES"`
-	MinIdleConns    int `json:"minIdleConns" env:"REDIS_MIN_IDLE_CONNS"`
-	ConnMaxIdleTime int `json:"connMaxIdleTime" env:"REDIS_CONN_MAX_IDLE_TIME"` // seconds
-	ConnMaxLifetime int `json:"connMaxLifetime" env:"REDIS_CONN_MAX_LIFETIME"`  // seconds
-}

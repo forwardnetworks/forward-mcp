@@ -92,10 +92,10 @@ func main() {
 	fmt.Println("   - Results can be formatted as JSON objects for better readability")
 	fmt.Println("   - Common use cases: device information, interface details, routing tables")
 
-	// Example 1: Basic device query
-	nqeArgs1 := usecases.RunNQEQueryByStringArgs{
+	// Example 1: Basic device query (using a query ID from the library)
+	nqeArgs1 := usecases.RunNQEQueryByIDArgs{
 		NetworkID: "network-123",
-		Query:     "foreach device in network.devices select {Name: device.name, Platform: device.platform}",
+		QueryID:   "devices",
 		Options: &usecases.NQEQueryOptions{
 			Limit: 10,
 		},
@@ -105,9 +105,9 @@ func main() {
 	fmt.Printf("\nBasic device query example:\n%s\n", string(nqeJSON1))
 
 	// Example 2: Interface query with filtering
-	nqeArgs2 := usecases.RunNQEQueryByStringArgs{
+	nqeArgs2 := usecases.RunNQEQueryByIDArgs{
 		NetworkID: "network-123",
-		Query:     "foreach interface in network.interfaces where interface.operStatus == 'up' select {DeviceName: interface.device.name, InterfaceName: interface.name, IPAddress: interface.ipv4Address}",
+		QueryID:   "interfaces",
 		Options: &usecases.NQEQueryOptions{
 			Limit: 20,
 		},
@@ -117,9 +117,9 @@ func main() {
 	fmt.Printf("\nInterface query example:\n%s\n", string(nqeJSON2))
 
 	// Example 3: Routing table query
-	nqeArgs3 := usecases.RunNQEQueryByStringArgs{
+	nqeArgs3 := usecases.RunNQEQueryByIDArgs{
 		NetworkID: "network-123",
-		Query:     "foreach route in network.routes where route.protocol == 'ospf' select {DeviceName: route.device.name, Prefix: route.prefix, NextHop: route.nextHop, Metric: route.metric}",
+		QueryID:   "routes",
 		Options: &usecases.NQEQueryOptions{
 			Limit: 50,
 		},

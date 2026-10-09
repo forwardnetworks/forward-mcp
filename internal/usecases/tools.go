@@ -22,21 +22,13 @@ type UpdateNetworkArgs struct {
 }
 
 // NQE Tool Arguments
-type RunNQEQueryByStringArgs struct {
-	NetworkID  string                 `json:"network_id" jsonschema:"ID of the network to query"`
-	Query      string                 `json:"query" jsonschema:"NQE query source code"`
-	SnapshotID string                 `json:"snapshot_id,omitempty" jsonschema:"Specific snapshot ID to query (optional)"`
-	Parameters map[string]interface{} `json:"parameters,omitempty" jsonschema:"Query parameters to use"`
-	Options    *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options like limit, offset, sorting, etc."`
-}
-
 type RunNQEQueryByIDArgs struct {
-	NetworkID  string                 `json:"network_id,omitempty" jsonschema:"Network ID to run the query against (optional if a default network is set)"`
-	QueryID    string                 `json:"query_id" jsonschema:"Query ID from NQE Library (use the 'queryId' field from list_nqe_queries response)"`
-	SnapshotID string                 `json:"snapshot_id,omitempty" jsonschema:"Specific snapshot ID to query (optional)"`
-	Parameters map[string]interface{} `json:"parameters,omitempty" jsonschema:"Optional parameters for the query"`
-	Options    *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Optional query options for sorting and filtering"`
-	AllResults bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results using pagination (limit/offset) and aggregate them into a single response"`
+	NetworkID  string                 `json:"network_id,omitempty" jsonschema:"Network UUID. Optional if default network is set.;format=uuid"`
+	QueryID    string                 `json:"query_id" jsonschema:"Query ID from NQE library. Required. Use list_nqe_queries or search_nqe_queries to find query IDs."`
+	SnapshotID string                 `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	Parameters map[string]interface{} `json:"parameters,omitempty" jsonschema:"Query parameters for dynamic queries. Optional; depends on query definition."`
+	Options    *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for sorting, filtering, pagination. Optional."`
+	AllResults bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results with automatic pagination. Optional; default false."`
 }
 
 type NQEQueryOptions struct {
@@ -150,9 +142,9 @@ type CreateLocationItemArgs struct {
 
 // First-Class Query Tool Arguments - Critical Network Operations
 type GetDeviceBasicInfoArgs struct {
-	NetworkID  string           `json:"network_id" jsonschema:"ID of the network"`
-	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Specific snapshot ID (optional)"`
-	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options like limit, offset, sorting, etc."`
+	NetworkID  string           `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
+	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
 }
 
 type GetDeviceHardwareArgs struct {
@@ -193,12 +185,6 @@ type GetConfigDiffArgs struct {
 	Parameters     map[string]interface{} `json:"parameters,omitempty" jsonschema:"Additional query parameters"`
 	Options        *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options (limit, offset, etc.)"`
 	AllResults     bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all config diff results using pagination and store in memory system"`
-}
-
-type GetDeviceUtilitiesArgs struct {
-	NetworkID  string           `json:"network_id" jsonschema:"ID of the network"`
-	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Specific snapshot ID to query (optional)"`
-	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options including limit, offset, sorting, and filtering"`
 }
 
 // Prompt Workflow Arguments
@@ -242,29 +228,17 @@ type ClearCacheArgs struct {
 
 // SearchNQEQueriesArgs represents arguments for intelligent query search
 type SearchNQEQueriesArgs struct {
-	Query       string `json:"query" jsonschema:"Natural language description of what you want to analyze. Be specific and descriptive. Good examples: 'show me AWS security vulnerabilities', 'find BGP routing issues', 'check interface utilization', 'devices with high CPU usage'. Avoid vague terms like 'network' or 'config'."`
-	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum number of query suggestions to return (default: 10, max: 50)"`
-	Category    string `json:"category,omitempty" jsonschema:"Filter by category to narrow results (e.g., 'Cloud', 'L3', 'Security', 'Device')."`
-	Subcategory string `json:"subcategory,omitempty" jsonschema:"Filter by subcategory (e.g., 'AWS', 'BGP', 'ACL', 'OSPF')."`
-	IncludeCode bool   `json:"include_code,omitempty" jsonschema:"Include NQE source code in results for advanced users (default: false). Warning: makes response much longer."`
+	Query       string `json:"query" jsonschema:"Natural language description of analysis task. Required. Be specific for best results. Examples: 'AWS security vulnerabilities', 'BGP routing issues', 'interface utilization'."`
+	Limit       int    `json:"limit,omitempty" jsonschema:"Maximum number of query suggestions to return. Optional; default 10, max 50."`
+	Category    string `json:"category,omitempty" jsonschema:"Filter by category. Options: 'Cloud', 'L3', 'Security', 'Device'. Optional."`
+	Subcategory string `json:"subcategory,omitempty" jsonschema:"Filter by subcategory. Examples: 'AWS', 'BGP', 'ACL', 'OSPF'. Optional."`
+	IncludeCode bool   `json:"include_code,omitempty" jsonschema:"Include NQE source code in results. Optional; default false. Warning: increases response size significantly."`
 }
 
 // InitializeQueryIndexArgs represents arguments for building the AI query index
 type InitializeQueryIndexArgs struct {
 	RebuildIndex       bool `json:"rebuild_index,omitempty" jsonschema:"Force rebuild of the query index from spec file (default: false). Only needed if spec file has been updated."`
 	GenerateEmbeddings bool `json:"generate_embeddings,omitempty" jsonschema:"Generate new AI embeddings for semantic search (default: false). Requires OpenAI API key and takes several minutes. Creates offline cache for fast searches."`
-}
-
-// FindExecutableQueryArgs represents the arguments for finding executable queries
-type FindExecutableQueryArgs struct {
-	Query          string `json:"query" jsonschema:"Natural language description of what you want to analyze or accomplish. Be specific about the network analysis goal. Examples: 'show me all network devices', 'check device CPU and memory usage', 'find BGP neighbor information', 'compare configuration changes'."`
-	Limit          int    `json:"limit,omitempty" jsonschema:"Maximum number of executable query recommendations to return (default: 5, max: 10). Each result includes a real Forward Networks Query ID you can execute."`
-	IncludeRelated bool   `json:"include_related,omitempty" jsonschema:"Include the semantic search matches that led to these executable recommendations (default: false). Useful for understanding why these queries were suggested."`
-}
-
-// Smart Query Workflow Arguments
-type SmartQueryWorkflowArgs struct {
-	// No parameters needed - MCP handles empty structs correctly
 }
 
 // Database Hydration Tools Arguments
@@ -281,10 +255,6 @@ type RefreshQueryIndexArgs struct {
 
 type GetDatabaseStatusArgs struct {
 	// No parameters needed - MCP handles empty structs correctly
-}
-
-type GetQueryIndexStatsArgs struct {
-	Detailed bool `json:"detailed,omitempty" jsonschema:"Include detailed statistics (default: false)"`
 }
 
 // Memory Management Tools Arguments
@@ -380,20 +350,20 @@ type LargeNQEResultsWorkflowArgs struct {
 
 // Path Search Arguments
 type SearchPathsArgs struct {
-	NetworkID               string `json:"network_id" jsonschema:"Network ID to search in"`
-	SnapshotID              string `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID to use (optional, uses latest if omitted)"`
-	From                    string `json:"from,omitempty" jsonschema:"Source device name"`
-	SrcIP                   string `json:"src_ip,omitempty" jsonschema:"Source IP address or subnet"`
-	DstIP                   string `json:"dst_ip" jsonschema:"Destination IP address or subnet"`
-	IPProto                 *int   `json:"ip_proto,omitempty" jsonschema:"IP protocol number"`
-	SrcPort                 string `json:"src_port,omitempty" jsonschema:"Source port"`
-	DstPort                 string `json:"dst_port,omitempty" jsonschema:"Destination port"`
-	Intent                  string `json:"intent,omitempty" jsonschema:"Search intent (PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY)"`
-	MaxCandidates           int    `json:"max_candidates,omitempty" jsonschema:"Maximum number of candidates to consider"`
-	MaxResults              int    `json:"max_results,omitempty" jsonschema:"Maximum number of results to return"`
-	MaxReturnPathResults    int    `json:"max_return_path_results,omitempty" jsonschema:"Maximum number of return path results"`
-	MaxSeconds              int    `json:"max_seconds,omitempty" jsonschema:"Maximum seconds per query"`
-	IncludeNetworkFunctions bool   `json:"include_network_functions,omitempty" jsonschema:"Include network functions in results"`
+	NetworkID               string `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
+	SnapshotID              string `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	From                    string `json:"from,omitempty" jsonschema:"Source device name. Optional; can use src_ip instead. At least one of 'from' or 'src_ip' recommended."`
+	SrcIP                   string `json:"src_ip,omitempty" jsonschema:"Source IP address or CIDR subnet. Optional; can use 'from' instead.;format=ipv4"`
+	DstIP                   string `json:"dst_ip" jsonschema:"Destination IP address or CIDR. Required. Must be valid IP, not device name.;format=ipv4"`
+	IPProto                 *int   `json:"ip_proto,omitempty" jsonschema:"IP protocol number (6=TCP, 17=UDP). Optional."`
+	SrcPort                 string `json:"src_port,omitempty" jsonschema:"Source port for L4 analysis. Optional."`
+	DstPort                 string `json:"dst_port,omitempty" jsonschema:"Destination port for L4 analysis. Optional."`
+	Intent                  string `json:"intent,omitempty" jsonschema:"Path selection intent. Options: PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY. Default: PREFER_DELIVERED."`
+	MaxCandidates           int    `json:"max_candidates,omitempty" jsonschema:"Maximum number of path candidates to consider. Optional."`
+	MaxResults              int    `json:"max_results,omitempty" jsonschema:"Maximum number of path results to return. Optional."`
+	MaxReturnPathResults    int    `json:"max_return_path_results,omitempty" jsonschema:"Maximum number of return path results. Optional."`
+	MaxSeconds              int    `json:"max_seconds,omitempty" jsonschema:"Timeout in seconds for path search. Optional."`
+	IncludeNetworkFunctions bool   `json:"include_network_functions,omitempty" jsonschema:"Include network functions in path results. Optional; default false."`
 }
 
 // Path Search Workflow Arguments
@@ -427,13 +397,13 @@ type NetworkPrefixDiscoveryArgs struct {
 }
 
 type NetworkPrefixAnalysisArgs struct {
-	NetworkID    string   `json:"network_id,omitempty" jsonschema:"Network ID to analyze (optional if a default network is set)"`
-	SnapshotID   string   `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID to use (optional, uses latest if omitted)"`
-	PrefixLevels []string `json:"prefix_levels,omitempty" jsonschema:"Aggregation levels to analyze (e.g., ['/8', '/16', '/24'])"`
-	FromDevices  []string `json:"from_devices,omitempty" jsonschema:"Source devices to analyze"`
-	ToDevices    []string `json:"to_devices,omitempty" jsonschema:"Destination devices to analyze"`
-	Intent       string   `json:"intent,omitempty" jsonschema:"Search intent (PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY)"`
-	MaxResults   int      `json:"max_results,omitempty" jsonschema:"Maximum number of results to return"`
+	NetworkID    string   `json:"network_id,omitempty" jsonschema:"Network UUID. Optional if default network is set.;format=uuid"`
+	SnapshotID   string   `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	PrefixLevels []string `json:"prefix_levels,omitempty" jsonschema:"Aggregation levels to analyze. Example: ['/8', '/16', '/24']. Optional; defaults to common levels."`
+	FromDevices  []string `json:"from_devices,omitempty" jsonschema:"Source device names for connectivity analysis. Optional; analyzes all devices if omitted."`
+	ToDevices    []string `json:"to_devices,omitempty" jsonschema:"Destination device names for connectivity analysis. Optional; analyzes all devices if omitted."`
+	Intent       string   `json:"intent,omitempty" jsonschema:"Path selection intent. Options: PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY. Default: PREFER_DELIVERED."`
+	MaxResults   int      `json:"max_results,omitempty" jsonschema:"Maximum number of connectivity results to return. Optional."`
 }
 
 type NetworkPrefixInfo struct {

@@ -172,21 +172,21 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 
 	// Path Search Tools
 	addTool(server, "search_paths",
-		"🔍 **SINGLE PATH SEARCH**: Execute a single path search by tracing packets through the network.\n\nExecute path searches by tracing packets through the network. This tool is optimized for single path queries.\n\n**Source Specification Rules:**\n- **Option 1**: Use 'from' (device name) - API will use the device as source\n- **Option 2**: Use 'src_ip' (IP address/subnet) - API will resolve the IP to source locations\n- **Option 3**: Use both 'from' + 'src_ip' for precise packet header specification\n\n**Destination Specification:**\n- **REQUIRED**: 'dst_ip' must be a valid IP address or CIDR\n- **IMPORTANT**: Device names are NOT supported in dst_ip - use actual IP addresses\n\n**Best Practices:**\n- Use 'intent' parameter to control search behavior (PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY)\n- Set 'max_results' and 'max_candidates' to control response size and performance\n- Use 'max_seconds' for timeout control\n- 'snapshot_id' is optional - API uses latest processed snapshot if omitted\n\n**For multiple paths, use search_paths_bulk for better performance.**",
+		"Tool to trace L3/L4 packet paths from source to destination through network devices and links. Use when troubleshooting connectivity, verifying traffic flow, or analyzing routing decisions. Requires dst_ip (IP or CIDR); from (device name) or src_ip optional. For multiple queries use search_paths_bulk.",
 		s.SearchPathsEntry)
 
 	addTool(server, "search_paths_bulk",
-		"🚀 **RECOMMENDED**: Use this tool for path searches (single or bulk) with better performance.\n\nExecute path searches by tracing packets through the network. Supports both single and bulk path searches.\n\n**Source Specification Rules:**\n- **Option 1**: Use 'from' (device name) - API will use the device as source\n- **Option 2**: Use 'src_ip' (IP address/subnet) - API will resolve the IP to source locations\n- **Option 3**: Use both 'from' + 'src_ip' for precise packet header specification\n\n**Destination Specification:**\n- **REQUIRED**: 'dst_ip' must be a valid IP address or CIDR\n- **IMPORTANT**: Device names are NOT supported in dst_ip - use actual IP addresses\n\n**Best Practices:**\n- Use 'intent' parameter to control search behavior (PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY)\n- Set 'max_results' and 'max_candidates' to control response size and performance\n- Use 'max_seconds' and 'max_overall_seconds' for timeout control\n- 'snapshot_id' is optional - API uses latest processed snapshot if omitted\n\n**Request Format:** Provide an array of path search queries, each with 'dst_ip' and either 'from' or 'src_ip'.",
+		"Tool to trace multiple L3/L4 packet paths in a single request for better performance. Use when analyzing multiple source-destination pairs or bulk connectivity validation. Requires array of queries with dst_ip; from or src_ip optional per query. Returns results for all paths in one response.",
 		s.SearchPathsBulkEntry)
 
 	// Register network prefix analysis tool
 	addTool(server, "analyze_network_prefixes",
-		"🔍 **Network Prefix Discovery & Connectivity Analysis**\n\nDiscover network prefixes, map them to devices, and analyze connectivity between sites using different aggregation levels.\n\n**Capabilities:**\n- Discover network prefixes (/8, /16, /24, etc.) and map to devices\n- Analyze connectivity between sites using aggregated prefixes\n- Identify network topology patterns and connectivity gaps\n- Generate connectivity matrices for different aggregation levels\n\n**Use Cases:**\n- Site-to-site connectivity analysis\n- Network segmentation validation\n- Route aggregation verification\n- Multi-site network planning\n\n**Parameters:**\n- network_id: Target network for analysis\n- prefix_levels: Aggregation levels to analyze (e.g., ['/8', '/16', '/24'])\n- from_devices/to_devices: Specific devices to analyze\n- intent: Search intent (PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY)\n- max_results: Maximum results per analysis",
+		"Tool to discover network prefixes at different aggregation levels and analyze site-to-site connectivity. Use when validating network segmentation, verifying route aggregation, or planning multi-site connectivity. Specify prefix_levels (e.g., /8, /16, /24) and optional device filters. Returns prefix mappings and connectivity matrices.",
 		s.AnalyzeNetworkPrefixes)
 
 	// NQE Tools
 	addTool(server, "run_nqe_query_by_id",
-		"🚀 **RECOMMENDED**: Use this tool for standard network analysis and compliance checks.\n\nRun a Network Query Engine (NQE) query using a predefined query ID from the library. This is the preferred method for consistent, reliable network analysis.\n\n**Best Practices:**\n- Use 'all_results: true' to fetch complete datasets\n- Set appropriate 'limit' and 'offset' for pagination\n- Use 'parameters' for dynamic query customization\n- Check query descriptions with list_nqe_queries first\n\n**Performance Tips:**\n- Large results are automatically cached and chunked\n- Use semantic search to find relevant queries\n- Set reasonable limits to avoid timeouts",
+		"Tool to execute a Network Query Engine (NQE) query using a predefined query ID from the Forward library. Use when running standard network analysis, compliance checks, or inventory reports. Requires query_id; network_id optional if default set. Set all_results=true to fetch complete datasets with automatic pagination. Large results are cached and chunked automatically.",
 		s.RunNQEQueryByID)
 
 	addTool(server, "list_nqe_queries",
@@ -195,7 +195,7 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 
 	// First-Class Query Tools - Most Important Network Operations
 	addTool(server, "get_device_basic_info",
-		"📊 **ESSENTIAL**: Get comprehensive device inventory information.\n\nGet basic device information including names, platforms, and management IPs. This is the primary tool for device discovery and inventory management.\n\n**What you get:**\n- Device names and types\n- Platform and OS information\n- Management IP addresses\n- Interface details\n- Device status and properties\n\n**Best Practices:**\n- Use this as your first step in network analysis\n- Set appropriate limits for large networks\n- Use filters to focus on specific device types\n- Combine with get_device_hardware for complete inventory",
+		"Tool to retrieve device inventory with names, types, platforms, OS versions, and management IPs. Use when discovering network devices, building device lists, or starting network analysis. Supports filters and pagination. Combine with get_device_hardware for hardware details and serial numbers.",
 		s.GetDeviceBasicInfo)
 
 	addTool(server, "get_device_hardware",
@@ -289,7 +289,7 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 
 	// AI-Powered Query Discovery Tools
 	addTool(server, "search_nqe_queries",
-		"🧠 **AI-POWERED SEARCH**: Find relevant NQE queries using natural language.\n\nAI-powered search through 6000+ predefined NQE queries using natural language. Describe what you want to analyze and get relevant query suggestions.\n\n**Best Practices:**\n- Be specific and descriptive in your query\n- Use examples like 'AWS security issues', 'BGP routing problems'\n- Avoid vague terms like 'network' or 'config'\n- Use category filters to narrow results\n\n**Example Queries:**\n- 'show me AWS security vulnerabilities'\n- 'find BGP routing issues'\n- 'check interface utilization'\n- 'devices with high CPU usage'",
+		"Tool to find relevant NQE queries from 6000+ predefined queries using natural language semantic search. Use when discovering queries for specific network analysis tasks without knowing exact query names. Describe what you want to analyze; returns ranked query suggestions with similarity scores. Be specific for best results.",
 		s.SearchNQEQueries)
 
 	// Bulk location setup workflow (guides bulk upsert using PATCH)
