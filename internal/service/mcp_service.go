@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -133,7 +132,7 @@ type ForwardMCPService struct {
 	instanceID        string // Unique identifier for this Forward Networks instance
 	defaults          *ServiceDefaults
 	workflowManager   *WorkflowManager
-	semanticCache     *SemanticCache
+	semanticCache     ports.ResultCache
 	queryIndex        *NQEQueryIndex
 	database          *NQEDatabase
 	memorySystem      *MemorySystem       // Knowledge graph memory system
@@ -152,9 +151,16 @@ type ServiceDefaults struct {
 	QueryLimit int
 }
 
-// NewForwardMCPService creates the service. api is the Forward Networks platform;
-// the caller chooses the adapter.
-func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, api ports.ForwardAPI) *ForwardMCPService {
+// Deps are the outside capabilities the service is built from. The caller
+// chooses each adapter.
+type Deps struct {
+	API      ports.ForwardAPI
+	Embedder ports.EmbeddingService
+	Cache    ports.ResultCache
+}
+
+// NewForwardMCPService creates the service from its configuration and deps.
+func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, deps Deps) *ForwardMCPService {
 	// Use configured instance ID or generate one based on API URL
 	instanceID := cfg.Forward.InstanceID
 	if instanceID == "" {
@@ -164,23 +170,10 @@ func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, api ports.For
 		logger.Info("Using configured instance ID '%s' for partitioning", instanceID)
 	}
 
-	forwardClient := api
+	forwardClient := deps.API
 
-	// Create embedding service based on config
-	var embeddingService EmbeddingService
-	if cfg.Forward.SemanticCache.EmbeddingProvider == "openai" {
-		if openaiKey := os.Getenv("OPENAI_API_KEY"); openaiKey != "" {
-			embeddingService = NewOpenAIEmbeddingService(openaiKey)
-		} else {
-			embeddingService = NewKeywordEmbeddingService()
-			logger.Warn("OpenAI provider selected but OPENAI_API_KEY not set - using keyword embedding service")
-		}
-	} else {
-		embeddingService = NewKeywordEmbeddingService()
-	}
-
-	// Create semantic cache with instance partitioning
-	semanticCache := NewSemanticCache(embeddingService, logger, instanceID, &cfg.Forward.SemanticCache)
+	semanticCache := deps.Cache
+	embeddingService := deps.Embedder
 
 	// Create database with instance partitioning
 	database, err := NewNQEDatabase(logger, instanceID)
@@ -378,6 +371,11 @@ func (s *ForwardMCPService) Shutdown(timeout time.Duration) error {
 			}
 			return nil
 		})
+	}
+
+	// Stop the result cache's cleanup goroutine
+	if s.semanticCache != nil {
+		s.semanticCache.Close()
 	}
 
 	// Stop workflow manager cleanup goroutine (non-blocking)
@@ -2845,25 +2843,10 @@ func (s *ForwardMCPService) clearCache(ctx context.Context, args ClearCacheArgs)
 	var operation string
 
 	if args.ClearAll {
-		// For simplicity, we'll implement a full clear by creating a new cache
-		// In production, you might want a more sophisticated approach
 		stats := s.semanticCache.GetStats()
 		totalEntries := stats["total_entries"].(int)
 
-		// Reinitialize the cache
-		var embeddingService EmbeddingService
-		if s.config.Forward.SemanticCache.EmbeddingProvider == "openai" {
-			if openaiKey := os.Getenv("OPENAI_API_KEY"); openaiKey != "" {
-				embeddingService = NewOpenAIEmbeddingService(openaiKey)
-			} else {
-				embeddingService = NewMockEmbeddingService()
-			}
-		} else if s.config.Forward.SemanticCache.EmbeddingProvider == "keyword" {
-			embeddingService = NewKeywordEmbeddingService()
-		} else {
-			embeddingService = NewMockEmbeddingService()
-		}
-		s.semanticCache = NewSemanticCache(embeddingService, s.logger, s.instanceID, &s.config.Forward.SemanticCache)
+		s.semanticCache.Clear()
 
 		removed = totalEntries
 		operation = "Cleared all cache entries"
@@ -3026,7 +3009,7 @@ func (s *ForwardMCPService) initializeQueryIndex(ctx context.Context, args Initi
 
 	// Generate embeddings if requested
 	if args.GenerateEmbeddings {
-		if _, ok := s.queryIndex.embeddingService.(*MockEmbeddingService); ok {
+		if ports.IsSynthetic(s.queryIndex.embeddingService) {
 			response += "Cannot generate embeddings: OpenAI API key not configured\n"
 			response += "Set OPENAI_API_KEY environment variable to enable embedding generation\n"
 			response += "Current functionality limited to keyword-based search\n\n"
@@ -3170,7 +3153,7 @@ func (s *ForwardMCPService) hydrateDatabase(ctx context.Context, args HydrateDat
 		}
 		if s.queryIndex != nil && args.RegenerateEmbeddings {
 			s.logger.Info("🧠 Regenerating AI embeddings after hydration...")
-			if _, ok := s.queryIndex.embeddingService.(*MockEmbeddingService); ok {
+			if ports.IsSynthetic(s.queryIndex.embeddingService) {
 				s.logger.Warn("⚠️  Cannot generate embeddings: OpenAI API key not configured")
 			} else {
 				if err := s.queryIndex.GenerateEmbeddings(); err != nil {

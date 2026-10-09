@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
+	"github.com/forward-mcp/internal/adapters/secondary/semcache"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,7 +58,12 @@ func setupIntegrationTest(t *testing.T) *ForwardMCPService {
 		cfg.Forward.Timeout = 30
 	}
 
-	return NewForwardMCPService(cfg, log, forwardapi.NewClient(&cfg.Forward, log))
+	embedder := embeddings.NewKeywordEmbeddingService()
+	return NewForwardMCPService(cfg, log, Deps{
+		API:      forwardapi.NewClient(&cfg.Forward, log),
+		Embedder: embedder,
+		Cache:    semcache.NewSemanticCache(embedder, log, InstanceID(cfg), &cfg.Forward.SemanticCache),
+	})
 }
 
 // Integration test for listing networks with real API

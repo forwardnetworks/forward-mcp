@@ -34,7 +34,7 @@ type NQEQueryIndexEntry struct {
 type NQEQueryIndex struct {
 	queries             []*NQEQueryIndexEntry
 	embeddings          map[string][]float32
-	embeddingService    EmbeddingService
+	embeddingService    ports.EmbeddingService
 	logger              ports.Logger
 	mutex               sync.RWMutex
 	indexPath           string
@@ -76,7 +76,7 @@ type QuerySearchResult struct {
 }
 
 // NewNQEQueryIndex creates a new query index
-func NewNQEQueryIndex(embeddingService EmbeddingService, logger ports.Logger) *NQEQueryIndex {
+func NewNQEQueryIndex(embeddingService ports.EmbeddingService, logger ports.Logger) *NQEQueryIndex {
 	// Try to find the spec file using robust path resolution
 	specPath, err := findSpecFile("NQELibrary.json")
 	if err != nil {
@@ -359,7 +359,7 @@ func (idx *NQEQueryIndex) GenerateEmbeddings() error {
 	defer idx.mutex.Unlock()
 
 	// Check if we can actually generate embeddings
-	if _, ok := idx.embeddingService.(*MockEmbeddingService); ok {
+	if ports.IsSynthetic(idx.embeddingService) {
 		return fmt.Errorf("cannot generate real embeddings with mock service - set OPENAI_API_KEY")
 	}
 

@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/semcache"
 	"reflect"
 	"strings"
 	"testing"
@@ -523,9 +525,9 @@ func createTestService() *ForwardMCPService {
 	}
 
 	// Initialize mock embedding service and semantic cache
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 	logger := logger.New()
-	semanticCache := NewSemanticCache(embeddingService, logger, "test", nil)
+	semanticCache := semcache.NewSemanticCache(embeddingService, logger, "test", nil)
 
 	// Initialize query index with mock embedding service
 	queryIndex := NewNQEQueryIndex(embeddingService, logger)
@@ -1179,7 +1181,12 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 	}
 
 	logger := logger.New()
-	service := NewForwardMCPService(cfg, logger, NewMockForwardClient())
+	embedder := embeddings.NewMockEmbeddingService()
+	service := NewForwardMCPService(cfg, logger, Deps{
+		API:      NewMockForwardClient(),
+		Embedder: embedder,
+		Cache:    semcache.NewSemanticCache(embedder, logger, "test", &cfg.Forward.SemanticCache),
+	})
 
 	t.Run("get_cache_stats", func(t *testing.T) {
 		// Add some test data to cache
@@ -1219,16 +1226,12 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 	})
 
 	t.Run("clear_cache_expired", func(t *testing.T) {
-		// Set very short TTL for testing
-		service.semanticCache.ttl = 1 * time.Millisecond
-
+		// Expiry itself is tested in the semcache adapter; this checks the
+		// handler's path through ClearExpired.
 		// Add some entries
 		testResult := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 		service.semanticCache.Put("expiring-1", "net", "snap", testResult)
 		service.semanticCache.Put("expiring-2", "net", "snap", testResult)
-
-		// Wait for expiration
-		time.Sleep(10 * time.Millisecond)
 
 		// Test clearCache function
 		args := ClearCacheArgs{ClearAll: false}
@@ -1308,7 +1311,7 @@ func TestCacheEvictionPolicies(t *testing.T) {
 	service := createTestService()
 	service.config.Forward.SemanticCache.MaxEntries = 3  // Very small for testing
 	service.config.Forward.SemanticCache.MaxMemoryMB = 1 // Small memory limit
-	service.semanticCache.maxEntries = 3                 // Update runtime setting
+	service.semanticCache = semcache.NewSemanticCache(embeddings.NewMockEmbeddingService(), service.logger, "test", &service.config.Forward.SemanticCache)
 
 	// Execute multiple queries to test eviction
 	queries := []string{"query-1", "query-2", "query-3", "query-4"}

@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/ports"
 	"os"
 	"time"
 
@@ -24,12 +26,12 @@ func main() {
 	fmt.Printf("   📋 Provider: %s\n", provider)
 
 	// Initialize embedding service based on provider
-	var embeddingService service.EmbeddingService
+	var embeddingService ports.EmbeddingService
 	var serviceName, costInfo string
 
 	switch provider {
 	case "keyword":
-		embeddingService = service.NewKeywordEmbeddingService()
+		embeddingService = embeddings.NewKeywordEmbeddingService()
 		serviceName = "Keyword-based Embeddings"
 		costInfo = "💰 Cost: $0.00 (free!)"
 	case "openai":
@@ -38,7 +40,7 @@ func main() {
 			fmt.Printf("💡 Set it with: export OPENAI_API_KEY=your-key-here\n")
 			os.Exit(1)
 		}
-		embeddingService = service.NewOpenAIEmbeddingService(openaiKey)
+		embeddingService = embeddings.NewOpenAIEmbeddingService(openaiKey)
 		serviceName = "OpenAI API Embeddings"
 		costInfo = "💰 Estimated cost: $1-5 for 6000+ queries"
 	default:

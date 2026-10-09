@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"math"
 	"sort"
 	"time"
@@ -18,7 +19,7 @@ func main() {
 	logger := stderrlog.New()
 
 	// Initialize keyword embedding service for fast benchmarking
-	embeddingService := service.NewKeywordEmbeddingService()
+	embeddingService := embeddings.NewKeywordEmbeddingService()
 	queryIndex := service.NewNQEQueryIndex(embeddingService, logger)
 
 	// Load queries

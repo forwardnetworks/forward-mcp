@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/ports"
 	"os"
 
 	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
@@ -29,12 +31,12 @@ func main() {
 	}
 
 	// Initialize embedding service (will use keyword fallback if no OpenAI key)
-	var embeddingService service.EmbeddingService
+	var embeddingService ports.EmbeddingService
 	if openaiKey := os.Getenv("OPENAI_API_KEY"); openaiKey != "" {
-		embeddingService = service.NewOpenAIEmbeddingService(openaiKey)
+		embeddingService = embeddings.NewOpenAIEmbeddingService(openaiKey)
 		fmt.Println("🧠 Using OpenAI embedding service for AI semantic search")
 	} else {
-		embeddingService = service.NewKeywordEmbeddingService()
+		embeddingService = embeddings.NewKeywordEmbeddingService()
 		fmt.Println("🔤 Using keyword embedding service (no OpenAI key found)")
 	}
 

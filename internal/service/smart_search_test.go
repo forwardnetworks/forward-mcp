@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/semcache"
 	"github.com/forward-mcp/internal/domain"
 	"testing"
 	"time"
@@ -21,7 +23,7 @@ func setupSmartSearchTestService() *ForwardMCPService {
 	}
 
 	testLogger := logger.New()
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 
 	// Initialize query index
 	queryIndex := NewNQEQueryIndex(embeddingService, testLogger)
@@ -38,7 +40,7 @@ func setupSmartSearchTestService() *ForwardMCPService {
 		instanceID:      "test", // Add instance ID for test service
 		defaults:        &ServiceDefaults{},
 		workflowManager: NewWorkflowManager(100, 1*time.Hour), // Test with smaller limits
-		semanticCache:   NewSemanticCache(embeddingService, testLogger, "test", nil),
+		semanticCache:   semcache.NewSemanticCache(embeddingService, testLogger, "test", nil),
 		queryIndex:      queryIndex,
 	}
 
@@ -476,7 +478,7 @@ func TestGetQueryIndexStats_Detailed(t *testing.T) {
 
 // Test keyword embedding service used in smart search
 func TestKeywordEmbeddingService_SmartSearch(t *testing.T) {
-	service := NewKeywordEmbeddingService()
+	service := embeddings.NewKeywordEmbeddingService()
 
 	testQueries := []string{
 		"device information",

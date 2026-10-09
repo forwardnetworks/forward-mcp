@@ -1,6 +1,10 @@
-package service
+// Package embeddings holds the ports.EmbeddingService adapters: OpenAI
+// text-embedding-3-small, an offline keyword model, and a mock for tests.
+package embeddings
 
 import (
+	"github.com/forward-mcp/internal/ports"
+
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
@@ -116,6 +120,9 @@ func NewMockEmbeddingService() *MockEmbeddingService {
 }
 
 // GenerateEmbedding generates a deterministic fake embedding for testing
+// Synthetic marks the mock's vectors as meaningless, so they are never saved.
+func (m *MockEmbeddingService) Synthetic() bool { return true }
+
 func (m *MockEmbeddingService) GenerateEmbedding(text string) ([]float64, error) {
 	if text == "" {
 		return nil, fmt.Errorf("empty text provided")
@@ -291,4 +298,16 @@ func (k *KeywordEmbeddingService) GenerateEmbedding(text string) ([]float64, err
 	}
 
 	return embedding, nil
+}
+
+// New returns the embedding service for a provider name: "openai" when an API
+// key is given, otherwise the offline keyword model.
+func New(provider, openAIKey string, log ports.Logger) ports.EmbeddingService {
+	if provider == "openai" {
+		if openAIKey != "" {
+			return NewOpenAIEmbeddingService(openAIKey)
+		}
+		log.Warn("OpenAI provider selected but OPENAI_API_KEY not set - using keyword embedding service")
+	}
+	return NewKeywordEmbeddingService()
 }

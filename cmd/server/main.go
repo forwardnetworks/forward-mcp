@@ -7,10 +7,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
 	"github.com/forward-mcp/internal/adapters/secondary/instancelock"
+	"github.com/forward-mcp/internal/adapters/secondary/semcache"
 	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
+	"github.com/forward-mcp/internal/ports"
 	"github.com/forward-mcp/internal/service"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -90,7 +93,7 @@ func main() {
 
 	// Create Forward MCP service
 	logger.Debug("Creating Forward MCP service...")
-	forwardService := service.NewForwardMCPService(cfg, logger, forwardapi.NewClient(&cfg.Forward, logger))
+	forwardService := service.NewForwardMCPService(cfg, logger, newDeps(cfg, logger))
 
 	// Create MCP server (official go-sdk); stdio transport is attached in Run below.
 	logger.Debug("Creating MCP server...")
@@ -176,5 +179,15 @@ func main() {
 	logger.Info("Server shutdown complete")
 	if runErr != nil {
 		os.Exit(1)
+	}
+}
+
+// newDeps builds the adapters the service runs on.
+func newDeps(cfg *ports.Config, log ports.Logger) service.Deps {
+	embedder := embeddings.New(cfg.Forward.SemanticCache.EmbeddingProvider, os.Getenv("OPENAI_API_KEY"), log)
+	return service.Deps{
+		API:      forwardapi.NewClient(&cfg.Forward, log),
+		Embedder: embedder,
+		Cache:    semcache.NewSemanticCache(embedder, log, service.InstanceID(cfg), &cfg.Forward.SemanticCache),
 	}
 }

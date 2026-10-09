@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/forward-mcp/internal/domain"
 	"net/url"
 	"strings"
 )
@@ -38,4 +39,13 @@ func hashString(s string) string {
 	hash := hex.EncodeToString(hasher.Sum(nil))
 	// Return first 16 characters for better collision resistance while keeping it readable
 	return hash[:16]
+}
+
+// InstanceID returns the configured instance ID, or one derived from the API
+// base URL when none is configured.
+func InstanceID(cfg *domain.Config) string {
+	if cfg.Forward.InstanceID != "" {
+		return cfg.Forward.InstanceID
+	}
+	return GenerateInstanceID(cfg.Forward.APIBaseURL)
 }

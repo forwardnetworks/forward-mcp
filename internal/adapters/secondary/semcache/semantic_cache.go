@@ -1,4 +1,7 @@
-package service
+// Package semcache is the ports.ResultCache adapter: an in-memory cache of NQE
+// results, matched by embedding similarity, with optional compression and
+// disk overflow.
+package semcache
 
 import (
 	"bytes"
@@ -18,68 +21,24 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/forward-mcp/internal/domain"
 )
-
-// EmbeddingService interface for generating embeddings
-type EmbeddingService interface {
-	GenerateEmbedding(text string) ([]float64, error)
-}
-
-// CacheEntry represents a cached query result with embeddings and metadata
-type CacheEntry struct {
-	Query           string               `json:"query"`
-	NetworkID       string               `json:"network_id"`
-	SnapshotID      string               `json:"snapshot_id"`
-	Embedding       []float64            `json:"embedding"`
-	Result          *domain.NQERunResult `json:"result"`
-	Timestamp       time.Time            `json:"timestamp"`
-	AccessCount     int64                `json:"access_count"`
-	LastAccessed    time.Time            `json:"last_accessed"`
-	Hash            string               `json:"hash"`
-	SimilarityScore float64              `json:"-"` // Used for search results
-
-	// Enhanced fields for large result management
-	CompressedSize   int64  `json:"compressed_size"`
-	UncompressedSize int64  `json:"uncompressed_size"`
-	IsCompressed     bool   `json:"is_compressed"`
-	CompressedData   []byte `json:"-"`                   // Compressed result data
-	DiskPath         string `json:"disk_path,omitempty"` // Path if stored on disk
-}
-
-// CacheMetrics holds detailed cache performance metrics
-type CacheMetrics struct {
-	HitCount          int64            `json:"hit_count"`
-	MissCount         int64            `json:"miss_count"`
-	TotalQueries      int64            `json:"total_queries"`
-	EvictedCount      int64            `json:"evicted_count"`
-	CurrentEntries    int              `json:"current_entries"`
-	MemoryUsageBytes  int64            `json:"memory_usage_bytes"`
-	MemoryUsageMB     float64          `json:"memory_usage_mb"`
-	CompressionRatio  float64          `json:"compression_ratio"`
-	AvgResponseTimeMs float64          `json:"avg_response_time_ms"`
-	HitRate           float64          `json:"hit_rate"`
-	EvictionsByPolicy map[string]int64 `json:"evictions_by_policy"`
-	LastCleanup       time.Time        `json:"last_cleanup"`
-}
 
 // SemanticCache provides intelligent caching with embedding-based similarity and configurable eviction
 type SemanticCache struct {
-	entries          map[string]*CacheEntry
-	embeddingIndex   []*CacheEntry
+	entries          map[string]*ports.CacheEntry
+	embeddingIndex   []*ports.CacheEntry
 	mutex            sync.RWMutex
-	embeddingService EmbeddingService
+	embeddingService ports.EmbeddingService
 	logger           ports.Logger
 	instanceID       string // Unique identifier for this Forward Networks instance
-	config           *domain.SemanticCacheConfig
+	config           *ports.SemanticCacheConfig
 
 	// Enhanced configuration
 	maxEntries          int
 	maxMemoryBytes      int64
 	ttl                 time.Duration
 	similarityThreshold float64
-	evictionPolicy      domain.CacheEvictionPolicy
+	evictionPolicy      ports.CacheEvictionPolicy
 	compressionEnabled  bool
 	compressionLevel    int
 	persistToDisk       bool
@@ -89,7 +48,7 @@ type SemanticCache struct {
 	cleanupInterval     time.Duration
 
 	// Metrics
-	metrics *CacheMetrics
+	metrics *ports.CacheMetrics
 
 	// Cleanup management
 	stopCleanup   chan bool
@@ -108,16 +67,16 @@ func truncateString(s string, maxLen int) string {
 }
 
 // NewSemanticCache creates a new semantic cache with enhanced configuration
-func NewSemanticCache(embeddingService EmbeddingService, logger ports.Logger, instanceID string, cfg *domain.SemanticCacheConfig) *SemanticCache {
+func NewSemanticCache(embeddingService ports.EmbeddingService, logger ports.Logger, instanceID string, cfg *ports.SemanticCacheConfig) *SemanticCache {
 	if cfg == nil {
 		// Use default configuration
-		cfg = &domain.SemanticCacheConfig{
+		cfg = &ports.SemanticCacheConfig{
 			Enabled:                 true,
 			MaxEntries:              1000,
 			TTLHours:                24,
 			SimilarityThreshold:     0.85,
 			MaxMemoryMB:             512,
-			EvictionPolicy:          domain.EvictionPolicyLRU,
+			EvictionPolicy:          ports.EvictionPolicyLRU,
 			CompressResults:         true,
 			CompressionLevel:        6,
 			PersistToDisk:           false,
@@ -128,8 +87,8 @@ func NewSemanticCache(embeddingService EmbeddingService, logger ports.Logger, in
 	}
 
 	sc := &SemanticCache{
-		entries:             make(map[string]*CacheEntry),
-		embeddingIndex:      make([]*CacheEntry, 0),
+		entries:             make(map[string]*ports.CacheEntry),
+		embeddingIndex:      make([]*ports.CacheEntry, 0),
 		embeddingService:    embeddingService,
 		logger:              logger,
 		instanceID:          instanceID,
@@ -147,7 +106,7 @@ func NewSemanticCache(embeddingService EmbeddingService, logger ports.Logger, in
 		memoryThreshold:     cfg.MemoryEvictionThreshold,
 		cleanupInterval:     time.Duration(cfg.CleanupIntervalMinutes) * time.Minute,
 		stopCleanup:         make(chan bool, 1),
-		metrics: &CacheMetrics{
+		metrics: &ports.CacheMetrics{
 			EvictionsByPolicy: make(map[string]int64),
 		},
 	}
@@ -180,7 +139,7 @@ func (sc *SemanticCache) generateCacheKey(query, networkID, snapshotID string) s
 }
 
 // estimateMemoryUsage estimates the memory usage of a cache entry
-func (sc *SemanticCache) estimateMemoryUsage(entry *CacheEntry) int64 {
+func (sc *SemanticCache) estimateMemoryUsage(entry *ports.CacheEntry) int64 {
 	var size int64
 
 	// Basic fields
@@ -207,7 +166,7 @@ func (sc *SemanticCache) estimateMemoryUsage(entry *CacheEntry) int64 {
 }
 
 // compressResult compresses the NQE result using gzip
-func (sc *SemanticCache) compressResult(result *domain.NQERunResult) ([]byte, int64, error) {
+func (sc *SemanticCache) compressResult(result *ports.NQERunResult) ([]byte, int64, error) {
 	if !sc.compressionEnabled {
 		return nil, 0, nil
 	}
@@ -240,7 +199,7 @@ func (sc *SemanticCache) compressResult(result *domain.NQERunResult) ([]byte, in
 }
 
 // decompressResult decompresses the cached result
-func (sc *SemanticCache) decompressResult(compressedData []byte) (*domain.NQERunResult, error) {
+func (sc *SemanticCache) decompressResult(compressedData []byte) (*ports.NQERunResult, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(compressedData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
@@ -252,7 +211,7 @@ func (sc *SemanticCache) decompressResult(compressedData []byte) (*domain.NQERun
 		return nil, fmt.Errorf("failed to decompress data: %w", err)
 	}
 
-	var result domain.NQERunResult
+	var result ports.NQERunResult
 	if err := json.Unmarshal(decompressedData, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal result: %w", err)
 	}
@@ -281,7 +240,7 @@ func (sc *SemanticCache) cosineSimilarity(a, b []float64) float64 {
 }
 
 // Get attempts to retrieve a cached result using semantic similarity
-func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*domain.NQERunResult, bool) {
+func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*ports.NQERunResult, bool) {
 	start := time.Now()
 	defer func() {
 		if sc.metricsEnabled {
@@ -355,7 +314,7 @@ func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*domain.NQERu
 }
 
 // getResultFromEntry retrieves the result from a cache entry, handling compression and disk storage
-func (sc *SemanticCache) getResultFromEntry(entry *CacheEntry) (*domain.NQERunResult, error) {
+func (sc *SemanticCache) getResultFromEntry(entry *ports.CacheEntry) (*ports.NQERunResult, error) {
 	if entry.DiskPath != "" && sc.persistToDisk {
 		// Load from disk
 		return sc.loadFromDisk(entry.DiskPath)
@@ -371,7 +330,7 @@ func (sc *SemanticCache) getResultFromEntry(entry *CacheEntry) (*domain.NQERunRe
 }
 
 // Put stores a query result in the cache with its embedding
-func (sc *SemanticCache) Put(query, networkID, snapshotID string, result *domain.NQERunResult) error {
+func (sc *SemanticCache) Put(query, networkID, snapshotID string, result *ports.NQERunResult) error {
 	sc.mutex.Lock()
 	defer sc.mutex.Unlock()
 
@@ -391,7 +350,7 @@ func (sc *SemanticCache) Put(query, networkID, snapshotID string, result *domain
 	resultBytes, _ := json.Marshal(result)
 	uncompressedSize := int64(len(resultBytes))
 
-	entry := &CacheEntry{
+	entry := &ports.CacheEntry{
 		Query:            query,
 		NetworkID:        networkID,
 		SnapshotID:       snapshotID,
@@ -459,8 +418,8 @@ func (sc *SemanticCache) Put(query, networkID, snapshotID string, result *domain
 }
 
 // findBestMatch finds the most similar cached query
-func (sc *SemanticCache) findBestMatch(embedding []float64, networkID, snapshotID string) *CacheEntry {
-	var bestMatch *CacheEntry
+func (sc *SemanticCache) findBestMatch(embedding []float64, networkID, snapshotID string) *ports.CacheEntry {
+	var bestMatch *ports.CacheEntry
 	var bestSimilarity float64
 
 	for _, entry := range sc.embeddingIndex {
@@ -486,7 +445,7 @@ func (sc *SemanticCache) findBestMatch(embedding []float64, networkID, snapshotI
 }
 
 // isExpired checks if a cache entry has expired
-func (sc *SemanticCache) isExpired(entry *CacheEntry) bool {
+func (sc *SemanticCache) isExpired(entry *ports.CacheEntry) bool {
 	return time.Since(entry.Timestamp) > sc.ttl
 }
 
@@ -561,19 +520,19 @@ func (sc *SemanticCache) evictEntriesByPolicy(maxToEvict int) int {
 	policy := sc.config.EvictionPolicy
 
 	switch policy {
-	case domain.EvictionPolicyLRU:
+	case ports.EvictionPolicyLRU:
 		// Evict based on Least Recently Used (by LastAccessed time)
 		for evicted < maxToEvict && len(sc.entries) > 0 {
 			sc.evictLRU()
 			evicted++
 		}
-	case domain.EvictionPolicyLFU:
+	case ports.EvictionPolicyLFU:
 		// Evict based on Least Frequently Used
 		for evicted < maxToEvict && len(sc.entries) > 0 {
 			sc.evictLeastFrequent()
 			evicted++
 		}
-	case domain.EvictionPolicySize:
+	case ports.EvictionPolicySize:
 		// Evict largest entries first
 		for evicted < maxToEvict && len(sc.entries) > 0 {
 			sc.evictLargest()
@@ -727,7 +686,7 @@ func (sc *SemanticCache) GetStats() map[string]interface{} {
 }
 
 // FindSimilarQueries returns similar cached queries for query suggestion
-func (sc *SemanticCache) FindSimilarQueries(query string, limit int) ([]*CacheEntry, error) {
+func (sc *SemanticCache) FindSimilarQueries(query string, limit int) ([]*ports.CacheEntry, error) {
 	sc.mutex.RLock()
 	defer sc.mutex.RUnlock()
 
@@ -736,7 +695,7 @@ func (sc *SemanticCache) FindSimilarQueries(query string, limit int) ([]*CacheEn
 		return nil, fmt.Errorf("failed to generate embedding: %w", err)
 	}
 
-	var similarEntries []*CacheEntry
+	var similarEntries []*ports.CacheEntry
 
 	for _, entry := range sc.embeddingIndex {
 		if sc.isExpired(entry) {
@@ -775,7 +734,7 @@ func (sc *SemanticCache) ClearExpired() int {
 // clearExpiredInternal removes all expired entries (assumes mutex is already locked)
 func (sc *SemanticCache) clearExpiredInternal() int {
 	var removed int
-	var validEntries []*CacheEntry
+	var validEntries []*ports.CacheEntry
 
 	for key, entry := range sc.entries {
 		if sc.isExpired(entry) {
@@ -802,6 +761,31 @@ func (sc *SemanticCache) clearExpiredInternal() int {
 	return removed
 }
 
+// Clear removes every entry and resets the metrics. The embedding service and
+// configuration are kept.
+func (sc *SemanticCache) Clear() {
+	sc.mutex.Lock()
+	defer sc.mutex.Unlock()
+
+	sc.entries = make(map[string]*ports.CacheEntry)
+	sc.embeddingIndex = make([]*ports.CacheEntry, 0)
+	sc.currentMemoryUsage = 0
+	sc.metrics = &ports.CacheMetrics{
+		EvictionsByPolicy: make(map[string]int64),
+	}
+	sc.logger.Debug("CACHE CLEAR: removed all entries")
+}
+
+// Close stops the background cleanup routine.
+func (sc *SemanticCache) Close() {
+	if sc.cleanupTicker != nil {
+		sc.stopCleanupRoutine()
+	}
+}
+
+// SemanticCache implements the ResultCache port.
+var _ ports.ResultCache = (*SemanticCache)(nil)
+
 // startCleanupRoutine starts a background routine to periodically clean up expired entries
 func (sc *SemanticCache) startCleanupRoutine() {
 	sc.cleanupTicker = time.NewTicker(sc.cleanupInterval)
@@ -813,7 +797,10 @@ func (sc *SemanticCache) startCleanupRoutine() {
 				return
 			case <-sc.cleanupTicker.C:
 				sc.ClearExpired()
-				sc.logger.Debug("Background cleanup routine triggered. Current entries: %d", len(sc.entries))
+				sc.mutex.RLock()
+				n := len(sc.entries)
+				sc.mutex.RUnlock()
+				sc.logger.Debug("Background cleanup routine triggered. Current entries: %d", n)
 			}
 		}
 	}()
@@ -861,7 +848,7 @@ func (sc *SemanticCache) ensureCapacity(entrySize int64) error {
 }
 
 // saveToDisk saves a cache entry to disk
-func (sc *SemanticCache) saveToDisk(entry *CacheEntry) error {
+func (sc *SemanticCache) saveToDisk(entry *ports.CacheEntry) error {
 	if !sc.persistToDisk || entry.DiskPath == "" {
 		return fmt.Errorf("persistence not enabled or disk path not set")
 	}
@@ -925,7 +912,7 @@ func (sc *SemanticCache) saveToDisk(entry *CacheEntry) error {
 }
 
 // loadFromDisk loads a cache entry from disk
-func (sc *SemanticCache) loadFromDisk(filePath string) (*domain.NQERunResult, error) {
+func (sc *SemanticCache) loadFromDisk(filePath string) (*ports.NQERunResult, error) {
 	cleanPath := filepath.Clean(filePath)
 
 	// SECURITY: Ensure path is within allowed cache directory to prevent path traversal attacks
@@ -956,7 +943,7 @@ func (sc *SemanticCache) loadFromDisk(filePath string) (*domain.NQERunResult, er
 	}
 
 	// Deserialize the stored entry
-	var entry CacheEntry
+	var entry ports.CacheEntry
 	if err := json.Unmarshal(fileBytes, &entry); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal entry from disk: %w", err)
 	}

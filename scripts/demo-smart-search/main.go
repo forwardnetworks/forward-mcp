@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"os"
 	"strings"
 
@@ -14,7 +15,7 @@ func main() {
 	logger := stderrlog.New()
 
 	// Create embedding service (use keyword for this demo)
-	embeddingService := service.NewKeywordEmbeddingService()
+	embeddingService := embeddings.NewKeywordEmbeddingService()
 
 	// Initialize query index
 	queryIndex := service.NewNQEQueryIndex(embeddingService, logger)

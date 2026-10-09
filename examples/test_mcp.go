@@ -3,10 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
+	"github.com/forward-mcp/internal/adapters/secondary/semcache"
 	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
+	"github.com/forward-mcp/internal/ports"
 	"github.com/forward-mcp/internal/service"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -20,7 +24,7 @@ func main() {
 	}
 
 	// Create Forward MCP service
-	forwardService := service.NewForwardMCPService(cfg, log, forwardapi.NewClient(&cfg.Forward, log))
+	forwardService := service.NewForwardMCPService(cfg, log, newDeps(cfg, log))
 
 	// Create MCP server (stdio transport is attached at Run time)
 	server := mcp.NewServer(&mcp.Implementation{Name: "forward-mcp-example", Version: "0.0.1"}, nil)
@@ -162,4 +166,14 @@ func main() {
 	fmt.Println("3. Use limit and offset in options to paginate results")
 	fmt.Println("4. Check the Forward Networks documentation for available query fields")
 	fmt.Println("5. Use list_nqe_queries to discover predefined queries")
+}
+
+// newDeps builds the adapters the service runs on.
+func newDeps(cfg *ports.Config, log ports.Logger) service.Deps {
+	embedder := embeddings.New(cfg.Forward.SemanticCache.EmbeddingProvider, os.Getenv("OPENAI_API_KEY"), log)
+	return service.Deps{
+		API:      forwardapi.NewClient(&cfg.Forward, log),
+		Embedder: embedder,
+		Cache:    semcache.NewSemanticCache(embedder, log, service.InstanceID(cfg), &cfg.Forward.SemanticCache),
+	}
 }

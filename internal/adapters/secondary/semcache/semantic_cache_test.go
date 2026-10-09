@@ -1,10 +1,11 @@
-package service
+package semcache
 
 import (
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/domain"
 )
@@ -12,7 +13,7 @@ import (
 // TestSemanticCache tests the semantic cache functionality
 func TestSemanticCache(t *testing.T) {
 	// Create a semantic cache with mock embedding service
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 
 	// Test basic Put and Get operations
@@ -175,7 +176,7 @@ func TestSemanticCache(t *testing.T) {
 
 // TestEnhancedEvictionPolicies tests the new eviction strategies
 func TestEnhancedEvictionPolicies(t *testing.T) {
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 
 	t.Run("lru_eviction", func(t *testing.T) {
 		cfg := &domain.SemanticCacheConfig{
@@ -300,7 +301,7 @@ func TestEnhancedEvictionPolicies(t *testing.T) {
 
 // TestCompressionFeatures tests the compression functionality
 func TestCompressionFeatures(t *testing.T) {
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 
 	t.Run("compression_enabled", func(t *testing.T) {
 		cfg := &domain.SemanticCacheConfig{
@@ -380,7 +381,7 @@ func TestCompressionFeatures(t *testing.T) {
 
 // TestMemoryManagement tests memory tracking and limits
 func TestMemoryManagement(t *testing.T) {
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 
 	t.Run("memory_tracking", func(t *testing.T) {
 		cfg := &domain.SemanticCacheConfig{
@@ -468,7 +469,7 @@ func TestMemoryManagement(t *testing.T) {
 
 // TestEnhancedMetrics tests the enhanced metrics functionality
 func TestEnhancedMetrics(t *testing.T) {
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 
 	cfg := &domain.SemanticCacheConfig{
 		Enabled:                 true,
@@ -529,7 +530,7 @@ func TestEnhancedMetrics(t *testing.T) {
 
 // TestCacheConfiguration tests different configuration scenarios
 func TestCacheConfiguration(t *testing.T) {
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 
 	t.Run("default_configuration", func(t *testing.T) {
 		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
@@ -585,7 +586,7 @@ func TestCacheConfiguration(t *testing.T) {
 }
 
 func TestSemanticCacheStats(t *testing.T) {
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 
 	stats := cache.GetStats()
@@ -631,7 +632,7 @@ func TestSemanticCacheStats(t *testing.T) {
 }
 
 func TestSemanticCacheSimilarQueries(t *testing.T) {
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 
 	// Add some queries to the cache
@@ -679,7 +680,7 @@ func TestSemanticCacheSimilarQueries(t *testing.T) {
 }
 
 func TestSemanticCacheClearExpired(t *testing.T) {
-	embeddingService := NewMockEmbeddingService()
+	embeddingService := embeddings.NewMockEmbeddingService()
 	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 
 	// Set short TTL for testing (50ms is long enough to be reliable but short for tests)
@@ -723,57 +724,40 @@ func TestSemanticCacheClearExpired(t *testing.T) {
 	}
 }
 
-func TestMockEmbeddingService(t *testing.T) {
-	service := NewMockEmbeddingService()
-
-	embedding1, err := service.GenerateEmbedding("test query 1")
-	if err != nil {
-		t.Fatalf("Failed to generate embedding: %v", err)
-	}
-
-	if len(embedding1) != 1536 {
-		t.Errorf("Expected embedding length 1536, got %d", len(embedding1))
-	}
-
-	embedding2, err := service.GenerateEmbedding("test query 2")
-	if err != nil {
-		t.Fatalf("Failed to generate embedding: %v", err)
-	}
-
-	// Same input should produce same output
-	embedding1_again, err := service.GenerateEmbedding("test query 1")
-	if err != nil {
-		t.Fatalf("Failed to generate embedding: %v", err)
-	}
-
-	for i := range embedding1 {
-		if embedding1[i] != embedding1_again[i] {
-			t.Error("Expected same input to produce same embedding")
-			break
-		}
-	}
-
-	// Different inputs should produce different outputs
-	different := false
-	for i := range embedding1 {
-		if embedding1[i] != embedding2[i] {
-			different = true
-			break
-		}
-	}
-
-	if !different {
-		t.Error("Expected different inputs to produce different embeddings")
-	}
-
-	// Test empty input
-	_, err = service.GenerateEmbedding("")
-	if err == nil {
-		t.Error("Expected error for empty input")
-	}
-}
-
 // Helper function to create a test logger
 func createTestLogger() *logger.Logger {
 	return logger.New()
+}
+
+// Clear empties the cache in place: the same embedder keeps working, and no
+// second cleanup goroutine starts.
+func TestSemanticCacheClear(t *testing.T) {
+	cache := NewSemanticCache(embeddings.NewKeywordEmbeddingService(), logger.New(), "test", nil)
+	defer cache.Close()
+
+	result := &domain.NQERunResult{Items: []map[string]interface{}{{"k": "v"}}}
+	if err := cache.Put("show bgp neighbors", "net", "snap", result); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	cache.Get("show bgp neighbors", "net", "snap")
+
+	cache.Clear()
+
+	stats := cache.GetStats()
+	if n := stats["total_entries"].(int); n != 0 {
+		t.Errorf("total_entries after Clear = %d, want 0", n)
+	}
+	if hits := stats["cache_hits"].(int64); hits != 0 {
+		t.Errorf("cache_hits after Clear = %d, want 0", hits)
+	}
+	if _, ok := cache.Get("show bgp neighbors", "net", "snap"); ok {
+		t.Error("Get found an entry after Clear")
+	}
+
+	if err := cache.Put("show bgp neighbors", "net", "snap", result); err != nil {
+		t.Fatalf("Put after Clear: %v", err)
+	}
+	if _, ok := cache.Get("show bgp neighbors", "net", "snap"); !ok {
+		t.Error("cache does not work after Clear")
+	}
 }

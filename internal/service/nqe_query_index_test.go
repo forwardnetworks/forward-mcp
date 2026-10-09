@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"testing"
 
 	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
@@ -8,7 +9,7 @@ import (
 
 func TestSearchQueries_MetadataFiltering(t *testing.T) {
 	// Create a mock embedding service for testing
-	mockEmbeddingService := NewMockEmbeddingService()
+	mockEmbeddingService := embeddings.NewMockEmbeddingService()
 	log := logger.New()
 
 	idx := NewNQEQueryIndex(mockEmbeddingService, log)
@@ -57,7 +58,7 @@ func TestSearchQueries_MetadataFiltering(t *testing.T) {
 }
 
 func TestSearchQueries_EmbeddingPreferred(t *testing.T) {
-	mockEmbeddingService := NewMockEmbeddingService()
+	mockEmbeddingService := embeddings.NewMockEmbeddingService()
 	log := logger.New()
 
 	idx := NewNQEQueryIndex(mockEmbeddingService, log)
@@ -87,7 +88,7 @@ func TestSearchQueries_EmbeddingPreferred(t *testing.T) {
 }
 
 func TestSearchQueries_KeywordFallback(t *testing.T) {
-	mockEmbeddingService := NewMockEmbeddingService()
+	mockEmbeddingService := embeddings.NewMockEmbeddingService()
 	log := logger.New()
 
 	idx := NewNQEQueryIndex(mockEmbeddingService, log)
