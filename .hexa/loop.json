@@ -50,13 +50,11 @@
         "internal/adapters/primary/mcpserver/server.go",
         "docs/tool-quality-phase3-complete.md",
         ".claude/skills/forward-mcp-guide.md",
-        "CLAUDE.md",
         "scripts/test-tool-quality.sh",
         "scripts/test-mcp-tools.go",
         "test-skill-loading.md",
         "docs/tool-quality-test-results.md",
         "CHANGELOG-v4.0.0.md",
-        "README.md",
         "docs/adrs/ADR-2610091600-http-sse-transport.md",
         "internal/adapters/primary/httpserver/health.go",
         "internal/adapters/primary/httpserver/middleware.go",
@@ -66,13 +64,15 @@
         "internal/adapters/secondary/envconfig/config.go",
         "cmd/server/main.go",
         "internal/adapters/primary/httpserver/jwks.go",
-        "internal/adapters/primary/httpserver/auth.go"
+        "internal/adapters/primary/httpserver/auth.go",
+        "README.md",
+        "CLAUDE.md"
       ],
       "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go test -count=1 -skip TestIntegration ./internal/... && hexa analyze . --grade A+",
       "pid": 51545,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-09T19:25:59.290400+00:00"
+      "updated": "2026-10-09T19:34:41.284287+00:00"
     }
   }
 }

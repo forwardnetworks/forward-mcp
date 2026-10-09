@@ -5,14 +5,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/ports"
 	"github.com/rs/cors"
 	"golang.org/x/time/rate"
 )
 
 // CORSMiddleware creates a CORS middleware
-func CORSMiddleware(cfg *domain.HTTPConfig) *cors.Cors {
+func CORSMiddleware(cfg *ports.HTTPConfig) *cors.Cors {
 	return cors.New(cors.Options{
 		AllowedOrigins: cfg.CORSOrigins,
 		AllowedMethods: []string{

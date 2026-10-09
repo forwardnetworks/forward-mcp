@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/ports"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -21,14 +20,14 @@ const (
 
 // Server represents the HTTP/SSE server
 type Server struct {
-	config      *domain.HTTPConfig
+	config      *ports.HTTPConfig
 	log         ports.Logger
 	httpServer  *http.Server
 	rateLimiter *RateLimiter
 }
 
 // New creates a new HTTP/SSE server
-func New(cfg *domain.HTTPConfig, log ports.Logger) *Server {
+func New(cfg *ports.HTTPConfig, log ports.Logger) *Server {
 	return &Server{
 		config:      cfg,
 		log:         log,

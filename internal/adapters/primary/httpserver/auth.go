@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/ports"
 )
 
@@ -24,7 +23,7 @@ type UserInfo struct {
 }
 
 // AuthMiddleware creates an authentication middleware based on config
-func AuthMiddleware(cfg *domain.HTTPConfig, log ports.Logger) func(http.Handler) http.Handler {
+func AuthMiddleware(cfg *ports.HTTPConfig, log ports.Logger) func(http.Handler) http.Handler {
 	switch cfg.AuthMode {
 	case "jwt":
 		return jwtAuthMiddleware(cfg, log)
@@ -40,7 +39,7 @@ func AuthMiddleware(cfg *domain.HTTPConfig, log ports.Logger) func(http.Handler)
 }
 
 // jwtAuthMiddleware validates JWT tokens using JWKS
-func jwtAuthMiddleware(cfg *domain.HTTPConfig, log ports.Logger) func(http.Handler) http.Handler {
+func jwtAuthMiddleware(cfg *ports.HTTPConfig, log ports.Logger) func(http.Handler) http.Handler {
 	// Create JWKS cache for public key management
 	var jwksCache *JWKSCache
 	if cfg.JWTPublicKeyURL != "" {
@@ -109,7 +108,7 @@ func jwtAuthMiddleware(cfg *domain.HTTPConfig, log ports.Logger) func(http.Handl
 }
 
 // apiKeyAuthMiddleware validates API keys
-func apiKeyAuthMiddleware(cfg *domain.HTTPConfig, log ports.Logger) func(http.Handler) http.Handler {
+func apiKeyAuthMiddleware(cfg *ports.HTTPConfig, log ports.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Extract API key from Authorization header

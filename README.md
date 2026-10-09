@@ -4,7 +4,7 @@
 
 Forward MCP is an open-source server that provides a set of tools and APIs for interacting with Forward Networks' platform. It enables automation, analysis, and integration with network data using the Model Context Protocol (MCP).
 
-Built with hexagonal architecture for clean separation of concerns, full test coverage, and easy extensibility.
+Built with hexagonal architecture for clean separation of concerns and easy extensibility. Runs locally over stdio, or as a remote server over HTTP/SSE.
 
 ## Features
 - **54 High-Quality MCP Tools**: All tools follow Composio-inspired design standards with consistent descriptions, clear parameters, and proper format hints
@@ -17,6 +17,20 @@ Built with hexagonal architecture for clean separation of concerns, full test co
 - **Knowledge Graph Memory**: Entity-Relation-Observation model for storing network discoveries
 - **Bloom Filter Search**: Automatic optimization for large datasets (>100 items) with 80%+ memory reduction
 - **Security Hardened**: TLS 1.3+ enforcement, SHA-256 hashing, path traversal protection, race-condition free
+- **Remote Server Mode (preview)**: HTTP/SSE transport with API-key or JWT (JWKS) authentication, per-user rate limits, and health endpoints
+
+## What's New Since 4.0.0 (unreleased)
+
+### Remote Server Mode — HTTP/SSE Transport (ADR-2610091600, preview)
+You can now run forward-mcp on a separate host and connect to it over the network. The Forward API credentials stay on that one server, not on every laptop.
+
+- **New primary adapter**: `internal/adapters/primary/httpserver/`. The use cases did not change.
+- **Authentication**: API keys, or JWT validated against your identity provider's JWKS keys (refreshed every hour).
+- **TLS required by default**: the server refuses to start without a certificate unless you set `FORWARD_HTTP_ALLOW_INSECURE=true`.
+- **Safe CORS**: a `*` origin is rejected; origins must be `https://` (or `http://localhost` for development).
+- **Rate limits**: a token bucket per user, 100 requests per minute by default.
+
+See [Remote Server Mode](#remote-server-mode-httpsse-preview) for setup, and [Known Limitations](#known-limitations-of-remote-server-mode) before you deploy it.
 
 ## What's New in 4.0.0
 
@@ -86,11 +100,12 @@ Forward-MCP follows **hexagonal architecture** (ports & adapters) for clean sepa
 ```
 ┌─────────────────────────────────────────────┐
 │         MCP Client (Claude, etc)            │
-└────────────────┬────────────────────────────┘
-                 │ stdio
-┌────────────────▼────────────────────────────┐
-│      Primary Adapter (MCP Server)           │
-│   internal/adapters/primary/mcpserver/      │
+└──────────┬───────────────────────┬──────────┘
+           │ stdio (local)         │ HTTP/SSE (remote)
+┌──────────▼───────────────────────▼──────────┐
+│           Primary Adapters                  │
+│  mcpserver/  - registers tools & prompts    │
+│  httpserver/ - SSE, auth, rate limit, TLS   │
 └────────────────┬────────────────────────────┘
                  │
 ┌────────────────▼────────────────────────────┐
@@ -128,6 +143,7 @@ Forward-MCP follows **hexagonal architecture** (ports & adapters) for clean sepa
 - `cmd/server/main.go` - Entry point, composes adapters and starts server
 - `internal/usecases/service.go` - Main service orchestrator
 - `internal/adapters/primary/mcpserver/server.go` - MCP protocol handler
+- `internal/adapters/primary/httpserver/` - HTTP/SSE transport, auth, middleware
 - `internal/adapters/secondary/forwardapi/client.go` - Forward Networks API client
 - `.claude/skills/forward-mcp-guide.md` - Agent workflow guide (439 lines)
 
@@ -138,7 +154,7 @@ hexa analyze . --grade A+
 ```
 
 ## Prerequisites
-- Go 1.25 or later
+- Go 1.26 or later
 - CGO enabled (required for SQLite)
 - Access to Forward Networks API (API URL and API Key)
 
@@ -173,6 +189,87 @@ Run the server:
 ```
 
 The server will start and listen for MCP protocol messages via stdio (compatible with Claude Desktop, Claude Code, and other MCP clients).
+
+## Remote Server Mode (HTTP/SSE, preview)
+
+Run forward-mcp on one host and connect to it from other machines.
+
+### Start the server
+
+Production (TLS and JWT):
+```sh
+FORWARD_HTTP_ENABLED=true \
+FORWARD_HTTP_PORT=8080 \
+FORWARD_HTTP_TLS_CERT=/etc/forward-mcp/tls.crt \
+FORWARD_HTTP_TLS_KEY=/etc/forward-mcp/tls.key \
+FORWARD_HTTP_AUTH_MODE=jwt \
+FORWARD_HTTP_JWT_ISSUER=https://auth.example.com/ \
+FORWARD_HTTP_JWT_AUDIENCE=forward-mcp \
+FORWARD_HTTP_JWT_PUBLIC_KEY_URL=https://auth.example.com/.well-known/jwks.json \
+./forward-mcp
+```
+
+Local development (no TLS, API key):
+```sh
+FORWARD_HTTP_ENABLED=true \
+FORWARD_HTTP_ALLOW_INSECURE=true \
+FORWARD_HTTP_HOST=127.0.0.1 \
+FORWARD_HTTP_AUTH_MODE=api-key \
+FORWARD_HTTP_API_KEYS="dev-key:alice" \
+./forward-mcp
+```
+
+Do not set `FORWARD_HTTP_ALLOW_INSECURE=true` on a server that other machines can reach. Without TLS, API keys and tokens cross the network in plain text.
+
+### Endpoints
+
+| Path | Auth | Purpose |
+|------|------|---------|
+| `/sse` | Required | MCP protocol over Server-Sent Events |
+| `/health` | None | Returns 200 while the process runs |
+| `/ready` | None | Returns 200 when the server can take traffic |
+
+### Connect a client
+
+Claude Code:
+```sh
+claude mcp add --transport sse forward-mcp https://forward-mcp.example.com/sse \
+  --header "Authorization: Bearer <api-key-or-jwt>"
+```
+
+Check that the server is up:
+```sh
+curl https://forward-mcp.example.com/health
+```
+
+### Configuration
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `FORWARD_HTTP_ENABLED` | `false` | Turns on the HTTP/SSE transport. Stdio is not started when this is on. |
+| `FORWARD_HTTP_HOST` | `0.0.0.0` | Address to listen on |
+| `FORWARD_HTTP_PORT` | `8080` | Port to listen on |
+| `FORWARD_HTTP_TLS_CERT` / `FORWARD_HTTP_TLS_KEY` | — | Certificate and key. Required unless insecure mode is on. |
+| `FORWARD_HTTP_ALLOW_INSECURE` | `false` | Development only. Allows plain HTTP. |
+| `FORWARD_HTTP_AUTH_MODE` | `api-key` | `api-key`, `jwt`, or `none` (development only) |
+| `FORWARD_HTTP_API_KEYS` | — | `key1:user1,key2:user2` |
+| `FORWARD_HTTP_JWT_ISSUER` | — | Expected `iss` claim |
+| `FORWARD_HTTP_JWT_AUDIENCE` | `forward-mcp` | Expected `aud` claim |
+| `FORWARD_HTTP_JWT_PUBLIC_KEY_URL` | — | JWKS URL of your identity provider |
+| `FORWARD_HTTP_CORS_ORIGINS` | — | Comma-separated `https://` origins. `*` is rejected. |
+| `FORWARD_HTTP_RATE_LIMIT` | `100` | Requests per minute per user |
+| `FORWARD_HTTP_READ_TIMEOUT` / `FORWARD_HTTP_WRITE_TIMEOUT` | `30` | Seconds |
+
+### Known Limitations of Remote Server Mode
+
+This mode works, but it is a preview. Read these before you deploy it:
+
+1. **SSE streams drop after 30 seconds.** The HTTP write timeout also applies to the long-lived `/sse` stream. Clients must reconnect. Set `FORWARD_HTTP_WRITE_TIMEOUT` higher as a workaround.
+2. **SSE is the older MCP HTTP transport.** The current MCP specification uses Streamable HTTP. Most clients still accept SSE, but new clients may expect Streamable HTTP.
+3. **All users share one server state.** Every connection uses the same MCP server, so `set_default_network`, the cache, and the memory graph are shared between users.
+4. **`FORWARD_HTTP_MAX_CONNECTIONS` is read but not enforced yet.**
+5. **No automated tests yet** for the `httpserver` adapter.
+6. **Not built yet:** OpenTelemetry metrics and tracing, a Dockerfile, and Kubernetes manifests (ADR-2610091600, phases 3–5).
 
 ## Bloomsearch Capabilities
 
