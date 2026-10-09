@@ -72,13 +72,15 @@
         "internal/adapters/secondary/queryindex/index.go",
         "internal/adapters/secondary/queryindex/bm25_test.go",
         "README.md",
+        "Dockerfile",
+        ".dockerignore",
         "CLAUDE.md"
       ],
       "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go test -count=1 -skip TestIntegration ./internal/... && hexa analyze . --grade A+",
       "pid": 51545,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-09T19:45:49.525895+00:00"
+      "updated": "2026-10-09T19:53:17.296860+00:00"
     }
   }
 }

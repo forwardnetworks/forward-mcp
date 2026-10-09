@@ -19,18 +19,18 @@ fi
 # Check forward-mcp-guide skill exists
 echo ""
 echo "2. Skill file verification..."
-if [ -f ".claude/skills/forward-mcp-guide.md" ]; then
-    line_count=$(wc -l < .claude/skills/forward-mcp-guide.md | tr -d ' ')
+if [ -f ".claude/skills/forward-mcp-guide/SKILL.md" ]; then
+    line_count=$(wc -l < .claude/skills/forward-mcp-guide/SKILL.md | tr -d ' ')
     echo "   ✅ forward-mcp-guide.md exists ($line_count lines)"
 
     # Check for key sections
-    if grep -q "## Discovery Workflow" .claude/skills/forward-mcp-guide.md; then
+    if grep -q "## Discovery Workflow" .claude/skills/forward-mcp-guide/SKILL.md; then
         echo "   ✅ Contains Discovery Workflow section"
     else
         echo "   ❌ Missing Discovery Workflow section"
     fi
 
-    if grep -q "## Path Search Rules" .claude/skills/forward-mcp-guide.md; then
+    if grep -q "## Path Search Rules" .claude/skills/forward-mcp-guide/SKILL.md; then
         echo "   ✅ Contains Path Search Rules section"
     else
         echo "   ❌ Missing Path Search Rules section"

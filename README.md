@@ -153,7 +153,7 @@ Forward-MCP follows **hexagonal architecture** (ports & adapters) for clean sepa
 - `internal/adapters/primary/mcpserver/server.go` - MCP protocol handler
 - `internal/adapters/primary/httpserver/` - Streamable HTTP + legacy SSE transport, auth, middleware
 - `internal/adapters/secondary/forwardapi/client.go` - Forward Networks API client
-- `.claude/skills/forward-mcp-guide.md` - Agent workflow guide (439 lines)
+- `.claude/skills/forward-mcp-guide/SKILL.md` - Agent workflow guide (439 lines)
 
 **Architecture Validation:**
 ```sh
@@ -335,7 +335,7 @@ make test-coverage     # Coverage report
 - `CHANGELOG-v4.0.0.md` - Complete v4.0.0 release notes (402 lines)
 
 **Agent Workflows:**
-- `.claude/skills/forward-mcp-guide.md` - Comprehensive agent workflow guide (439 lines)
+- `.claude/skills/forward-mcp-guide/SKILL.md` - Comprehensive agent workflow guide (439 lines)
   - Discovery workflow (search → run queries)
   - Path search rules
   - Memory system usage

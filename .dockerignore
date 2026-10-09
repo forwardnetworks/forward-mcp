@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+bin/
+data/
+server
+*.db
+*.log
+.claude/
+.hexa/
+docs/
+tests/

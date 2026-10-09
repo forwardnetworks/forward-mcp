@@ -127,7 +127,7 @@ return nil, fmt.Errorf("invalid input")  // no action
 
 - **ADR-2610091555:** Tool Quality Standards (docs/adrs/)
 - **Format Hints Guide:** docs/format-hints-guide.md
-- **Forward-MCP Guide Skill:** .claude/skills/forward-mcp-guide.md
+- **Forward-MCP Guide Skill:** .claude/skills/forward-mcp-guide/SKILL.md
 - **Composio Guide:** https://composio.dev/blog/how-to-build-tools-for-ai-agents-a-field-guide
 - **Forward API Spec:** https://docs.fwd.app/latest/api/spec/complete.yaml
 
@@ -158,58 +158,42 @@ make database-clean
 
 ## High-Level Architecture
 
-### MCP Server Structure
+Hexagonal (ports and adapters), enforced by `hexa analyze . --grade A+` and `.hexa/ADR-rules.toml` (ADR-2610091315). Dependencies point inward: adapters → ports → domain. **Adapters must import `internal/ports`, never `internal/domain` directly** — the ports re-export the domain types (e.g. `ports.HTTPConfig = domain.HTTPConfig`). Breaking this drops the grade.
+
 ```
-MCP Client (Claude Desktop)
-    ↓ stdio transport
-ForwardMCPService (mcp_service.go)
-    ├─→ SemanticCache (semantic_cache.go)
-    ├─→ MemorySystem (memory_system.go) - Knowledge graph
-    ├─→ NQEQueryIndex (nqe_query_index.go) - Vector search
-    ├─→ NQEDatabase (nqe_db.go) - SQLite metadata
-    ├─→ BloomSearchManager (bloom_search.go) - Large result filtering
-    └─→ ForwardClient (internal/forward/client.go)
-         ↓
-Forward Networks API
+MCP client
+   │ stdio                       │ Streamable HTTP /mcp (legacy SSE /sse)
+   ▼                             ▼
+adapters/primary/mcpserver   adapters/primary/httpserver   ← tools, prompts, resource; HTTP auth/rate limit/TLS
+   │
+   ▼
+usecases/  (Service: 54 tool handlers, workflows, query loading — no I/O of its own)
+   │ calls ports (interfaces)
+   ▼
+adapters/secondary/  forwardapi · sqlite · semcache · embeddings · queryindex · bloom · envconfig · stderrlog · instancelock
+   │
+   ▼
+Forward Networks API, SQLite files, disk
 ```
 
-### Core Components
+| Layer | Path | Holds |
+|-------|------|-------|
+| Domain | `internal/domain/` | Pure types (config, Forward API types, cache, memory, query index). No imports. |
+| Ports | `internal/ports/` | Interfaces (`ForwardAPI`, `QueryIndex`, `QueryStore`, `MemoryStore`, `Logger`, …) and type aliases of domain types |
+| Use cases | `internal/usecases/` | `service.go` wires `Deps`; one file per feature (`nqe.go`, `paths.go`, `memory.go`, `inventory.go`, `prefixes.go`, `bloom.go`, `workflows.go`, `query_loader.go`); arg structs in `tools.go` |
+| Primary adapters | `internal/adapters/primary/` | `mcpserver/` registers tools/prompts/resource with the MCP SDK; `httpserver/` serves them over HTTP |
+| Secondary adapters | `internal/adapters/secondary/` | See below |
+| Composition root | `cmd/server/main.go` | Builds the adapters (`newDeps`) and starts the transports |
 
-**ForwardMCPService** (`internal/service/mcp_service.go`):
-- Main orchestrator that registers 54 MCP tools, 6 prompts, and 1 resource
-- Manages component lifecycle and coordination
-- Handles workflow state and session management with automatic cleanup (1000 max sessions, 24h TTL)
-- Instance partitioning: Uses SHA-256(apiBaseURL)[:16] as instance_id for multi-tenant data isolation
+### Secondary Adapters
 
-**SemanticCache** (`internal/service/semantic_cache.go`):
-- AI-powered query result caching with embedding-based similarity (threshold: 0.85)
-- Multiple eviction policies: LRU, LFU, Size-based, TTL, Oldest
-- Compression support (gzip) for large results
-- Disk persistence for entries >5% of max memory
-- Stores cache with instance_id partitioning
-
-**MemorySystem** (`internal/service/memory_system.go`):
-- Knowledge graph using Entity-Relation-Observation (ERO) model
-- SQLite backend at `~/.forward-mcp/data/memory.db`
-- Full-text search on observations
-- Instance partitioning for multi-tenant support
-
-**NQEQueryIndex** (`internal/service/nqe_query_index.go`):
-- Vector search for semantic query discovery from 6000+ queries
-- Supports keyword embeddings (free, offline) or OpenAI embeddings
-- Fast query lookup with cosine similarity matching
-
-**NQEDatabase** (`internal/service/nqe_db.go`):
-- SQLite storage at `~/.forward-mcp/data/nqe_queries.db`
-- Smart caching strategy: Database → API → Spec file fallback
-- Background refresh with commit-based change detection
-- Auto-hydration on first run
-
-**BloomSearchManager** (`internal/service/bloom_search.go`):
-- Automatic bloom filter generation for NQE results >100 items
-- 80%+ memory reduction for large datasets (5000+ items)
-- Persistent indexes at `data/bloom_indexes/{instance_id}/{entity_id}/`
-- Block-based partitioning (1000 items/block)
+- **forwardapi/** — Forward Networks API client. TLS 1.3, credential zeroing, LLM-friendly HTTP errors.
+- **sqlite/** — `nqe_store.go` (query metadata, `~/.forward-mcp/data/nqe_queries.db`), `memory_store.go` (knowledge graph, `memory.db`), `rowquery.go` (read-only SQL over stored NQE results).
+- **semcache/** — semantic result cache: embedding similarity (threshold 0.85), LRU/LFU/size/TTL/oldest eviction, gzip, disk overflow.
+- **queryindex/** — NQE query library search: BM25 (`bm25.go`), fused with embedding cosine ranking via RRF when embeddings exist (`search.go`).
+- **embeddings/** — OpenAI, offline keyword, and mock embedding services.
+- **bloom/** — bloom filters for NQE results >100 items, persisted under `data/bloom_indexes/{instance_id}/{entity_id}/`.
+- **envconfig/**, **stderrlog/**, **instancelock/** — configuration, logging (stderr only; stdout carries the MCP protocol), single-instance lock.
 
 ## Critical Implementation Details
 
@@ -217,7 +201,7 @@ Forward Networks API
 - **In-Memory**: SemanticCache, WorkflowManager sessions, NQEQueryIndex
 - **SQLite**: Query metadata (`nqe_queries.db`), Knowledge graph (`memory.db`)
 - **File System**: Bloom filter indexes, disk cache overflow
-- **Redis**: Interfaces defined in `redis_store.go` but not implemented (future enhancement)
+- **Redis**: not implemented (the unused interfaces and config were removed)
 
 ### Instance Partitioning Model
 Every storage key includes `instance_id = SHA-256(apiBaseURL)[:16]`:
@@ -230,18 +214,18 @@ Every storage key includes `instance_id = SHA-256(apiBaseURL)[:16]`:
 Three-tier fallback for query metadata:
 1. **Database** (fastest): SQLite with background refresh
 2. **API** (fresh): Live fetch from Forward Networks API with enhanced metadata
-3. **Spec file** (fallback): Static `spec/nqe-queries.json` if API unavailable
+3. **Spec file** (fallback): Static `spec/NQELibrary.json` if API unavailable (paths and IDs only, no descriptions)
 
 Background refresh triggers on commit ID changes from API.
 
 ### Semantic Search Embeddings
 Two embedding providers (configurable via `FORWARD_EMBEDDING_PROVIDER`):
 - **keyword**: hand-weighted network keyword list plus SHA-256 hash features, no API required, fast, free
-
-Query search itself does not depend on embeddings: `SearchQueries` ranks with BM25 (`internal/adapters/secondary/queryindex/bm25.go`) and, when queries carry embeddings, fuses that with cosine ranking via Reciprocal Rank Fusion (`search.go`).
 - **openai**: text-embedding-3-small (1536 dims), requires `OPENAI_API_KEY`, better semantic quality
 
-Cache file: `spec/nqe-embeddings.json`
+Cache file: `spec/nqe-embeddings.json` (ships empty).
+
+Query search does not depend on embeddings: `SearchQueries` ranks with BM25 (`internal/adapters/secondary/queryindex/bm25.go`) and, when queries carry embeddings, fuses that with cosine ranking via Reciprocal Rank Fusion (`search.go`).
 
 ### Bloom Filter Auto-Generation
 When NQE query results >100 items:
@@ -296,7 +280,7 @@ cd forward-mcp
 make deps
 
 # Configure environment
-cp .env.example .env
+cp env.example .env
 # Edit .env with your Forward API credentials
 
 # Build and run
@@ -310,7 +294,7 @@ make run
 make test-quick
 
 # Test a specific package
-go test -v ./internal/service -run TestSemanticCache
+go test -v ./internal/adapters/secondary/semcache -run TestSemanticCache
 
 # Generate embeddings for query search (one-time)
 make embedding-generate-keyword
@@ -329,36 +313,41 @@ make test-coverage-all
 ### Testing Individual Functions
 ```bash
 # Test specific function
-go test -v ./internal/service -run TestFunctionName
+go test -v ./internal/usecases -run TestFunctionName
 
 # Test with timeout
-go test -v -timeout=30s ./internal/service -run TestName
+go test -v -timeout=30s ./internal/usecases -run TestName
 
 # Integration test for specific feature
-go test -v ./internal/service -run 'TestIntegration.*PathSearch'
+go test -v ./internal/usecases -run 'TestIntegration.*PathSearch'
 ```
 
 ## Docker Deployment
 
-```bash
-# Build and run with Docker
-make docker-build
-make docker-run
+The image runs remote server mode (`FORWARD_HTTP_ENABLED=true`, port 8080) and needs CGO for SQLite.
 
-# Or use docker-compose for Claude Flow integration
-docker-compose -f docker-compose.optimized.yml up
+```bash
+make docker-build
+docker run --env-file .env -p 8080:8080 \
+  -e FORWARD_HTTP_TLS_CERT=/certs/tls.crt -e FORWARD_HTTP_TLS_KEY=/certs/tls.key \
+  -v /path/to/certs:/certs:ro -v forward-mcp-data:/home/app/.forward-mcp \
+  forward-mcp
 ```
+
+Behind a TLS-terminating proxy, set `FORWARD_HTTP_ALLOW_INSECURE=true` instead of the certificate variables.
 
 ## Key File Locations
 
-- **Entry Point**: `cmd/server/main.go`
-- **Core Service**: `internal/service/mcp_service.go` (4422 lines)
-- **Tool Definitions**: `internal/service/tools.go`
-- **API Client**: `internal/forward/client.go`
-- **Configuration**: `internal/config/config.go`
+- **Entry Point / composition root**: `cmd/server/main.go`
+- **Use cases**: `internal/usecases/service.go` (wiring), feature files beside it
+- **Tool arg structs**: `internal/usecases/tools.go`
+- **Tool registration and descriptions**: `internal/adapters/primary/mcpserver/server.go`
+- **HTTP transport**: `internal/adapters/primary/httpserver/`
+- **API Client**: `internal/adapters/secondary/forwardapi/client.go`
+- **Configuration**: `internal/adapters/secondary/envconfig/config.go` (types in `internal/domain/config.go`)
 - **Databases**: `~/.forward-mcp/data/` (created at runtime)
 - **Bloom Indexes**: `data/bloom_indexes/` (created at runtime)
-- **Query Specs**: `spec/nqe-queries.json`
+- **Query library (offline fallback)**: `spec/NQELibrary.json`
 - **Embedding Cache**: `spec/nqe-embeddings.json`
 
 ## Important Go Dependencies
@@ -382,29 +371,29 @@ docker-compose -f docker-compose.optimized.yml up
    - ❌ NEVER allow `InsecureSkipVerify` or certificate validation bypass
    - ✅ Enforce `MinVersion: tls.VersionTLS13`
    - ✅ Restrict to: `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, `TLS_CHACHA20_POLY1305_SHA256`
-   - See: `internal/forward/client.go:84-110`
+   - See: `internal/adapters/secondary/forwardapi/client.go` (TLS config)
 
 3. **Path Traversal Protection**: Validate all file paths before filesystem operations
    - ✅ Use `filepath.Clean()` and `filepath.Abs()` for all user-provided paths
    - ✅ Verify paths stay within designated directories using `strings.HasPrefix()`
    - ✅ Validate hash formats with regex before using in file paths
-   - See: `internal/service/semantic_cache.go:867-896`
+   - See: `internal/adapters/secondary/semcache/semantic_cache.go` (disk path validation)
 
 4. **Concurrency Safety**: Use atomic operations for shared state
    - ✅ Use `sync/atomic` for metrics and counters
    - ✅ Proper mutex locking (RLock for reads, Lock for writes)
    - ✅ Run with `-race` detector during testing
-   - See: `internal/service/semantic_cache.go:296-447`
+   - See: `internal/adapters/secondary/semcache/semantic_cache.go` (atomic metrics)
 
 5. **Credential Security**: Zero sensitive data from memory after use
    - ✅ Use byte slices with `defer` cleanup for credentials
    - ✅ Explicitly zero memory: `for i := range credentials { credentials[i] = 0 }`
-   - See: `internal/forward/client.go:433-447`
+   - See: `internal/adapters/secondary/forwardapi/client.go` (credential zeroing)
 
 6. **SQL Injection Prevention**: Escape LIKE patterns and use parameterized queries
    - ✅ Escape special characters: `\`, `%`, `_` in user input
    - ✅ Use `?` placeholders for all SQL values
-   - See: `internal/service/memory_system.go:296-303`
+   - See: `internal/adapters/secondary/sqlite/memory_store.go` (LIKE escaping)
 
 ### MCP Protocol Compliance
 
@@ -431,7 +420,7 @@ docker-compose -f docker-compose.optimized.yml up
    - ✅ Include context: what failed, why, and how to fix
    - ✅ HTTP errors: explain status code meaning and required action
    - ❌ Don't expose sensitive data (API keys, internal paths, full stack traces)
-   - See: `internal/forward/client.go:470-528`
+   - See: `internal/adapters/secondary/forwardapi/client.go` (HTTP error messages)
 
 4. **Session Management**: Automatic cleanup with TTL
    - ✅ WorkflowManager: max 1000 sessions, 24-hour TTL
@@ -442,13 +431,13 @@ docker-compose -f docker-compose.optimized.yml up
    - ✅ Use `errgroup.WithContext` for parallel component shutdown
    - ✅ Enforce timeout using context.WithTimeout
    - ✅ Return timeout error if shutdown exceeds duration
-   - See: `internal/service/mcp_service.go:333-395`
+   - See: `internal/usecases/service.go` (`Shutdown`)
 
 ### Security Testing Requirements
 
 ```bash
 # Always test for race conditions
-go test -race ./internal/service/...
+go test -race ./internal/...
 
 # Run security scanner
 gosec ./...
@@ -472,7 +461,7 @@ make test-integration
 
 **Hash Generation**: Uses SHA-256 (not MD5) for instance IDs
 ```go
-// internal/service/instance.go
+// internal/usecases/instance.go
 hasher := sha256.New()
 hasher.Write([]byte(apiBaseURL))
 hash := hex.EncodeToString(hasher.Sum(nil))
@@ -483,32 +472,6 @@ Partition key format: `cache:{instance_id}:{resource_hash}`
 - Isolates data between different Forward Networks deployments
 - Prevents collision attacks (SHA-256 vs legacy MD5)
 - Used in: SemanticCache, MemorySystem, BloomIndexManager
-
-### Redis Configuration (Available)
-
-Redis support is configured but not actively used. Configuration available:
-
-```bash
-# Redis Settings (future enhancement)
-REDIS_ENABLED=false
-REDIS_ADDRESS=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_DATABASE=0
-REDIS_POOL_SIZE=10
-
-# Redis TLS
-REDIS_TLS_ENABLED=false
-REDIS_CA_CERT_PATH=
-
-# Redis Connection Tuning
-REDIS_MAX_RETRIES=3
-REDIS_MIN_IDLE_CONNS=5
-REDIS_CONN_MAX_IDLE_TIME=300  # seconds
-REDIS_CONN_MAX_LIFETIME=3600  # seconds
-```
-
-Interface defined in `internal/service/redis_store.go` for distributed caching when needed.
 
 ## Recent Security & Compliance Improvements
 
@@ -535,39 +498,14 @@ All security vulnerabilities and MCP protocol compliance issues have been addres
 - ✅ **Shutdown Timeout**: Added concurrent shutdown with timeout enforcement using errgroup
 
 **Build Quality:**
-- ✅ **Redis Configuration**: Added complete RedisConfig struct for future distributed caching
 - ✅ **Race Detector Clean**: All tests pass with `-race` flag
 - ✅ **Zero Build Errors**: Core codebase builds successfully without warnings
-
-### Files Modified (18 total)
-
-**Security Implementations:**
-- `internal/service/instance.go` - SHA-256 hashing
-- `internal/config/config.go` - TLS enforcement, RedisConfig
-- `internal/forward/client.go` - TLS 1.3, credential zeroing, LLM-friendly errors
-- `internal/service/semantic_cache.go` - Path traversal fixes, atomic operations
-- `internal/service/memory_system.go` - SQL injection prevention
-
-**MCP Protocol:**
-- `internal/service/tools.go` - Removed dummy parameters from 9 structs
-- `internal/service/mcp_service.go` - Input validation, session cleanup, shutdown timeout
-
-**Tests Updated:**
-- `internal/service/smart_search_test.go`
-- `internal/service/mcp_service_test.go`
-- `internal/forward/credentials_test.go`
-
-**Supporting Files:**
-- `cmd/server/main.go`
-- `cmd/test-client/main.go`
-- `go.mod` - Added `golang.org/x/sync v0.19.0`
 
 ### Security Testing Commands
 
 ```bash
 # Run with race detector (required before commits)
-go test -race ./internal/service/...
-go test -race ./internal/forward/...
+go test -race ./internal/...
 
 # Security scanning
 gosec ./...

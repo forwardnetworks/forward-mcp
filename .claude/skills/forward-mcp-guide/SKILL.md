@@ -1,3 +1,8 @@
+---
+name: forward-mcp-guide
+description: How to use the Forward-MCP tools well — finding and running NQE queries, path searches, snapshots, config search/diff, the knowledge-graph memory, and large-result handling. Use when working with Forward Networks through the forward-mcp server, choosing between its tools, or recovering from a tool error.
+---
+
 # Forward-MCP Guide
 
 **Purpose:** Teach agents how to use Forward-MCP tools effectively for network analysis.

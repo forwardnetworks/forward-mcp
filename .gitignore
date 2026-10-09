@@ -46,3 +46,4 @@ forward-mcp-server
 
 # hexa runtime state
 .hexa/loop.lock
+/server
