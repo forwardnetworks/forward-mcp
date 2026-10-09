@@ -106,16 +106,16 @@ Name string `json:"name,omitempty" jsonschema:"New name for the network. Optiona
 
 This explicit constraint prevents agents from calling update_network with neither field set.
 
-### 4. Format Hints Comprehensive
+### 4. Format Hints Corrected
 
-All UUID and snapshot fields now have `format=uuid`:
-- list_snapshots: network_id
-- get_device_hardware: network_id, snapshot_id
-- get_hardware_support: network_id, snapshot_id
-- get_os_support: network_id, snapshot_id
-- search_configs: network_id, snapshot_id
-- get_config_diff: network_id, before_snapshot, after_snapshot
-- update_network: network_id
+**Important:** networkId and snapshotId are strings (not UUIDs) per Forward API spec.  
+Example from API: networkId = '123'
+
+All network_id and snapshot_id fields were clarified in descriptions:
+- "Network ID" (not UUID)
+- "Snapshot ID" (not UUID)
+- Required vs. Optional status made explicit
+- Default behavior documented ("defaults to latest")
 
 ---
 
