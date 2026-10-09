@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/forward-mcp/internal/config"
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
 )
 
@@ -30,16 +30,16 @@ type EmbeddingService interface {
 
 // CacheEntry represents a cached query result with embeddings and metadata
 type CacheEntry struct {
-	Query           string                `json:"query"`
-	NetworkID       string                `json:"network_id"`
-	SnapshotID      string                `json:"snapshot_id"`
-	Embedding       []float64             `json:"embedding"`
-	Result          *forward.NQERunResult `json:"result"`
-	Timestamp       time.Time             `json:"timestamp"`
-	AccessCount     int64                 `json:"access_count"`
-	LastAccessed    time.Time             `json:"last_accessed"`
-	Hash            string                `json:"hash"`
-	SimilarityScore float64               `json:"-"` // Used for search results
+	Query           string               `json:"query"`
+	NetworkID       string               `json:"network_id"`
+	SnapshotID      string               `json:"snapshot_id"`
+	Embedding       []float64            `json:"embedding"`
+	Result          *domain.NQERunResult `json:"result"`
+	Timestamp       time.Time            `json:"timestamp"`
+	AccessCount     int64                `json:"access_count"`
+	LastAccessed    time.Time            `json:"last_accessed"`
+	Hash            string               `json:"hash"`
+	SimilarityScore float64              `json:"-"` // Used for search results
 
 	// Enhanced fields for large result management
 	CompressedSize   int64  `json:"compressed_size"`
@@ -208,7 +208,7 @@ func (sc *SemanticCache) estimateMemoryUsage(entry *CacheEntry) int64 {
 }
 
 // compressResult compresses the NQE result using gzip
-func (sc *SemanticCache) compressResult(result *forward.NQERunResult) ([]byte, int64, error) {
+func (sc *SemanticCache) compressResult(result *domain.NQERunResult) ([]byte, int64, error) {
 	if !sc.compressionEnabled {
 		return nil, 0, nil
 	}
@@ -241,7 +241,7 @@ func (sc *SemanticCache) compressResult(result *forward.NQERunResult) ([]byte, i
 }
 
 // decompressResult decompresses the cached result
-func (sc *SemanticCache) decompressResult(compressedData []byte) (*forward.NQERunResult, error) {
+func (sc *SemanticCache) decompressResult(compressedData []byte) (*domain.NQERunResult, error) {
 	reader, err := gzip.NewReader(bytes.NewReader(compressedData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
@@ -253,7 +253,7 @@ func (sc *SemanticCache) decompressResult(compressedData []byte) (*forward.NQERu
 		return nil, fmt.Errorf("failed to decompress data: %w", err)
 	}
 
-	var result forward.NQERunResult
+	var result domain.NQERunResult
 	if err := json.Unmarshal(decompressedData, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal result: %w", err)
 	}
@@ -282,7 +282,7 @@ func (sc *SemanticCache) cosineSimilarity(a, b []float64) float64 {
 }
 
 // Get attempts to retrieve a cached result using semantic similarity
-func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*forward.NQERunResult, bool) {
+func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*domain.NQERunResult, bool) {
 	start := time.Now()
 	defer func() {
 		if sc.metricsEnabled {
@@ -356,7 +356,7 @@ func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*forward.NQER
 }
 
 // getResultFromEntry retrieves the result from a cache entry, handling compression and disk storage
-func (sc *SemanticCache) getResultFromEntry(entry *CacheEntry) (*forward.NQERunResult, error) {
+func (sc *SemanticCache) getResultFromEntry(entry *CacheEntry) (*domain.NQERunResult, error) {
 	if entry.DiskPath != "" && sc.persistToDisk {
 		// Load from disk
 		return sc.loadFromDisk(entry.DiskPath)
@@ -372,7 +372,7 @@ func (sc *SemanticCache) getResultFromEntry(entry *CacheEntry) (*forward.NQERunR
 }
 
 // Put stores a query result in the cache with its embedding
-func (sc *SemanticCache) Put(query, networkID, snapshotID string, result *forward.NQERunResult) error {
+func (sc *SemanticCache) Put(query, networkID, snapshotID string, result *domain.NQERunResult) error {
 	sc.mutex.Lock()
 	defer sc.mutex.Unlock()
 
@@ -926,7 +926,7 @@ func (sc *SemanticCache) saveToDisk(entry *CacheEntry) error {
 }
 
 // loadFromDisk loads a cache entry from disk
-func (sc *SemanticCache) loadFromDisk(filePath string) (*forward.NQERunResult, error) {
+func (sc *SemanticCache) loadFromDisk(filePath string) (*domain.NQERunResult, error) {
 	cleanPath := filepath.Clean(filePath)
 
 	// SECURITY: Ensure path is within allowed cache directory to prevent path traversal attacks

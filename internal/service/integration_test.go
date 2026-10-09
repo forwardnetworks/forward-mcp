@@ -1,20 +1,22 @@
 package service
 
 import (
+	"context"
+	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/forward-mcp/internal/config"
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
 	"github.com/joho/godotenv"
 )
 
 // getTestNetworkID returns the network to run integration tests against,
 // preferring FORWARD_DEFAULT_NETWORK_ID over the first network in the account.
-func getTestNetworkID(networks []forward.Network) string {
+func getTestNetworkID(networks []domain.Network) string {
 	if id := os.Getenv("FORWARD_DEFAULT_NETWORK_ID"); id != "" {
 		return id
 	}
@@ -51,14 +53,14 @@ func setupIntegrationTest(t *testing.T) *ForwardMCPService {
 		cfg.Forward.Timeout = 30
 	}
 
-	return NewForwardMCPService(cfg, log)
+	return NewForwardMCPService(cfg, log, forwardapi.NewClient(&cfg.Forward, log))
 }
 
 // Integration test for listing networks with real API
 func TestIntegrationListNetworks(t *testing.T) {
 	service := setupIntegrationTest(t)
 
-	response, err := service.listNetworks(ListNetworksArgs{})
+	response, err := service.listNetworks(context.Background(), ListNetworksArgs{})
 	if err != nil {
 		t.Fatalf("Failed to list networks: %v", err)
 	}
@@ -84,7 +86,7 @@ func TestIntegrationSearchPaths(t *testing.T) {
 	service := setupIntegrationTest(t)
 
 	// First get available networks
-	networks, err := service.forwardClient.GetNetworks()
+	networks, err := service.forwardClient.GetNetworks(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to get networks: %v", err)
 	}
@@ -107,7 +109,7 @@ func TestIntegrationSearchPaths(t *testing.T) {
 		MaxResults: 1,
 	}
 
-	response, err := service.searchPathsBulk(args)
+	response, err := service.searchPathsBulk(context.Background(), args)
 	if err != nil {
 		// Path search might fail if no valid paths exist, which is OK
 		t.Logf("Path search failed (this may be expected): %v", err)
@@ -127,7 +129,7 @@ func TestIntegrationSearchPathsSpecificIPs(t *testing.T) {
 	service := setupIntegrationTest(t)
 
 	// First get available networks
-	networks, err := service.forwardClient.GetNetworks()
+	networks, err := service.forwardClient.GetNetworks(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to get networks: %v", err)
 	}
@@ -232,7 +234,7 @@ func TestIntegrationSearchPathsSpecificIPs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Logf("Testing: %s", tc.description)
 
-			response, err := service.searchPathsBulk(tc.args)
+			response, err := service.searchPathsBulk(context.Background(), tc.args)
 
 			if tc.expectError && err == nil {
 				t.Errorf("Expected error but got none")
@@ -298,7 +300,7 @@ func TestIntegrationSearchPathsSpecificIPs(t *testing.T) {
 func TestIntegrationPathSearchResponseStructure(t *testing.T) {
 	service := setupIntegrationTest(t)
 
-	networks, err := service.forwardClient.GetNetworks()
+	networks, err := service.forwardClient.GetNetworks(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to get networks: %v", err)
 	}
@@ -323,7 +325,7 @@ func TestIntegrationPathSearchResponseStructure(t *testing.T) {
 	t.Logf("Testing path search response structure on network %s", networkID)
 
 	// Test that the response has the expected structure even if no paths are found
-	response, err := service.searchPathsBulk(args)
+	response, err := service.searchPathsBulk(context.Background(), args)
 	if err != nil {
 		t.Logf("Path search failed: %v", err)
 		// Test that errors are properly formatted
@@ -367,7 +369,7 @@ func TestIntegrationRunNQEQuery(t *testing.T) {
 	service := setupIntegrationTest(t)
 
 	// First get available networks
-	networks, err := service.forwardClient.GetNetworks()
+	networks, err := service.forwardClient.GetNetworks(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to get networks: %v", err)
 	}
@@ -388,7 +390,7 @@ func TestIntegrationRunNQEQuery(t *testing.T) {
 		},
 	}
 
-	response, err := service.runNQEQueryByID(args)
+	response, err := service.runNQEQueryByID(context.Background(), args)
 	if err != nil {
 		// NQE query might fail if no devices exist or query is invalid, which is OK for testing
 		t.Logf("NQE query failed (this may be expected): %v", err)
@@ -408,7 +410,7 @@ func TestIntegrationPathSearchSpecificCustomerIPs(t *testing.T) {
 	service := setupIntegrationTest(t)
 
 	// First get available networks
-	networks, err := service.forwardClient.GetNetworks()
+	networks, err := service.forwardClient.GetNetworks(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to get networks: %v", err)
 	}
@@ -547,7 +549,7 @@ func TestIntegrationPathSearchSpecificCustomerIPs(t *testing.T) {
 			t.Logf("🔍 Testing: %s", tc.description)
 			t.Logf("   Source IP: %s → Destination IP: %s", tc.args.Queries[0].SrcIP, tc.args.Queries[0].DstIP)
 
-			response, err := service.searchPathsBulk(tc.args)
+			response, err := service.searchPathsBulk(context.Background(), tc.args)
 
 			if tc.expectError && err == nil {
 				t.Errorf("Expected error but got none")
@@ -635,7 +637,7 @@ func TestIntegrationListDevices(t *testing.T) {
 	service := setupIntegrationTest(t)
 
 	// First get available networks
-	networks, err := service.forwardClient.GetNetworks()
+	networks, err := service.forwardClient.GetNetworks(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to get networks: %v", err)
 	}
@@ -652,7 +654,7 @@ func TestIntegrationListDevices(t *testing.T) {
 		Limit:     5,
 	}
 
-	response, err := service.listDevices(args)
+	response, err := service.listDevices(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Failed to list devices: %v", err)
 	}
@@ -670,7 +672,7 @@ func TestIntegrationListSnapshots(t *testing.T) {
 	service := setupIntegrationTest(t)
 
 	// First get available networks
-	networks, err := service.forwardClient.GetNetworks()
+	networks, err := service.forwardClient.GetNetworks(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to get networks: %v", err)
 	}
@@ -686,7 +688,7 @@ func TestIntegrationListSnapshots(t *testing.T) {
 		NetworkID: networkID,
 	}
 
-	response, err := service.listSnapshots(args)
+	response, err := service.listSnapshots(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Failed to list snapshots: %v", err)
 	}

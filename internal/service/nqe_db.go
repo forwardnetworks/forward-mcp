@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
+	"github.com/forward-mcp/internal/ports"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -345,7 +346,7 @@ func (db *NQEDatabase) migrateToInstancePartitioning() error {
 }
 
 // SaveQueries saves or updates queries in the database using upsert
-func (db *NQEDatabase) SaveQueries(queries []forward.NQEQueryDetail) error {
+func (db *NQEDatabase) SaveQueries(queries []domain.NQEQueryDetail) error {
 	if len(queries) == 0 {
 		return nil
 	}
@@ -403,7 +404,7 @@ func (db *NQEDatabase) SaveQueries(queries []forward.NQEQueryDetail) error {
 }
 
 // LoadQueries loads all queries from the database for this instance
-func (db *NQEDatabase) LoadQueries() ([]forward.NQEQueryDetail, error) {
+func (db *NQEDatabase) LoadQueries() ([]domain.NQEQueryDetail, error) {
 	rows, err := db.db.Query(`
 		SELECT query_id, path, intent, source_code, description, repository,
 			   last_commit_id, last_commit_author, last_commit_date, last_commit_title
@@ -416,9 +417,9 @@ func (db *NQEDatabase) LoadQueries() ([]forward.NQEQueryDetail, error) {
 	}
 	defer rows.Close()
 
-	var queries []forward.NQEQueryDetail
+	var queries []domain.NQEQueryDetail
 	for rows.Next() {
-		var query forward.NQEQueryDetail
+		var query domain.NQEQueryDetail
 		var commitID, authorEmail, title sql.NullString
 		var committedAt sql.NullInt64
 
@@ -439,7 +440,7 @@ func (db *NQEDatabase) LoadQueries() ([]forward.NQEQueryDetail, error) {
 		}
 
 		// Populate commit info if available
-		query.LastCommit = forward.NQECommitInfo{
+		query.LastCommit = domain.NQECommitInfo{
 			ID:          commitID.String,
 			AuthorEmail: authorEmail.String,
 			CommittedAt: committedAt.Int64,
@@ -563,7 +564,7 @@ func (db *NQEDatabase) GetAllInstanceIDs() ([]InstanceInfo, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan instance info: %w", err)
 		}
-		
+
 		instance.LastSync = time.Unix(lastSync, 0)
 		instance.FirstSync = time.Unix(firstSync, 0)
 		instances = append(instances, instance)
@@ -574,10 +575,10 @@ func (db *NQEDatabase) GetAllInstanceIDs() ([]InstanceInfo, error) {
 
 // InstanceInfo represents information about a database instance
 type InstanceInfo struct {
-	ID          string    `json:"id"`
-	QueryCount  int       `json:"query_count"`
-	LastSync    time.Time `json:"last_sync"`
-	FirstSync   time.Time `json:"first_sync"`
+	ID         string    `json:"id"`
+	QueryCount int       `json:"query_count"`
+	LastSync   time.Time `json:"last_sync"`
+	FirstSync  time.Time `json:"first_sync"`
 }
 
 // Close closes the database connection
@@ -588,20 +589,15 @@ func (db *NQEDatabase) Close() error {
 	return nil
 }
 
-// loadWithSmartCaching implements the smart caching strategy
-func (db *NQEDatabase) loadWithSmartCaching(client forward.ClientInterface, logger *logger.Logger) ([]forward.NQEQueryDetail, error) {
-	return db.loadWithSmartCachingContext(context.Background(), client, logger)
-}
-
 // loadWithSmartCachingContext implements the smart caching strategy with context support
-func (db *NQEDatabase) loadWithSmartCachingContext(ctx context.Context, client forward.ClientInterface, logger *logger.Logger) ([]forward.NQEQueryDetail, error) {
+func (db *NQEDatabase) loadWithSmartCachingContext(ctx context.Context, client ports.ForwardAPI, logger *logger.Logger) ([]domain.NQEQueryDetail, error) {
 	logger.Info("Starting smart caching query load...")
 
 	// Step 1: Load existing queries from database for immediate availability
 	existingQueries, err := db.LoadQueries()
 	if err != nil {
 		logger.Debug("Failed to load from database: %v", err)
-		existingQueries = []forward.NQEQueryDetail{} // Start with empty if database fails
+		existingQueries = []domain.NQEQueryDetail{} // Start with empty if database fails
 	}
 
 	logger.Info("Found %d existing queries in database", len(existingQueries))
@@ -621,59 +617,8 @@ func (db *NQEDatabase) loadWithSmartCachingContext(ctx context.Context, client f
 	return db.synchronousLoad(ctx, client, logger, existingQueries)
 }
 
-// backgroundEnhancedLoad runs Enhanced API loading in the background
-func (db *NQEDatabase) backgroundEnhancedLoad(client forward.ClientInterface, logger *logger.Logger, existingQueries []forward.NQEQueryDetail) {
-	logger.Info("🔄 Background Enhanced API loading started...")
-
-	// Build commit ID map for incremental updates
-	existingCommitIDs := make(map[string]string)
-	for _, query := range existingQueries {
-		if query.LastCommit.ID != "" {
-			existingCommitIDs[query.Path] = query.LastCommit.ID
-		}
-	}
-
-	// Try Enhanced API with extended timeout for background operation
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second) // 5 minutes for background
-	defer cancel()
-
-	// Try Enhanced API loading
-	enhancedQueries, err := client.GetNQEAllQueriesEnhancedWithCacheContext(ctx, existingCommitIDs)
-	if err != nil {
-		logger.Warn("🔄 Background Enhanced API failed: %v", err)
-		logger.Info("🔄 Background fallback to Basic API...")
-
-		// Fallback to Basic API in background
-		basicQueries, err := db.loadFromBasicAPI(client, logger)
-		if err != nil {
-			logger.Error("🔄 Background Basic API also failed: %v", err)
-			return
-		}
-
-		// Merge and save basic queries
-		allQueries := db.mergeQueries(existingQueries, basicQueries)
-		if err := db.SaveQueries(allQueries); err != nil {
-			logger.Error("🔄 Background save failed: %v", err)
-		} else {
-			logger.Info("🔄 Background Basic API update complete: %d queries saved", len(allQueries))
-		}
-		return
-	}
-
-	// Merge enhanced queries with existing
-	allQueries := db.mergeQueries(existingQueries, enhancedQueries)
-	if err := db.SaveQueries(allQueries); err != nil {
-		logger.Error("🔄 Background save failed: %v", err)
-	} else {
-		logger.Info("🔄 Background Enhanced API update complete: %d queries saved with full metadata", len(allQueries))
-		if err := db.SetMetadata("last_sync", time.Now().Format(time.RFC3339)); err != nil {
-			logger.Error("🔄 Failed to update sync time: %v", err)
-		}
-	}
-}
-
 // backgroundEnhancedLoadWithContext runs Enhanced API loading in the background with context support
-func (db *NQEDatabase) backgroundEnhancedLoadWithContext(ctx context.Context, client forward.ClientInterface, logger *logger.Logger, existingQueries []forward.NQEQueryDetail) {
+func (db *NQEDatabase) backgroundEnhancedLoadWithContext(ctx context.Context, client ports.ForwardAPI, logger *logger.Logger, existingQueries []domain.NQEQueryDetail) {
 	logger.Info("🔄 Background Enhanced API loading started...")
 
 	// Check for cancellation before starting
@@ -694,7 +639,7 @@ func (db *NQEDatabase) backgroundEnhancedLoadWithContext(ctx context.Context, cl
 
 	// Use the passed context directly - don't create a new timeout
 	// The service will handle cancellation and timeout as needed
-	enhancedQueries, err := client.GetNQEAllQueriesEnhancedWithCacheContext(ctx, existingCommitIDs)
+	enhancedQueries, err := client.GetNQEAllQueriesEnhanced(ctx, existingCommitIDs)
 	if err != nil {
 		// Check if we were cancelled
 		select {
@@ -708,7 +653,7 @@ func (db *NQEDatabase) backgroundEnhancedLoadWithContext(ctx context.Context, cl
 		logger.Info("🔄 Background fallback to Basic API...")
 
 		// Fallback to Basic API in background
-		basicQueries, err := db.loadFromBasicAPI(client, logger)
+		basicQueries, err := db.loadFromBasicAPI(ctx, client, logger)
 		if err != nil {
 			logger.Error("🔄 Background Basic API also failed: %v", err)
 			return
@@ -753,7 +698,7 @@ func (db *NQEDatabase) backgroundEnhancedLoadWithContext(ctx context.Context, cl
 }
 
 // synchronousLoad performs synchronous loading when database is incomplete
-func (db *NQEDatabase) synchronousLoad(ctx context.Context, client forward.ClientInterface, logger *logger.Logger, existingQueries []forward.NQEQueryDetail) ([]forward.NQEQueryDetail, error) {
+func (db *NQEDatabase) synchronousLoad(ctx context.Context, client ports.ForwardAPI, logger *logger.Logger, existingQueries []domain.NQEQueryDetail) ([]domain.NQEQueryDetail, error) {
 	// Build commit ID map for incremental updates
 	existingCommitIDs := make(map[string]string)
 	for _, query := range existingQueries {
@@ -786,7 +731,7 @@ func (db *NQEDatabase) synchronousLoad(ctx context.Context, client forward.Clien
 	}
 
 	// Fallback to Basic API (both org and fwd repositories)
-	basicQueries, err := db.loadFromBasicAPI(client, logger)
+	basicQueries, err := db.loadFromBasicAPI(ctx, client, logger)
 	if err != nil {
 		logger.Error("Basic API also failed: %v", err)
 		if len(existingQueries) > 0 {
@@ -811,9 +756,9 @@ func (db *NQEDatabase) synchronousLoad(ctx context.Context, client forward.Clien
 }
 
 // loadFromEnhancedAPIWithCommitCheck loads queries using Enhanced API with commit-based incremental updates
-func (db *NQEDatabase) loadFromEnhancedAPIWithCommitCheck(ctx context.Context, client forward.ClientInterface, logger *logger.Logger, existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
+func (db *NQEDatabase) loadFromEnhancedAPIWithCommitCheck(ctx context.Context, client ports.ForwardAPI, logger *logger.Logger, existingCommitIDs map[string]string) ([]domain.NQEQueryDetail, error) {
 	// Channel to receive results
-	resultChan := make(chan []forward.NQEQueryDetail, 1)
+	resultChan := make(chan []domain.NQEQueryDetail, 1)
 	errorChan := make(chan error, 1)
 
 	// Start Enhanced API loading in background
@@ -825,7 +770,7 @@ func (db *NQEDatabase) loadFromEnhancedAPIWithCommitCheck(ctx context.Context, c
 		}()
 
 		// Load from both repositories with commit checking
-		allQueries, err := client.GetNQEAllQueriesEnhancedWithCache(existingCommitIDs)
+		allQueries, err := client.GetNQEAllQueriesEnhanced(ctx, existingCommitIDs)
 		if err != nil {
 			errorChan <- fmt.Errorf("failed to get queries with commit checking: %w", err)
 			return
@@ -848,19 +793,19 @@ func (db *NQEDatabase) loadFromEnhancedAPIWithCommitCheck(ctx context.Context, c
 }
 
 // loadFromBasicAPI loads queries from Basic API (both repositories)
-func (db *NQEDatabase) loadFromBasicAPI(client forward.ClientInterface, logger *logger.Logger) ([]forward.NQEQueryDetail, error) {
-	var allQueries []forward.NQEQueryDetail
+func (db *NQEDatabase) loadFromBasicAPI(ctx context.Context, client ports.ForwardAPI, logger *logger.Logger) ([]domain.NQEQueryDetail, error) {
+	var allQueries []domain.NQEQueryDetail
 
 	// Load from org repository
 	logger.Info("Loading queries from org repository...")
-	orgQueries, err := client.GetNQEOrgQueries()
+	orgQueries, err := client.GetNQEOrgQueries(ctx)
 	if err != nil {
 		logger.Error("Failed to load org queries: %v", err)
 	} else {
 		logger.Info("Loaded %d queries from org repository", len(orgQueries))
 		// Convert NQEQuery to NQEQueryDetail
 		for _, query := range orgQueries {
-			detail := forward.NQEQueryDetail{
+			detail := domain.NQEQueryDetail{
 				QueryID:    query.QueryID,
 				Path:       query.Path,
 				Intent:     query.Intent,
@@ -875,14 +820,14 @@ func (db *NQEDatabase) loadFromBasicAPI(client forward.ClientInterface, logger *
 
 	// Load from fwd repository
 	logger.Info("Loading queries from fwd repository...")
-	fwdQueries, err := client.GetNQEFwdQueries()
+	fwdQueries, err := client.GetNQEFwdQueries(ctx)
 	if err != nil {
 		logger.Error("Failed to load fwd queries: %v", err)
 	} else {
 		logger.Info("Loaded %d queries from fwd repository", len(fwdQueries))
 		// Convert NQEQuery to NQEQueryDetail
 		for _, query := range fwdQueries {
-			detail := forward.NQEQueryDetail{
+			detail := domain.NQEQueryDetail{
 				QueryID:    query.QueryID,
 				Path:       query.Path,
 				Intent:     query.Intent,
@@ -907,8 +852,8 @@ func (db *NQEDatabase) loadFromBasicAPI(client forward.ClientInterface, logger *
 }
 
 // mergeQueries merges existing and new queries, preferring newer data
-func (db *NQEDatabase) mergeQueries(existing, new []forward.NQEQueryDetail) []forward.NQEQueryDetail {
-	queryMap := make(map[string]forward.NQEQueryDetail)
+func (db *NQEDatabase) mergeQueries(existing, new []domain.NQEQueryDetail) []domain.NQEQueryDetail {
+	queryMap := make(map[string]domain.NQEQueryDetail)
 
 	// Add existing queries
 	for _, query := range existing {
@@ -921,7 +866,7 @@ func (db *NQEDatabase) mergeQueries(existing, new []forward.NQEQueryDetail) []fo
 	}
 
 	// Convert back to slice
-	var result []forward.NQEQueryDetail
+	var result []domain.NQEQueryDetail
 	for _, query := range queryMap {
 		result = append(result, query)
 	}
@@ -930,9 +875,9 @@ func (db *NQEDatabase) mergeQueries(existing, new []forward.NQEQueryDetail) []fo
 }
 
 // deduplicateQueries removes duplicate queries by QueryID
-func (db *NQEDatabase) deduplicateQueries(queries []forward.NQEQueryDetail) []forward.NQEQueryDetail {
+func (db *NQEDatabase) deduplicateQueries(queries []domain.NQEQueryDetail) []domain.NQEQueryDetail {
 	seen := make(map[string]bool)
-	var unique []forward.NQEQueryDetail
+	var unique []domain.NQEQueryDetail
 
 	for _, query := range queries {
 		if !seen[query.QueryID] {

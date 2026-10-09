@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
 	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/logger"
 	"github.com/forward-mcp/internal/service"
@@ -16,7 +17,7 @@ func main() {
 	log := logger.New()
 
 	// Create Forward MCP service
-	forwardService := service.NewForwardMCPService(cfg, log)
+	forwardService := service.NewForwardMCPService(cfg, log, forwardapi.NewClient(&cfg.Forward, log))
 
 	// Create MCP server (stdio transport is attached at Run time)
 	server := mcp.NewServer(&mcp.Implementation{Name: "forward-mcp-example", Version: "0.0.1"}, nil)

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
 )
 
@@ -18,7 +18,7 @@ func TestAPIMemoryTracker_TrackNetworkQuery(t *testing.T) {
 	tracker := NewAPIMemoryTracker(memorySystem, logger, "test-instance")
 
 	// Mock query result
-	result := &forward.NQERunResult{
+	result := &domain.NQERunResult{
 		SnapshotID: "test-snapshot",
 		Items: []map[string]interface{}{
 			{"device": "router1", "type": "router"},
@@ -88,7 +88,7 @@ func TestAPIMemoryTracker_TrackDeviceDiscovery(t *testing.T) {
 	tracker := NewAPIMemoryTracker(memorySystem, logger, "test-instance")
 
 	// Mock devices
-	devices := []forward.Device{
+	devices := []domain.Device{
 		{
 			Name:          "router1",
 			Type:          "ROUTER",
@@ -170,10 +170,10 @@ func TestAPIMemoryTracker_TrackPathSearch(t *testing.T) {
 	tracker := NewAPIMemoryTracker(memorySystem, logger, "test-instance")
 
 	// Mock path search response
-	response := &forward.PathSearchResponse{
-		Paths: []forward.Path{
+	response := &domain.PathSearchResponse{
+		Paths: []domain.Path{
 			{
-				Hops: []forward.Hop{
+				Hops: []domain.Hop{
 					{Device: "router1", Action: "forward"},
 					{Device: "switch1", Action: "deliver"},
 				},
@@ -238,10 +238,10 @@ func TestAPIMemoryTracker_GetQueryAnalytics(t *testing.T) {
 	tracker := NewAPIMemoryTracker(memorySystem, logger, "test-instance")
 
 	// Track multiple queries
-	result1 := &forward.NQERunResult{
+	result1 := &domain.NQERunResult{
 		Items: []map[string]interface{}{{"device": "router1"}},
 	}
-	result2 := &forward.NQERunResult{
+	result2 := &domain.NQERunResult{
 		Items: []map[string]interface{}{{"device": "router1"}, {"device": "switch1"}},
 	}
 
@@ -276,19 +276,19 @@ func TestAPIMemoryTracker_NilMemorySystem(t *testing.T) {
 	tracker := NewAPIMemoryTracker(nil, logger, "test-instance")
 
 	// All tracking methods should handle nil memory system gracefully
-	result := &forward.NQERunResult{Items: []map[string]interface{}{}}
+	result := &domain.NQERunResult{Items: []map[string]interface{}{}}
 
 	err := tracker.TrackNetworkQuery("query", "network", "snapshot", result, 100*time.Millisecond)
 	if err != nil {
 		t.Errorf("TrackNetworkQuery should handle nil memory system, got error: %v", err)
 	}
 
-	err = tracker.TrackDeviceDiscovery("network", []forward.Device{})
+	err = tracker.TrackDeviceDiscovery("network", []domain.Device{})
 	if err != nil {
 		t.Errorf("TrackDeviceDiscovery should handle nil memory system, got error: %v", err)
 	}
 
-	response := &forward.PathSearchResponse{}
+	response := &domain.PathSearchResponse{}
 	err = tracker.TrackPathSearch("network", "1.1.1.1", "2.2.2.2", response)
 	if err != nil {
 		t.Errorf("TrackPathSearch should handle nil memory system, got error: %v", err)

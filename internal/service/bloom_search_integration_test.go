@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
 )
 
@@ -20,7 +20,7 @@ func TestBloomSearchManager(t *testing.T) {
 	filterType := "device"
 
 	// Create mock NQE result
-	result := &forward.NQERunResult{
+	result := &domain.NQERunResult{
 		SnapshotID: "latest",
 		Items: []map[string]interface{}{
 			{
@@ -172,7 +172,7 @@ func TestBloomSearchManagerPerformance(t *testing.T) {
 		}
 	}
 
-	result := &forward.NQERunResult{
+	result := &domain.NQERunResult{
 		SnapshotID: "latest",
 		Items:      items,
 	}

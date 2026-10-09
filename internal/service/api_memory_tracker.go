@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
 )
 
@@ -26,7 +26,7 @@ func NewAPIMemoryTracker(memorySystem *MemorySystem, logger *logger.Logger, inst
 }
 
 // TrackNetworkQuery tracks when a query is executed on a network
-func (amt *APIMemoryTracker) TrackNetworkQuery(queryID, networkID, snapshotID string, result *forward.NQERunResult, executionTime time.Duration) error {
+func (amt *APIMemoryTracker) TrackNetworkQuery(queryID, networkID, snapshotID string, result *domain.NQERunResult, executionTime time.Duration) error {
 	if amt.memorySystem == nil {
 		return nil // Memory system not available
 	}
@@ -122,7 +122,7 @@ func (amt *APIMemoryTracker) TrackNetworkQuery(queryID, networkID, snapshotID st
 }
 
 // TrackDeviceDiscovery tracks when devices are discovered in a network
-func (amt *APIMemoryTracker) TrackDeviceDiscovery(networkID string, devices []forward.Device) error {
+func (amt *APIMemoryTracker) TrackDeviceDiscovery(networkID string, devices []domain.Device) error {
 	if amt.memorySystem == nil || len(devices) == 0 {
 		return nil
 	}
@@ -196,7 +196,7 @@ func (amt *APIMemoryTracker) TrackDeviceDiscovery(networkID string, devices []fo
 }
 
 // TrackPathSearch tracks path search results
-func (amt *APIMemoryTracker) TrackPathSearch(networkID, srcIP, dstIP string, result *forward.PathSearchResponse) error {
+func (amt *APIMemoryTracker) TrackPathSearch(networkID, srcIP, dstIP string, result *domain.PathSearchResponse) error {
 	if amt.memorySystem == nil {
 		return nil
 	}
@@ -393,7 +393,7 @@ func (amt *APIMemoryTracker) ensureSnapshotEntity(snapshotID, networkID string) 
 	return amt.memorySystem.CreateEntity(snapshotID, "snapshot", metadata)
 }
 
-func (amt *APIMemoryTracker) createQueryResultEntity(queryID, networkID, snapshotID string, result *forward.NQERunResult, executionTime time.Duration) (*Entity, error) {
+func (amt *APIMemoryTracker) createQueryResultEntity(queryID, networkID, snapshotID string, result *domain.NQERunResult, executionTime time.Duration) (*Entity, error) {
 	// Create unique result ID
 	resultID := fmt.Sprintf("result_%s_%s_%d", queryID, networkID, time.Now().Unix())
 

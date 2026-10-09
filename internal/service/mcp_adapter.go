@@ -6,7 +6,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// This file adapts the service's argument-only handler style to the official
+// This file adapts the service's handler style to the official
 // MCP Go SDK (github.com/modelcontextprotocol/go-sdk), and centralizes the
 // behavior annotations advertised for each tool.
 
@@ -20,17 +20,18 @@ func newToolResponse(content ...mcp.Content) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: content}
 }
 
-// addTool registers a typed, argument-only handler with the go-sdk server.
-// The input schema is inferred from the In struct (json + jsonschema tags),
-// inputs are validated by the SDK before the handler runs, and handler errors
-// are returned as tool execution errors (isError) per the MCP spec.
-func addTool[In any](server *mcp.Server, name, description string, h func(In) (*mcp.CallToolResult, error)) {
+// addTool registers a typed handler with the go-sdk server. The input schema is
+// inferred from the In struct (json + jsonschema tags), inputs are validated by
+// the SDK before the handler runs, and handler errors are returned as tool
+// execution errors (isError) per the MCP spec. The handler receives the request
+// context, so a client that cancels the call stops the work behind it.
+func addTool[In any](server *mcp.Server, name, description string, h func(context.Context, In) (*mcp.CallToolResult, error)) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        name,
 		Description: description,
 		Annotations: toolAnnotations[name],
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
-		res, err := h(in)
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+		res, err := h(ctx, in)
 		return res, nil, err
 	})
 }

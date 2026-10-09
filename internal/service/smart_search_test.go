@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -54,7 +55,7 @@ func TestSearchNQEQueries_AutoInitialization(t *testing.T) {
 		Limit: 5,
 	}
 
-	response, err := service.searchNQEQueries(args)
+	response, err := service.searchNQEQueries(context.Background(), args)
 
 	// Should succeed or provide helpful error message
 	if err != nil {
@@ -100,7 +101,7 @@ func TestSearchNQEQueries_EmptyQuery(t *testing.T) {
 		Limit: 5,
 	}
 
-	response, err := service.searchNQEQueries(args)
+	response, err := service.searchNQEQueries(context.Background(), args)
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -165,7 +166,7 @@ func TestSearchNQEQueries_Parameters(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			response, err := service.searchNQEQueries(tc.args)
+			response, err := service.searchNQEQueries(context.Background(), tc.args)
 
 			if tc.expectError {
 				if err == nil {
@@ -397,7 +398,7 @@ func TestInitializeQueryIndex(t *testing.T) {
 		GenerateEmbeddings: false, // Don't generate embeddings for speed
 	}
 
-	response, err := service.initializeQueryIndex(args)
+	response, err := service.initializeQueryIndex(context.Background(), args)
 
 	// Note: This test might fail if spec file doesn't exist, which is expected
 	// The response should provide helpful guidance in that case
@@ -522,7 +523,7 @@ func BenchmarkSearchNQEQueries(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := service.searchNQEQueries(args)
+		_, err := service.searchNQEQueries(context.Background(), args)
 		if err != nil {
 			b.Logf("Search error (expected for empty index): %v", err)
 		}

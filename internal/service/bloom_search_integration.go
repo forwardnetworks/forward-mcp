@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/danthegoodman1/bloomsearch"
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
 )
 
@@ -72,7 +72,7 @@ func NewBloomSearchManager(logger *logger.Logger, instanceID string) *BloomSearc
 func (bsm *BloomSearchManager) BuildFilterFromNQEResult(
 	networkID string,
 	filterType string,
-	result *forward.NQERunResult,
+	result *domain.NQERunResult,
 	chunkSize int,
 ) error {
 	bsm.mutex.Lock()

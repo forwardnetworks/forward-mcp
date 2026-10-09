@@ -1,6 +1,7 @@
-package forward
+package forwardapi
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,10 +49,10 @@ func TestForwardAPICredentials(t *testing.T) {
 		t.Skip("FORWARD_API_KEY, FORWARD_API_SECRET, and FORWARD_API_BASE_URL must be set to run this test")
 	}
 
-	client := NewClient(&cfg.Forward)
+	client := NewClient(&cfg.Forward, nopLogger{})
 
 	// Test credentials by calling a real Forward Networks API endpoint
-	networks, err := client.GetNetworks()
+	networks, err := client.GetNetworks(context.Background())
 	if err != nil {
 		t.Fatalf("API credentials test failed: %v", err)
 	}

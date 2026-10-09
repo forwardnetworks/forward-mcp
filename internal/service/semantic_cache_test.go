@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/forward-mcp/internal/config"
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
 )
 
@@ -22,7 +22,7 @@ func TestSemanticCache(t *testing.T) {
 		networkID := "162112"
 		snapshotID := "latest"
 
-		result := &forward.NQERunResult{
+		result := &domain.NQERunResult{
 			SnapshotID: snapshotID,
 			Items: []map[string]interface{}{
 				{"name": "router-1"},
@@ -58,7 +58,7 @@ func TestSemanticCache(t *testing.T) {
 		networkID := "162112"
 		snapshotID := "latest"
 
-		result := &forward.NQERunResult{
+		result := &domain.NQERunResult{
 			SnapshotID: snapshotID,
 			Items: []map[string]interface{}{
 				{"name": "device-1"},
@@ -87,7 +87,7 @@ func TestSemanticCache(t *testing.T) {
 
 	t.Run("network_isolation", func(t *testing.T) {
 		query := "test query"
-		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+		result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 		// Store in network A
 		err := cache.Put(query, "network-A", "snap-1", result)
@@ -119,7 +119,7 @@ func TestSemanticCache(t *testing.T) {
 		shortTTLCache.ttl = 1 * time.Millisecond // Very short TTL
 
 		query := "test query"
-		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+		result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 		err := shortTTLCache.Put(query, "162112", "latest", result)
 		if err != nil {
@@ -141,7 +141,7 @@ func TestSemanticCache(t *testing.T) {
 		smallCache := NewSemanticCache(embeddingService, createTestLogger(), "test", nil)
 		smallCache.maxEntries = 2 // Only 2 entries
 
-		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+		result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 		// Fill cache to capacity
 		err := smallCache.Put("query1", "162112", "latest", result)
@@ -189,7 +189,7 @@ func TestEnhancedEvictionPolicies(t *testing.T) {
 		}
 		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
 
-		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+		result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 		cache.Put("query1", "net", "snap", result)
 		cache.Put("query2", "net", "snap", result)
@@ -230,7 +230,7 @@ func TestEnhancedEvictionPolicies(t *testing.T) {
 		}
 		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
 
-		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+		result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 		cache.Put("query1", "net", "snap", result)
 		cache.Put("query2", "net", "snap", result)
@@ -273,8 +273,8 @@ func TestEnhancedEvictionPolicies(t *testing.T) {
 		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
 
 		// Create results of different sizes
-		smallResult := &forward.NQERunResult{Items: []map[string]interface{}{{"small": "data"}}}
-		largeResult := &forward.NQERunResult{
+		smallResult := &domain.NQERunResult{Items: []map[string]interface{}{{"small": "data"}}}
+		largeResult := &domain.NQERunResult{
 			Items: []map[string]interface{}{
 				{"large": "data with much more content and longer strings to make it bigger"},
 				{"item2": "additional data to increase size"},
@@ -314,7 +314,7 @@ func TestCompressionFeatures(t *testing.T) {
 		}
 		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
 
-		largeResult := &forward.NQERunResult{
+		largeResult := &domain.NQERunResult{
 			Items: make([]map[string]interface{}, 100),
 		}
 		for i := 0; i < 100; i++ {
@@ -360,7 +360,7 @@ func TestCompressionFeatures(t *testing.T) {
 		}
 		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
 
-		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+		result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 		err := cache.Put("uncompressed_query", "net", "snap", result)
 		if err != nil {
@@ -394,7 +394,7 @@ func TestMemoryManagement(t *testing.T) {
 		}
 		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
 
-		result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+		result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 		// Add some entries
 		for i := 0; i < 5; i++ {
@@ -433,7 +433,7 @@ func TestMemoryManagement(t *testing.T) {
 		cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
 
 		// Create a moderately sized result
-		result := &forward.NQERunResult{
+		result := &domain.NQERunResult{
 			Items: make([]map[string]interface{}, 50),
 		}
 		for i := 0; i < 50; i++ {
@@ -485,7 +485,7 @@ func TestEnhancedMetrics(t *testing.T) {
 	}
 	cache := NewSemanticCache(embeddingService, createTestLogger(), "test", cfg)
 
-	result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+	result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 	cache.Put("metric_query1", "net", "snap", result)
 	cache.Put("metric_query2", "net", "snap", result)
@@ -601,7 +601,7 @@ func TestSemanticCacheStats(t *testing.T) {
 	}
 
 	// Add some entries and queries
-	result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+	result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 	err := cache.Put("query1", "162112", "latest", result)
 	if err != nil {
@@ -643,7 +643,7 @@ func TestSemanticCacheSimilarQueries(t *testing.T) {
 		"display all routers",
 	}
 
-	result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+	result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 	for i, query := range queries {
 		err := cache.Put(query, "162112", "latest", result)
@@ -686,7 +686,7 @@ func TestSemanticCacheClearExpired(t *testing.T) {
 	// Set short TTL for testing (50ms is long enough to be reliable but short for tests)
 	cache.ttl = 50 * time.Millisecond
 
-	result := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+	result := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 
 	// Add several entries
 	for i := 0; i < 5; i++ {

@@ -1,6 +1,16 @@
 {
   "analyze": {
-    "exclude": []
+    "exclude": [],
+    "layers": {
+      "internal/domain": "domain",
+      "internal/ports": "ports",
+      "internal/usecases": "usecases",
+      "internal/adapters/primary": "adapters/primary",
+      "internal/adapters/secondary": "adapters/secondary",
+      "scripts/demo-smart-search.go": "entry-point",
+      "cmd/server/main.go": "composition-root",
+      "examples/test_mcp.go": "composition-root"
+    }
   },
   "createdAt": "2026-10-09T17:07:09.063501+00:00",
   "hexVersion": "26.9.12",

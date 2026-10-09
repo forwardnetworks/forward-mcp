@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/forward-mcp/internal/config"
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
+	"github.com/forward-mcp/internal/ports"
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -19,24 +20,26 @@ func contains(s, substr string) bool {
 	return strings.Contains(s, substr)
 }
 
-// MockForwardClient implements the ClientInterface for testing
+// MockForwardClient implements ports.ForwardAPI for testing
 type MockForwardClient struct {
-	networks        []forward.Network
-	devices         []forward.Device
-	snapshots       []forward.Snapshot
-	locations       []forward.Location
-	nqeQueries      []forward.NQEQuery
+	networks        []domain.Network
+	devices         []domain.Device
+	snapshots       []domain.Snapshot
+	locations       []domain.Location
+	nqeQueries      []domain.NQEQuery
 	deviceLocations map[string]string
-	pathResponse    *forward.PathSearchResponse
-	nqeResult       *forward.NQERunResult
+	pathResponse    *domain.PathSearchResponse
+	nqeResult       *domain.NQERunResult
 	shouldError     bool
 	errorMessage    string
 }
 
+var _ ports.ForwardAPI = (*MockForwardClient)(nil)
+
 // NewMockForwardClient creates a new mock client with sample data
 func NewMockForwardClient() *MockForwardClient {
 	return &MockForwardClient{
-		networks: []forward.Network{
+		networks: []domain.Network{
 			{
 				ID:        "162112",
 				Name:      "Test Network",
@@ -52,7 +55,7 @@ func NewMockForwardClient() *MockForwardClient {
 				OrgID:     "101",
 			},
 		},
-		devices: []forward.Device{
+		devices: []domain.Device{
 			{
 				Name:          "router-1",
 				Type:          "ROUTER",
@@ -76,7 +79,7 @@ func NewMockForwardClient() *MockForwardClient {
 				LocationID:    "location-2",
 			},
 		},
-		snapshots: []forward.Snapshot{
+		snapshots: []domain.Snapshot{
 			{
 				ID:                "snapshot-123",
 				NetworkID:         "162112",
@@ -89,7 +92,7 @@ func NewMockForwardClient() *MockForwardClient {
 				IsDraft:           false,
 			},
 		},
-		locations: []forward.Location{
+		locations: []domain.Location{
 			{
 				ID:   "location-1",
 				Name: "Data Center 1",
@@ -103,7 +106,7 @@ func NewMockForwardClient() *MockForwardClient {
 				Lng:  -74.0060,
 			},
 		},
-		nqeQueries: []forward.NQEQuery{
+		nqeQueries: []domain.NQEQuery{
 			{
 				QueryID:    "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029",
 				Path:       "/L3/Basic/All Devices",
@@ -115,10 +118,10 @@ func NewMockForwardClient() *MockForwardClient {
 			"router-1": "location-1",
 			"switch-1": "location-2",
 		},
-		pathResponse: &forward.PathSearchResponse{
-			Paths: []forward.Path{
+		pathResponse: &domain.PathSearchResponse{
+			Paths: []domain.Path{
 				{
-					Hops: []forward.Hop{
+					Hops: []domain.Hop{
 						{
 							Device: "router-1",
 							Action: "forward",
@@ -136,7 +139,7 @@ func NewMockForwardClient() *MockForwardClient {
 			SearchTimeMs:       100,
 			NumCandidatesFound: 1,
 		},
-		nqeResult: &forward.NQERunResult{
+		nqeResult: &domain.NQERunResult{
 			SnapshotID: "snapshot-123",
 			Items: []map[string]interface{}{
 				{"device_name": "router-1", "platform": "Cisco IOS"},
@@ -152,33 +155,18 @@ func (m *MockForwardClient) SetError(shouldError bool, message string) {
 	m.errorMessage = message
 }
 
-// Mock implementations of ClientInterface methods
-func (m *MockForwardClient) SendChatRequest(req *forward.ChatRequest) (*forward.ChatResponse, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	return &forward.ChatResponse{Response: "Mock response", Model: "test-model"}, nil
-}
-
-func (m *MockForwardClient) GetAvailableModels() ([]string, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	return []string{"model-1", "model-2"}, nil
-}
-
-func (m *MockForwardClient) GetNetworks() ([]forward.Network, error) {
+func (m *MockForwardClient) GetNetworks(ctx context.Context) ([]domain.Network, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
 	return m.networks, nil
 }
 
-func (m *MockForwardClient) CreateNetwork(name string) (*forward.Network, error) {
+func (m *MockForwardClient) CreateNetwork(ctx context.Context, name string) (*domain.Network, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
-	newNetwork := forward.Network{
+	newNetwork := domain.Network{
 		ID:   "new-network-id",
 		Name: name,
 	}
@@ -186,7 +174,7 @@ func (m *MockForwardClient) CreateNetwork(name string) (*forward.Network, error)
 	return &newNetwork, nil
 }
 
-func (m *MockForwardClient) DeleteNetwork(networkID string) (*forward.Network, error) {
+func (m *MockForwardClient) DeleteNetwork(ctx context.Context, networkID string) (*domain.Network, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
@@ -200,7 +188,7 @@ func (m *MockForwardClient) DeleteNetwork(networkID string) (*forward.Network, e
 	return nil, &MockError{"network not found"}
 }
 
-func (m *MockForwardClient) UpdateNetwork(networkID string, update *forward.NetworkUpdate) (*forward.Network, error) {
+func (m *MockForwardClient) UpdateNetwork(ctx context.Context, networkID string, update *domain.NetworkUpdate) (*domain.Network, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
@@ -218,32 +206,25 @@ func (m *MockForwardClient) UpdateNetwork(networkID string, update *forward.Netw
 	return nil, &MockError{"network not found"}
 }
 
-func (m *MockForwardClient) SearchPaths(networkID string, params *forward.PathSearchParams) (*forward.PathSearchResponse, error) {
+func (m *MockForwardClient) SearchPathsBulk(ctx context.Context, networkID string, request *domain.PathSearchBulkRequest, snapshotID string) ([]domain.PathSearchBulkResponse, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
-	return m.pathResponse, nil
-}
-
-func (m *MockForwardClient) SearchPathsBulk(networkID string, request *forward.PathSearchBulkRequest, snapshotID string) ([]forward.PathSearchBulkResponse, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	var responses []forward.PathSearchBulkResponse
+	var responses []domain.PathSearchBulkResponse
 	for range request.Queries {
 		// Convert legacy path response to bulk response format
-		bulkResponse := forward.PathSearchBulkResponse{
+		bulkResponse := domain.PathSearchBulkResponse{
 			DstIpLocationType: "INTERNET",
-			Info: forward.PathSearchInfo{
-				Paths: make([]forward.BulkPath, len(m.pathResponse.Paths)),
-				TotalHits: forward.TotalHits{
+			Info: domain.PathSearchInfo{
+				Paths: make([]domain.BulkPath, len(m.pathResponse.Paths)),
+				TotalHits: domain.TotalHits{
 					Value: len(m.pathResponse.Paths),
 					Type:  "EXACT",
 				},
 			},
-			ReturnPathInfo: forward.PathSearchInfo{
-				Paths: []forward.BulkPath{},
-				TotalHits: forward.TotalHits{
+			ReturnPathInfo: domain.PathSearchInfo{
+				Paths: []domain.BulkPath{},
+				TotalHits: domain.TotalHits{
 					Value: 0,
 					Type:  "EXACT",
 				},
@@ -254,13 +235,13 @@ func (m *MockForwardClient) SearchPathsBulk(networkID string, request *forward.P
 
 		// Convert paths
 		for i, path := range m.pathResponse.Paths {
-			bulkPath := forward.BulkPath{
+			bulkPath := domain.BulkPath{
 				ForwardingOutcome: path.Outcome,
 				SecurityOutcome:   "PERMITTED",
-				Hops:              make([]forward.BulkHop, len(path.Hops)),
+				Hops:              make([]domain.BulkHop, len(path.Hops)),
 			}
 			for j, hop := range path.Hops {
-				bulkPath.Hops[j] = forward.BulkHop{
+				bulkPath.Hops[j] = domain.BulkHop{
 					DeviceName:       hop.Device,
 					DeviceType:       hop.Action,
 					IngressInterface: hop.Interface,
@@ -276,38 +257,31 @@ func (m *MockForwardClient) SearchPathsBulk(networkID string, request *forward.P
 	return responses, nil
 }
 
-func (m *MockForwardClient) GetNQEQueries(dir string) ([]forward.NQEQuery, error) {
+func (m *MockForwardClient) GetNQEQueries(ctx context.Context, dir string) ([]domain.NQEQuery, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
 	return m.nqeQueries, nil
 }
 
-func (m *MockForwardClient) DiffNQEQuery(before, after string, request *forward.NQEDiffRequest) (*forward.NQEDiffResult, error) {
+func (m *MockForwardClient) GetDevices(ctx context.Context, networkID string, params *domain.DeviceQueryParams) (*domain.DeviceResponse, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
-	return &forward.NQEDiffResult{TotalNumRows: 2, Rows: []map[string]interface{}{{"diff": "example"}}}, nil
-}
-
-func (m *MockForwardClient) GetDevices(networkID string, params *forward.DeviceQueryParams) (*forward.DeviceResponse, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	return &forward.DeviceResponse{
+	return &domain.DeviceResponse{
 		Devices:    m.devices,
 		TotalCount: len(m.devices),
 	}, nil
 }
 
-func (m *MockForwardClient) GetDeviceLocations(networkID string) (map[string]string, error) {
+func (m *MockForwardClient) GetDeviceLocations(ctx context.Context, networkID string) (map[string]string, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
 	return m.deviceLocations, nil
 }
 
-func (m *MockForwardClient) UpdateDeviceLocations(networkID string, locations map[string]string) error {
+func (m *MockForwardClient) UpdateDeviceLocations(ctx context.Context, networkID string, locations map[string]string) error {
 	if m.shouldError {
 		return &MockError{m.errorMessage}
 	}
@@ -315,14 +289,14 @@ func (m *MockForwardClient) UpdateDeviceLocations(networkID string, locations ma
 	return nil
 }
 
-func (m *MockForwardClient) GetSnapshots(networkID string) ([]forward.Snapshot, error) {
+func (m *MockForwardClient) GetSnapshots(ctx context.Context, networkID string) ([]domain.Snapshot, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
 	return m.snapshots, nil
 }
 
-func (m *MockForwardClient) GetLatestSnapshot(networkID string) (*forward.Snapshot, error) {
+func (m *MockForwardClient) GetLatestSnapshot(ctx context.Context, networkID string) (*domain.Snapshot, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
@@ -332,25 +306,25 @@ func (m *MockForwardClient) GetLatestSnapshot(networkID string) (*forward.Snapsh
 	return nil, &MockError{"no snapshots found"}
 }
 
-func (m *MockForwardClient) DeleteSnapshot(snapshotID string) error {
+func (m *MockForwardClient) DeleteSnapshot(ctx context.Context, snapshotID string) error {
 	if m.shouldError {
 		return &MockError{m.errorMessage}
 	}
 	return nil
 }
 
-func (m *MockForwardClient) GetLocations(networkID string) ([]forward.Location, error) {
+func (m *MockForwardClient) GetLocations(ctx context.Context, networkID string) ([]domain.Location, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
 	return m.locations, nil
 }
 
-func (m *MockForwardClient) CreateLocation(networkID string, location *forward.LocationCreate) (*forward.Location, error) {
+func (m *MockForwardClient) CreateLocation(ctx context.Context, networkID string, location *domain.LocationCreate) (*domain.Location, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
-	newLocation := forward.Location{
+	newLocation := domain.Location{
 		ID:            "new-location-id",
 		Name:          location.Name,
 		Lat:           location.Lat,
@@ -363,7 +337,7 @@ func (m *MockForwardClient) CreateLocation(networkID string, location *forward.L
 	return &newLocation, nil
 }
 
-func (m *MockForwardClient) CreateLocationsBulk(networkID string, locations []forward.LocationBulkPatch) error {
+func (m *MockForwardClient) CreateLocationsBulk(ctx context.Context, networkID string, locations []domain.LocationBulkPatch) error {
 	if m.shouldError {
 		return &MockError{m.errorMessage}
 	}
@@ -398,7 +372,7 @@ func (m *MockForwardClient) CreateLocationsBulk(networkID string, locations []fo
 			}
 			if !found {
 				// ID not found, treat as create
-				newLocation := forward.Location{
+				newLocation := domain.Location{
 					ID:            patch.ID,
 					Name:          patch.Name,
 					City:          patch.City,
@@ -415,7 +389,7 @@ func (m *MockForwardClient) CreateLocationsBulk(networkID string, locations []fo
 			}
 		} else if patch.Name != "" {
 			// Create new location by name
-			newLocation := forward.Location{
+			newLocation := domain.Location{
 				ID:            fmt.Sprintf("location-%d", len(m.locations)+1),
 				Name:          patch.Name,
 				City:          patch.City,
@@ -480,7 +454,7 @@ func TestIsCloudDevice(t *testing.T) {
 	}
 }
 
-func (m *MockForwardClient) UpdateLocation(networkID string, locationID string, update *forward.LocationUpdate) (*forward.Location, error) {
+func (m *MockForwardClient) UpdateLocation(ctx context.Context, networkID string, locationID string, update *domain.LocationUpdate) (*domain.Location, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
@@ -510,7 +484,7 @@ func (m *MockForwardClient) UpdateLocation(networkID string, locationID string, 
 	return nil, &MockError{"location not found"}
 }
 
-func (m *MockForwardClient) DeleteLocation(networkID string, locationID string) (*forward.Location, error) {
+func (m *MockForwardClient) DeleteLocation(ctx context.Context, networkID string, locationID string) (*domain.Location, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
@@ -595,7 +569,7 @@ func createTestService() *ForwardMCPService {
 func TestListNetworks(t *testing.T) {
 	service := createTestService()
 
-	response, err := service.listNetworks(ListNetworksArgs{})
+	response, err := service.listNetworks(context.Background(), ListNetworksArgs{})
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -626,7 +600,7 @@ func TestCreateNetwork(t *testing.T) {
 		Name: "New Test Network",
 	}
 
-	response, err := service.createNetwork(args)
+	response, err := service.createNetwork(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -648,7 +622,7 @@ func TestDeleteNetwork(t *testing.T) {
 		NetworkID: "162112",
 	}
 
-	response, err := service.deleteNetwork(args)
+	response, err := service.deleteNetwork(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -679,7 +653,7 @@ func TestSearchPaths(t *testing.T) {
 		MaxResults: 5,
 	}
 
-	response, err := service.searchPathsBulk(args)
+	response, err := service.searchPathsBulk(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -707,7 +681,7 @@ func TestRunNQEQuery(t *testing.T) {
 		},
 	}
 
-	response, err := service.runNQEQueryByID(args)
+	response, err := service.runNQEQueryByID(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -737,7 +711,7 @@ func TestRunNQEQueryByID(t *testing.T) {
 		Directory: "/L3/Basic/",
 	}
 
-	_, err := service.listNQEQueries(listArgs)
+	_, err := service.listNQEQueries(context.Background(), listArgs)
 	if err != nil {
 		t.Fatalf("Failed to list NQE queries: %v", err)
 	}
@@ -754,7 +728,7 @@ func TestRunNQEQueryByID(t *testing.T) {
 		},
 	}
 
-	response, err := service.runNQEQueryByID(args)
+	response, err := service.runNQEQueryByID(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -780,7 +754,7 @@ func TestListNQEQueries(t *testing.T) {
 		Directory: "/L3/Basic/",
 	}
 
-	response, err := service.listNQEQueries(args)
+	response, err := service.listNQEQueries(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -804,7 +778,7 @@ func TestListDevices(t *testing.T) {
 		Limit:     10,
 	}
 
-	response, err := service.listDevices(args)
+	response, err := service.listDevices(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -826,7 +800,7 @@ func TestGetDeviceLocations(t *testing.T) {
 		NetworkID: "162112",
 	}
 
-	response, err := service.getDeviceLocations(args)
+	response, err := service.getDeviceLocations(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -849,7 +823,7 @@ func TestErrorHandling(t *testing.T) {
 	// Test error in listNetworks
 	mockClient.SetError(true, "API connection failed")
 
-	_, err := service.listNetworks(ListNetworksArgs{})
+	_, err := service.listNetworks(context.Background(), ListNetworksArgs{})
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -901,19 +875,19 @@ func TestRegisterToolsComprehensive(t *testing.T) {
 		test func() error
 	}{
 		{"list_networks", func() error {
-			_, err := service.listNetworks(ListNetworksArgs{})
+			_, err := service.listNetworks(context.Background(), ListNetworksArgs{})
 			return err
 		}},
 		{"create_network", func() error {
-			_, err := service.createNetwork(CreateNetworkArgs{Name: "test"})
+			_, err := service.createNetwork(context.Background(), CreateNetworkArgs{Name: "test"})
 			return err
 		}},
 		{"update_network", func() error {
-			_, err := service.updateNetwork(UpdateNetworkArgs{NetworkID: "162112", Name: "updated"})
+			_, err := service.updateNetwork(context.Background(), UpdateNetworkArgs{NetworkID: "162112", Name: "updated"})
 			return err
 		}},
 		{"search_paths", func() error {
-			_, err := service.searchPathsBulk(SearchPathsBulkArgs{
+			_, err := service.searchPathsBulk(context.Background(), SearchPathsBulkArgs{
 				NetworkID: "162112",
 				Queries: []PathSearchQueryArgs{
 					{SrcIP: "10.0.0.2", DstIP: "10.0.0.1"},
@@ -925,74 +899,74 @@ func TestRegisterToolsComprehensive(t *testing.T) {
 			return err
 		}},
 		{"list_nqe_queries", func() error {
-			_, err := service.listNQEQueries(ListNQEQueriesArgs{})
+			_, err := service.listNQEQueries(context.Background(), ListNQEQueriesArgs{})
 			return err
 		}},
 		{"list_devices", func() error {
-			_, err := service.listDevices(ListDevicesArgs{NetworkID: "162112"})
+			_, err := service.listDevices(context.Background(), ListDevicesArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"get_device_locations", func() error {
-			_, err := service.getDeviceLocations(GetDeviceLocationsArgs{NetworkID: "162112"})
+			_, err := service.getDeviceLocations(context.Background(), GetDeviceLocationsArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"list_snapshots", func() error {
-			_, err := service.listSnapshots(ListSnapshotsArgs{NetworkID: "162112"})
+			_, err := service.listSnapshots(context.Background(), ListSnapshotsArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"get_latest_snapshot", func() error {
-			_, err := service.getLatestSnapshot(GetLatestSnapshotArgs{NetworkID: "162112"})
+			_, err := service.getLatestSnapshot(context.Background(), GetLatestSnapshotArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"list_locations", func() error {
-			_, err := service.listLocations(ListLocationsArgs{NetworkID: "162112"})
+			_, err := service.listLocations(context.Background(), ListLocationsArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"create_location", func() error {
-			_, err := service.createLocation(CreateLocationArgs{NetworkID: "162112", Name: "test location"})
+			_, err := service.createLocation(context.Background(), CreateLocationArgs{NetworkID: "162112", Name: "test location"})
 			return err
 		}},
 		// First-Class Query Tools
 		{"get_device_basic_info", func() error {
-			_, err := service.getDeviceBasicInfo(GetDeviceBasicInfoArgs{NetworkID: "162112"})
+			_, err := service.getDeviceBasicInfo(context.Background(), GetDeviceBasicInfoArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"get_device_hardware", func() error {
-			_, err := service.getDeviceHardware(GetDeviceHardwareArgs{NetworkID: "162112"})
+			_, err := service.getDeviceHardware(context.Background(), GetDeviceHardwareArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"get_hardware_support", func() error {
-			_, err := service.getHardwareSupport(GetHardwareSupportArgs{NetworkID: "162112"})
+			_, err := service.getHardwareSupport(context.Background(), GetHardwareSupportArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"get_os_support", func() error {
-			_, err := service.getOSSupport(GetOSSupportArgs{NetworkID: "162112"})
+			_, err := service.getOSSupport(context.Background(), GetOSSupportArgs{NetworkID: "162112"})
 			return err
 		}},
 		{"search_configs", func() error {
-			_, err := service.searchConfigs(SearchConfigsArgs{NetworkID: "162112", SearchTerm: "test"})
+			_, err := service.searchConfigs(context.Background(), SearchConfigsArgs{NetworkID: "162112", SearchTerm: "test"})
 			return err
 		}},
 		{"get_config_diff", func() error {
-			_, err := service.getConfigDiff(GetConfigDiffArgs{NetworkID: "162112", BeforeSnapshot: "snapshot-123", AfterSnapshot: "snapshot-456", Options: &NQEQueryOptions{Limit: 50}})
+			_, err := service.getConfigDiff(context.Background(), GetConfigDiffArgs{NetworkID: "162112", BeforeSnapshot: "snapshot-123", AfterSnapshot: "snapshot-456", Options: &NQEQueryOptions{Limit: 50}})
 			return err
 		}},
 		// Default Settings Management Tools
 		{"get_default_settings", func() error {
-			_, err := service.getDefaultSettings(GetDefaultSettingsArgs{})
+			_, err := service.getDefaultSettings(context.Background(), GetDefaultSettingsArgs{})
 			return err
 		}},
 		{"set_default_network", func() error {
-			_, err := service.setDefaultNetwork(SetDefaultNetworkArgs{NetworkIdentifier: "162112"})
+			_, err := service.setDefaultNetwork(context.Background(), SetDefaultNetworkArgs{NetworkIdentifier: "162112"})
 			return err
 		}},
 		// Semantic Cache Management Tools
 		{"get_cache_stats", func() error {
-			_, err := service.getCacheStats(GetCacheStatsArgs{})
+			_, err := service.getCacheStats(context.Background(), GetCacheStatsArgs{})
 			return err
 		}},
 		{"clear_cache", func() error {
-			_, err := service.clearCache(ClearCacheArgs{})
+			_, err := service.clearCache(context.Background(), ClearCacheArgs{})
 			return err
 		}},
 		{"suggest_similar_queries", func() error {
@@ -1011,7 +985,7 @@ func TestRegisterToolsComprehensive(t *testing.T) {
 }
 
 // Add or fix these methods for MockForwardClient:
-func (m *MockForwardClient) RunNQEQueryByID(params *forward.NQEQueryParams) (*forward.NQERunResult, error) {
+func (m *MockForwardClient) RunNQEQueryByID(ctx context.Context, params *domain.NQEQueryParams) (*domain.NQERunResult, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
@@ -1038,14 +1012,14 @@ func (m *MockForwardClient) RunNQEQueryByID(params *forward.NQEQueryParams) (*fo
 		}
 		if start >= len(m.nqeResult.Items) {
 			// Return empty result for offset beyond available data
-			return &forward.NQERunResult{
+			return &domain.NQERunResult{
 				SnapshotID: m.nqeResult.SnapshotID,
 				Items:      []map[string]interface{}{},
 			}, nil
 		}
 
 		// Return paginated subset
-		return &forward.NQERunResult{
+		return &domain.NQERunResult{
 			SnapshotID: m.nqeResult.SnapshotID,
 			Items:      m.nqeResult.Items[start:end],
 		}, nil
@@ -1054,56 +1028,29 @@ func (m *MockForwardClient) RunNQEQueryByID(params *forward.NQEQueryParams) (*fo
 	return m.nqeResult, nil
 }
 
-func (m *MockForwardClient) RunNQEQueryByString(params *forward.NQEQueryParams) (*forward.NQERunResult, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	return m.nqeResult, nil
-}
-
 // Add missing NQE methods required by ClientInterface
-func (m *MockForwardClient) GetNQEOrgQueries() ([]forward.NQEQuery, error) {
+func (m *MockForwardClient) GetNQEOrgQueries(ctx context.Context) ([]domain.NQEQuery, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
 	return m.nqeQueries, nil
 }
 
-func (m *MockForwardClient) GetNQEOrgQueriesEnhanced() ([]forward.NQEQueryDetail, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	// Convert NQEQuery to NQEQueryDetail for testing
-	var details []forward.NQEQueryDetail
-	for _, query := range m.nqeQueries {
-		detail := forward.NQEQueryDetail{
-			QueryID:     query.QueryID,
-			Path:        query.Path,
-			Intent:      query.Intent,
-			Repository:  query.Repository,
-			SourceCode:  "SELECT * FROM test_table",
-			Description: "Mock test query",
-		}
-		details = append(details, detail)
-	}
-	return details, nil
-}
-
-func (m *MockForwardClient) GetNQEFwdQueries() ([]forward.NQEQuery, error) {
+func (m *MockForwardClient) GetNQEFwdQueries(ctx context.Context) ([]domain.NQEQuery, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
 	return m.nqeQueries, nil
 }
 
-func (m *MockForwardClient) GetNQEFwdQueriesEnhanced() ([]forward.NQEQueryDetail, error) {
+func (m *MockForwardClient) GetNQEAllQueriesEnhanced(ctx context.Context, existingCommitIDs map[string]string) ([]domain.NQEQueryDetail, error) {
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
 	// Convert NQEQuery to NQEQueryDetail for testing
-	var details []forward.NQEQueryDetail
+	var details []domain.NQEQueryDetail
 	for _, query := range m.nqeQueries {
-		detail := forward.NQEQueryDetail{
+		detail := domain.NQEQueryDetail{
 			QueryID:     query.QueryID,
 			Path:        query.Path,
 			Intent:      query.Intent,
@@ -1114,101 +1061,6 @@ func (m *MockForwardClient) GetNQEFwdQueriesEnhanced() ([]forward.NQEQueryDetail
 		details = append(details, detail)
 	}
 	return details, nil
-}
-
-func (m *MockForwardClient) GetNQEAllQueriesEnhanced() ([]forward.NQEQueryDetail, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	// Convert NQEQuery to NQEQueryDetail for testing
-	var details []forward.NQEQueryDetail
-	for _, query := range m.nqeQueries {
-		detail := forward.NQEQueryDetail{
-			QueryID:     query.QueryID,
-			Path:        query.Path,
-			Intent:      query.Intent,
-			Repository:  query.Repository,
-			SourceCode:  "SELECT * FROM test_table",
-			Description: "Mock test query",
-		}
-		details = append(details, detail)
-	}
-	return details, nil
-}
-
-func (m *MockForwardClient) GetNQEAllQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	return m.GetNQEAllQueriesEnhanced()
-}
-
-func (m *MockForwardClient) GetNQEQueryByCommit(commitID string, path string, repository string) (*forward.NQEQueryDetail, error) {
-	return m.GetNQEQueryByCommitWithContext(context.Background(), commitID, path, repository)
-}
-
-func (m *MockForwardClient) GetNQEQueryByCommitWithContext(ctx context.Context, commitID string, path string, repository string) (*forward.NQEQueryDetail, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	return &forward.NQEQueryDetail{
-		QueryID:     "test_query_id",
-		Path:        path,
-		SourceCode:  "test source code",
-		Intent:      "Test intent",
-		Description: "Test description",
-		Repository:  repository,
-	}, nil
-}
-
-// Add missing cache-related methods to complete the interface implementation
-func (m *MockForwardClient) GetNQEOrgQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	// Return enhanced org queries with mock data
-	return []forward.NQEQueryDetail{
-		{
-			QueryID:     "FQ_org_test_query",
-			Path:        "/Test/Org/Query",
-			Intent:      "Test org query intent",
-			Repository:  "ORG",
-			SourceCode:  "test org source code",
-			Description: "Test org description",
-		},
-	}, nil
-}
-
-func (m *MockForwardClient) GetNQEOrgQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
-	// Just delegate to the non-context version for the mock
-	return m.GetNQEOrgQueriesEnhancedWithCache(existingCommitIDs)
-}
-
-func (m *MockForwardClient) GetNQEFwdQueriesEnhancedWithCache(existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
-	if m.shouldError {
-		return nil, &MockError{m.errorMessage}
-	}
-	// Return enhanced fwd queries with mock data
-	return []forward.NQEQueryDetail{
-		{
-			QueryID:     "FQ_fwd_test_query",
-			Path:        "/Test/Fwd/Query",
-			Intent:      "Test fwd query intent",
-			Repository:  "FWD",
-			SourceCode:  "test fwd source code",
-			Description: "Test fwd description",
-		},
-	}, nil
-}
-
-func (m *MockForwardClient) GetNQEFwdQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
-	// Just delegate to the non-context version for the mock
-	return m.GetNQEFwdQueriesEnhancedWithCache(existingCommitIDs)
-}
-
-func (m *MockForwardClient) GetNQEAllQueriesEnhancedWithCacheContext(ctx context.Context, existingCommitIDs map[string]string) ([]forward.NQEQueryDetail, error) {
-	// Just delegate to the non-context version for the mock
-	return m.GetNQEAllQueriesEnhancedWithCache(existingCommitIDs)
 }
 
 // TestCacheIntegrationWithNQEQueries tests cache integration in the full query flow
@@ -1227,7 +1079,7 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 			SnapshotID: "snapshot-123",
 		}
 
-		response, err := service.runNQEQueryByID(args)
+		response, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute NQE query: %v", err)
 		}
@@ -1246,7 +1098,7 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 			SnapshotID: "snapshot-123",
 		}
 
-		response, err := service.runNQEQueryByID(args)
+		response, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute cached NQE query: %v", err)
 		}
@@ -1265,7 +1117,7 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 			SnapshotID: "different-snapshot", // Different snapshot
 		}
 
-		response, err := service.runNQEQueryByID(args)
+		response, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute NQE query with different params: %v", err)
 		}
@@ -1288,7 +1140,7 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 			},
 		}
 
-		response, err := service.runNQEQueryByID(args)
+		response, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute parameterized NQE query: %v", err)
 		}
@@ -1298,7 +1150,7 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 		}
 
 		// Execute same query again - should hit cache
-		response2, err := service.runNQEQueryByID(args)
+		response2, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute cached parameterized query: %v", err)
 		}
@@ -1328,11 +1180,11 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 	}
 
 	logger := logger.New()
-	service := NewForwardMCPService(cfg, logger)
+	service := NewForwardMCPService(cfg, logger, NewMockForwardClient())
 
 	t.Run("get_cache_stats", func(t *testing.T) {
 		// Add some test data to cache
-		testResult := &forward.NQERunResult{
+		testResult := &domain.NQERunResult{
 			Items: []map[string]interface{}{{"test": "data"}},
 		}
 
@@ -1345,7 +1197,7 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 
 		// Test getCacheStats function
 		args := GetCacheStatsArgs{}
-		response, err := service.getCacheStats(args)
+		response, err := service.getCacheStats(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to get cache stats: %v", err)
 		}
@@ -1372,7 +1224,7 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 		service.semanticCache.ttl = 1 * time.Millisecond
 
 		// Add some entries
-		testResult := &forward.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
+		testResult := &domain.NQERunResult{Items: []map[string]interface{}{{"test": "data"}}}
 		service.semanticCache.Put("expiring-1", "net", "snap", testResult)
 		service.semanticCache.Put("expiring-2", "net", "snap", testResult)
 
@@ -1381,7 +1233,7 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 
 		// Test clearCache function
 		args := ClearCacheArgs{ClearAll: false}
-		response, err := service.clearCache(args)
+		response, err := service.clearCache(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to clear expired cache: %v", err)
 		}
@@ -1408,7 +1260,7 @@ func TestCacheCompressionFeatures(t *testing.T) {
 	service.config.Forward.SemanticCache.CompressionLevel = 6
 
 	// Create a large result that will benefit from compression
-	largeResult := &forward.NQERunResult{
+	largeResult := &domain.NQERunResult{
 		SnapshotID: "test-snapshot",
 		Items:      make([]map[string]interface{}, 100),
 	}
@@ -1469,7 +1321,7 @@ func TestCacheEvictionPolicies(t *testing.T) {
 			SnapshotID: "snapshot-123",
 		}
 
-		response, err := service.runNQEQueryByID(args)
+		response, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Failed to execute query %s: %v", queryID, err)
 		}
@@ -1507,7 +1359,7 @@ func TestCacheErrorHandling(t *testing.T) {
 	}
 
 	// Execute query - should not panic
-	_, _ = service.runNQEQueryByID(args)
+	_, _ = service.runNQEQueryByID(context.Background(), args)
 	// No assertion on error, just ensure no panic
 
 	// Test with cache disabled
@@ -1517,12 +1369,12 @@ func TestCacheErrorHandling(t *testing.T) {
 	mockClient.SetError(false, "")
 
 	// Execute query twice - both should hit API (no caching)
-	_, err := service.runNQEQueryByID(args)
+	_, err := service.runNQEQueryByID(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Failed to execute query with cache disabled: %v", err)
 	}
 
-	_, err = service.runNQEQueryByID(args)
+	_, err = service.runNQEQueryByID(context.Background(), args)
 	if err != nil {
 		t.Fatalf("Failed to execute query second time: %v", err)
 	}
@@ -1539,11 +1391,11 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 		}
 	}
 	validQueryID := "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029" // Use a valid QueryID from static JSON
-	service.forwardClient.(*MockForwardClient).nqeResult = &forward.NQERunResult{
+	service.forwardClient.(*MockForwardClient).nqeResult = &domain.NQERunResult{
 		SnapshotID: "snapshot-123",
 		Items:      mockItems,
 	}
-	service.forwardClient.(*MockForwardClient).nqeQueries = []forward.NQEQuery{{QueryID: validQueryID}}
+	service.forwardClient.(*MockForwardClient).nqeQueries = []domain.NQEQuery{{QueryID: validQueryID}}
 
 	t.Run("Single page with limit", func(t *testing.T) {
 		args := RunNQEQueryByIDArgs{
@@ -1553,7 +1405,7 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 				Limit: 20,
 			},
 		}
-		response, err := service.runNQEQueryByID(args)
+		response, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -1570,7 +1422,7 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 			Options:    &NQEQueryOptions{Limit: 20},
 			AllResults: true,
 		}
-		response, err := service.runNQEQueryByID(args)
+		response, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -1589,7 +1441,7 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 				Offset: 30,
 			},
 		}
-		response, err := service.runNQEQueryByID(args)
+		response, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -1607,7 +1459,7 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 				Limit: 100,
 			},
 		}
-		response, err := service.runNQEQueryByID(args)
+		response, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
@@ -1626,7 +1478,7 @@ func TestRunNQEQueryByID_Pagination(t *testing.T) {
 				Offset: 100,
 			},
 		}
-		response, err := service.runNQEQueryByID(args)
+		response, err := service.runNQEQueryByID(context.Background(), args)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}

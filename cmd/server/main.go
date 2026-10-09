@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
 	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/instancelock"
 	"github.com/forward-mcp/internal/logger"
@@ -86,7 +87,7 @@ func main() {
 
 	// Create Forward MCP service
 	logger.Debug("Creating Forward MCP service...")
-	forwardService := service.NewForwardMCPService(cfg, logger)
+	forwardService := service.NewForwardMCPService(cfg, logger, forwardapi.NewClient(&cfg.Forward, logger))
 
 	// Create MCP server (official go-sdk); stdio transport is attached in Run below.
 	logger.Debug("Creating MCP server...")

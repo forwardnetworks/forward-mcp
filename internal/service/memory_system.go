@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
 	"github.com/mattn/go-sqlite3"
 )
@@ -677,7 +677,7 @@ func (m *MemorySystem) scanObservation(rows *sql.Rows) (*Observation, error) {
 }
 
 // StoreNQEResultWithChunking stores a large NQE result in chunked observations for LLM-friendly retrieval
-func (m *MemorySystem) StoreNQEResultWithChunking(queryID, networkID, snapshotID string, result *forward.NQERunResult, chunkSize int) (string, error) {
+func (m *MemorySystem) StoreNQEResultWithChunking(queryID, networkID, snapshotID string, result *domain.NQERunResult, chunkSize int) (string, error) {
 	if chunkSize <= 0 {
 		chunkSize = 200 // Default chunk size if not specified
 	}

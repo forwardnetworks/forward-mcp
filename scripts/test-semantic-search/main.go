@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/forward-mcp/internal/config"
-	"github.com/forward-mcp/internal/forward"
 	"github.com/forward-mcp/internal/logger"
 	"github.com/forward-mcp/internal/service"
 )
@@ -24,9 +23,6 @@ func main() {
 
 	// Initialize logger
 	appLogger := logger.New()
-
-	// Initialize Forward client (for potential future use)
-	_ = forward.NewClient(&cfg.Forward)
 
 	// Initialize embedding service (will use keyword fallback if no OpenAI key)
 	var embeddingService service.EmbeddingService

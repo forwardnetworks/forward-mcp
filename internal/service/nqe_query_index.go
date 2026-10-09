@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/forward-mcp/internal/forward"
+	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/logger"
 )
 
@@ -187,7 +187,7 @@ func (idx *NQEQueryIndex) LoadFromSpec() error {
 }
 
 // LoadFromQueries loads queries from a provided slice of NQEQueryDetail
-func (idx *NQEQueryIndex) LoadFromQueries(queries []forward.NQEQueryDetail) error {
+func (idx *NQEQueryIndex) LoadFromQueries(queries []domain.NQEQueryDetail) error {
 	idx.mutex.Lock()
 	defer idx.mutex.Unlock()
 
@@ -950,10 +950,10 @@ func (idx *NQEQueryIndex) FilterQueriesByDirectory(directory string) []*NQEQuery
 	return filteredQueries
 }
 
-// ConvertToNQEQuery converts NQEQueryIndexEntry to forward.NQEQuery for compatibility
-func (entry *NQEQueryIndexEntry) ConvertToNQEQuery() forward.NQEQuery {
+// ConvertToNQEQuery converts NQEQueryIndexEntry to domain.NQEQuery for compatibility
+func (entry *NQEQueryIndexEntry) ConvertToNQEQuery() domain.NQEQuery {
 	// Use the actual repository information from the API instead of inferring from path
-	return forward.NQEQuery{
+	return domain.NQEQuery{
 		QueryID:    entry.QueryID,
 		Path:       entry.Path,
 		Intent:     entry.Intent,
