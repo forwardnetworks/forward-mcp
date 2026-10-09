@@ -5,6 +5,7 @@ type Config struct {
 	Server  ServerConfig
 	Forward ForwardConfig
 	MCP     MCPConfig
+	HTTP    HTTPConfig
 }
 
 // ServerConfig holds server-specific configuration
@@ -75,4 +76,23 @@ type SemanticCacheConfig struct {
 type MCPConfig struct {
 	Version    string
 	MaxRetries int
+}
+
+// HTTPConfig holds HTTP/SSE server configuration
+type HTTPConfig struct {
+	Enabled         bool              `json:"enabled" env:"FORWARD_HTTP_ENABLED"`
+	Port            int               `json:"port" env:"FORWARD_HTTP_PORT"`
+	Host            string            `json:"host" env:"FORWARD_HTTP_HOST"`
+	TLSCertFile     string            `json:"tlsCertFile" env:"FORWARD_HTTP_TLS_CERT"`
+	TLSKeyFile      string            `json:"tlsKeyFile" env:"FORWARD_HTTP_TLS_KEY"`
+	AuthMode        string            `json:"authMode" env:"FORWARD_HTTP_AUTH_MODE"` // "jwt", "api-key", "none"
+	JWTIssuer       string            `json:"jwtIssuer" env:"FORWARD_HTTP_JWT_ISSUER"`
+	JWTAudience     string            `json:"jwtAudience" env:"FORWARD_HTTP_JWT_AUDIENCE"`
+	JWTPublicKeyURL string            `json:"jwtPublicKeyUrl" env:"FORWARD_HTTP_JWT_PUBLIC_KEY_URL"`
+	APIKeys         map[string]string `json:"apiKeys"` // key -> username (loaded from env)
+	CORSOrigins     []string          `json:"corsOrigins"`
+	RateLimit       int               `json:"rateLimit" env:"FORWARD_HTTP_RATE_LIMIT"`           // requests per minute per user
+	MaxConnections  int               `json:"maxConnections" env:"FORWARD_HTTP_MAX_CONNECTIONS"` // max concurrent SSE connections
+	ReadTimeout     int               `json:"readTimeout" env:"FORWARD_HTTP_READ_TIMEOUT"`
+	WriteTimeout    int               `json:"writeTimeout" env:"FORWARD_HTTP_WRITE_TIMEOUT"`
 }

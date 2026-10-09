@@ -10,6 +10,7 @@ type (
 	SemanticCacheConfig = domain.SemanticCacheConfig
 	CacheEvictionPolicy = domain.CacheEvictionPolicy
 	MCPConfig           = domain.MCPConfig
+	HTTPConfig          = domain.HTTPConfig
 )
 
 // Cache eviction policies.

@@ -21,6 +21,7 @@ type (
 	CacheEvictionPolicy = ports.CacheEvictionPolicy
 	MCPConfig           = ports.MCPConfig
 	ServerConfig        = ports.ServerConfig
+	HTTPConfig          = ports.HTTPConfig
 )
 
 // Load reads configuration from environment variables, a .env file and an
@@ -67,6 +68,23 @@ func Load(log ports.Logger) (*Config, error) {
 		MCP: MCPConfig{
 			Version:    getEnv("MCP_VERSION", "v1"),
 			MaxRetries: getEnvAsInt("MCP_MAX_RETRIES", 3),
+		},
+		HTTP: HTTPConfig{
+			Enabled:         getEnvAsBool("FORWARD_HTTP_ENABLED", false),
+			Port:            getEnvAsInt("FORWARD_HTTP_PORT", 8080),
+			Host:            getEnv("FORWARD_HTTP_HOST", "0.0.0.0"),
+			TLSCertFile:     getEnv("FORWARD_HTTP_TLS_CERT", ""),
+			TLSKeyFile:      getEnv("FORWARD_HTTP_TLS_KEY", ""),
+			AuthMode:        getEnv("FORWARD_HTTP_AUTH_MODE", "api-key"),
+			JWTIssuer:       getEnv("FORWARD_HTTP_JWT_ISSUER", ""),
+			JWTAudience:     getEnv("FORWARD_HTTP_JWT_AUDIENCE", "forward-mcp"),
+			JWTPublicKeyURL: getEnv("FORWARD_HTTP_JWT_PUBLIC_KEY_URL", ""),
+			APIKeys:         parseAPIKeys(getEnv("FORWARD_HTTP_API_KEYS", "")),
+			CORSOrigins:     parseStringList(getEnv("FORWARD_HTTP_CORS_ORIGINS", "")),
+			RateLimit:       getEnvAsInt("FORWARD_HTTP_RATE_LIMIT", 100),
+			MaxConnections:  getEnvAsInt("FORWARD_HTTP_MAX_CONNECTIONS", 100),
+			ReadTimeout:     getEnvAsInt("FORWARD_HTTP_READ_TIMEOUT", 30),
+			WriteTimeout:    getEnvAsInt("FORWARD_HTTP_WRITE_TIMEOUT", 30),
 		},
 	}
 
@@ -179,4 +197,42 @@ func getEnvAsFloat(key string, defaultValue float64) float64 {
 		}
 	}
 	return defaultValue
+}
+
+// parseAPIKeys parses API keys from "key1:user1,key2:user2" format
+func parseAPIKeys(s string) map[string]string {
+	if s == "" {
+		return make(map[string]string)
+	}
+
+	result := make(map[string]string)
+	pairs := strings.Split(s, ",")
+	for _, pair := range pairs {
+		parts := strings.SplitN(strings.TrimSpace(pair), ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			user := strings.TrimSpace(parts[1])
+			if key != "" && user != "" {
+				result[key] = user
+			}
+		}
+	}
+	return result
+}
+
+// parseStringList parses comma-separated string list
+func parseStringList(s string) []string {
+	if s == "" {
+		return nil
+	}
+
+	result := make([]string, 0)
+	items := strings.Split(s, ",")
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
