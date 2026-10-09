@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [4.1.1] - 2026-10-09 - Self-signed certificates and remote-mode fixes
 
 ### Added
 - **Self-signed certificate support, without turning checks off.**
