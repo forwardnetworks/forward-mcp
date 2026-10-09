@@ -8,7 +8,8 @@ type ListNetworksArgs struct {
 }
 
 type CreateNetworkArgs struct {
-	Name string `json:"name" jsonschema:"Name of the network to create"`
+	Name        string `json:"name" jsonschema:"Name of the network. Required."`
+	Description string `json:"description,omitempty" jsonschema:"Description of the network. Optional."`
 }
 
 type DeleteNetworkArgs struct {
@@ -16,9 +17,9 @@ type DeleteNetworkArgs struct {
 }
 
 type UpdateNetworkArgs struct {
-	NetworkID   string `json:"network_id" jsonschema:"ID of the network to update"`
-	Name        string `json:"name,omitempty" jsonschema:"New name for the network"`
-	Description string `json:"description,omitempty" jsonschema:"New description for the network"`
+	NetworkID   string `json:"network_id" jsonschema:"Network UUID to update. Required.;format=uuid"`
+	Name        string `json:"name,omitempty" jsonschema:"New name for the network. Optional; at least one of name or description required."`
+	Description string `json:"description,omitempty" jsonschema:"New description for the network. Optional; at least one of name or description required."`
 }
 
 // NQE Tool Arguments
@@ -70,10 +71,10 @@ type GetDeviceLocationsArgs struct {
 
 // Snapshot Management Tool Arguments
 type ListSnapshotsArgs struct {
-	NetworkID  string `json:"network_id" jsonschema:"ID of the network"`
-	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of snapshots to return (default: 25, max: 100)"`
-	Offset     int    `json:"offset,omitempty" jsonschema:"Number of snapshots to skip (default: 0)"`
-	AllResults bool   `json:"all_results,omitempty" jsonschema:"If true, fetch all snapshots using pagination and store in memory system"`
+	NetworkID  string `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of snapshots to return. Optional; default 25, max 100."`
+	Offset     int    `json:"offset,omitempty" jsonschema:"Number of snapshots to skip for pagination. Optional; default 0."`
+	AllResults bool   `json:"all_results,omitempty" jsonschema:"If true, fetch all snapshots with automatic pagination and store in memory. Optional; default false."`
 }
 
 type GetLatestSnapshotArgs struct {
@@ -148,43 +149,43 @@ type GetDeviceBasicInfoArgs struct {
 }
 
 type GetDeviceHardwareArgs struct {
-	NetworkID  string           `json:"network_id" jsonschema:"ID of the network"`
-	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Specific snapshot ID (optional)"`
-	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options like limit, offset, sorting, etc."`
+	NetworkID  string           `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
+	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
 }
 
 type GetHardwareSupportArgs struct {
-	NetworkID  string           `json:"network_id" jsonschema:"ID of the network"`
-	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Specific snapshot ID (optional)"`
-	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options like limit, offset, sorting, etc."`
+	NetworkID  string           `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
+	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
 }
 
 type GetOSSupportArgs struct {
-	NetworkID  string           `json:"network_id" jsonschema:"ID of the network"`
-	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Specific snapshot ID (optional)"`
-	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options like limit, offset, sorting, etc."`
+	NetworkID  string           `json:"network_id" jsonschema:"Network UUID. Required.;format=uuid"`
+	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
 }
 
 // SearchConfigsArgs represents arguments for configuration search
 type SearchConfigsArgs struct {
-	NetworkID    string                 `json:"network_id,omitempty" jsonschema:"Network ID (use list_networks to find, or set default with set_default_network)"`
-	SnapshotID   string                 `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID (optional, uses latest if not specified)"`
-	SearchTerm   string                 `json:"search_term" jsonschema:"Text pattern to search for in configurations"`
-	DeviceFilter string                 `json:"device_filter,omitempty" jsonschema:"Optional device name pattern to filter results"`
-	Parameters   map[string]interface{} `json:"parameters,omitempty" jsonschema:"Additional query parameters"`
-	Options      *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options (limit, offset, etc.)"`
-	AllResults   bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all config matches using pagination and store in memory system"`
+	NetworkID    string                 `json:"network_id,omitempty" jsonschema:"Network UUID. Optional if default network is set.;format=uuid"`
+	SnapshotID   string                 `json:"snapshot_id,omitempty" jsonschema:"Snapshot UUID. Optional; defaults to latest.;format=uuid"`
+	SearchTerm   string                 `json:"search_term" jsonschema:"Text pattern to search for in configurations. Required. Supports hierarchical format with indentation."`
+	DeviceFilter string                 `json:"device_filter,omitempty" jsonschema:"Device name pattern to filter results. Optional; searches all devices if omitted."`
+	Parameters   map[string]interface{} `json:"parameters,omitempty" jsonschema:"Additional query parameters. Optional."`
+	Options      *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
+	AllResults   bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results with automatic pagination and store in memory. Optional; default false."`
 }
 
 // GetConfigDiffArgs represents arguments for configuration comparison
 type GetConfigDiffArgs struct {
-	NetworkID      string                 `json:"network_id,omitempty" jsonschema:"Network ID (use list_networks to find, or set default with set_default_network)"`
-	BeforeSnapshot string                 `json:"before_snapshot" jsonschema:"Earlier snapshot ID for comparison"`
-	AfterSnapshot  string                 `json:"after_snapshot" jsonschema:"Later snapshot ID for comparison"`
-	DeviceFilter   string                 `json:"device_filter,omitempty" jsonschema:"Optional device name pattern to filter results"`
-	Parameters     map[string]interface{} `json:"parameters,omitempty" jsonschema:"Additional query parameters"`
-	Options        *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options (limit, offset, etc.)"`
-	AllResults     bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all config diff results using pagination and store in memory system"`
+	NetworkID      string                 `json:"network_id,omitempty" jsonschema:"Network UUID. Optional if default network is set.;format=uuid"`
+	BeforeSnapshot string                 `json:"before_snapshot" jsonschema:"Earlier snapshot UUID for comparison. Required.;format=uuid"`
+	AfterSnapshot  string                 `json:"after_snapshot" jsonschema:"Later snapshot UUID for comparison. Required.;format=uuid"`
+	DeviceFilter   string                 `json:"device_filter,omitempty" jsonschema:"Device name pattern to filter results. Optional; compares all devices if omitted."`
+	Parameters     map[string]interface{} `json:"parameters,omitempty" jsonschema:"Additional query parameters. Optional."`
+	Options        *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
+	AllResults     bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results with automatic pagination and store in memory. Optional; default false."`
 }
 
 // Prompt Workflow Arguments

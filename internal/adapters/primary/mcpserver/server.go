@@ -155,11 +155,11 @@ func Register(server *mcp.Server, svc *usecases.Service, log ports.Logger) error
 func registerTools(server *mcp.Server, s *usecases.Service) error {
 	// Network Management Tools
 	addTool(server, "list_networks",
-		"List all networks in the Forward platform. Returns network IDs, names, and descriptions. Use this to discover available networks or find network IDs for other operations. Supports pagination (limit/offset) and memory storage for large datasets.",
+		"Tool to list all networks with IDs, names, and descriptions. Use when discovering available networks or finding network IDs for queries. Supports pagination and memory storage for large datasets.",
 		s.ListNetworks)
 
 	addTool(server, "create_network",
-		"Create a new network in the Forward platform. Requires a network name. Returns the new network with ID for subsequent operations.",
+		"Tool to create a new network in the Forward platform. Use when setting up a new network for monitoring and analysis. Requires network name; returns network with UUID for subsequent operations.",
 		s.CreateNetwork)
 
 	// addTool(server, "delete_network",
@@ -167,7 +167,7 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 	// 	s.deleteNetwork)
 
 	addTool(server, "update_network",
-		"Update network properties in the Forward platform. Requires network_id and at least one property to update (name or description).",
+		"Tool to update network properties (name or description). Use when modifying network metadata. Requires network_id and at least one of: name or description.",
 		s.UpdateNetwork)
 
 	// Path Search Tools
@@ -190,7 +190,7 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 		s.RunNQEQueryByID)
 
 	addTool(server, "list_nqe_queries",
-		"🔍 **DISCOVERY TOOL**: Find available NQE queries for your analysis needs.\n\nList available NQE queries from the Forward Networks query library. Use this to discover predefined queries for reports and analysis.\n\n**Usage Tips:**\n- Filter by directory (e.g., '/L3/Basic/', '/L3/Advanced/', '/L3/Security/')\n- Use search_nqe_queries for semantic search\n- Check query descriptions before running\n- Use query IDs with run_nqe_query_by_id",
+		"Tool to list available NQE queries from the Forward Networks query library. Use when browsing queries by directory path or discovering predefined queries for reports. Filter by directory (e.g., '/L3/Basic/', '/L3/Security/'). Returns query IDs for use with run_nqe_query_by_id. For semantic search use search_nqe_queries.",
 		s.ListNQEQueries)
 
 	// First-Class Query Tools - Most Important Network Operations
@@ -199,23 +199,23 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 		s.GetDeviceBasicInfo)
 
 	addTool(server, "get_device_hardware",
-		"🔧 **HARDWARE INVENTORY**: Get detailed hardware information for lifecycle management.\n\nGet device hardware information including models, serial numbers, and hardware details. Critical for hardware inventory and lifecycle management.\n\n**What you get:**\n- Device models and serial numbers\n- Hardware specifications\n- Vendor and platform details\n- Interface hardware information\n- Asset tracking data\n\n**Use Cases:**\n- Hardware refresh planning\n- Asset inventory management\n- Support contract validation\n- Capacity planning",
+		"Tool to retrieve device hardware information including models, serial numbers, and vendor details. Use when building hardware inventory, planning hardware refresh, or validating support contracts. Returns hardware specifications and asset tracking data. Supports filters and pagination.",
 		s.GetDeviceHardware)
 
 	addTool(server, "get_hardware_support",
-		"⚠️ **COMPLIANCE CRITICAL**: Check hardware support status for security and compliance.\n\nGet hardware support status including end-of-life and support dates. Essential for compliance and planning hardware refreshes.\n\n**What you get:**\n- End-of-life dates\n- Support contract status\n- Security vulnerability information\n- Recommended upgrade paths\n- Compliance status\n\n**Critical Use Cases:**\n- Security compliance audits\n- Hardware refresh planning\n- Risk assessment\n- Budget planning for upgrades",
+		"Tool to check hardware support status including end-of-life dates and support contract information. Use when conducting security compliance audits, planning hardware refresh, or assessing risk. Returns EOL dates, vulnerability information, and recommended upgrade paths. Critical for compliance validation.",
 		s.GetHardwareSupport)
 
 	addTool(server, "get_os_support",
-		"🔒 **SECURITY ESSENTIAL**: Check OS support status for security compliance.\n\nGet operating system support status including OS versions and support dates. Critical for security compliance and OS upgrade planning.\n\n**What you get:**\n- OS version information\n- Support end dates\n- Security patch status\n- Upgrade recommendations\n- Compliance status\n\n**Security Use Cases:**\n- Security compliance audits\n- Vulnerability assessment\n- Patch management planning\n- OS upgrade planning",
+		"Tool to check operating system support status including OS versions, support end dates, and security patch status. Use when conducting security compliance audits, planning OS upgrades, or assessing vulnerabilities. Returns version information, EOL dates, and upgrade recommendations. Critical for security compliance.",
 		s.GetOSSupport)
 
 	addTool(server, "search_configs",
-		"🔍 **CONFIGURATION SEARCH**: Search device configurations for specific patterns and settings.\n\nSearch device configurations for specific patterns, commands, or settings. Use this to find specific configurations across your network.\n\n**Pattern Examples:**\n```\ninterface\n  zone-member security\n  ip address {ip:string}\n```\n\n**Best Practices:**\n- Use hierarchical patterns with indentation\n- Extract variables with {name:type} syntax\n- Filter by device names for targeted searches\n- Use specific patterns for better results\n\n**Common Use Cases:**\n- Find specific interface configurations\n- Locate security policies\n- Identify routing configurations\n- Audit configuration compliance",
+		"Tool to search device configurations for specific patterns, commands, or settings across the network. Use when finding interface configurations, security policies, or auditing compliance. Supports hierarchical patterns with indentation and variable extraction using {name:type} syntax. Filter by device names for targeted searches.",
 		s.SearchConfigs)
 
 	addTool(server, "get_config_diff",
-		"Compare network configurations between snapshots to identify changes. Essential for change tracking and troubleshooting configuration drift.",
+		"Tool to compare network configurations between two snapshots and identify changes. Use when tracking configuration changes, troubleshooting drift, or auditing modifications. Returns detailed diff of configuration changes between specified snapshots.",
 		s.GetConfigDiff)
 
 	// Device Management Tools
@@ -229,7 +229,7 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 
 	// Snapshot Management Tools
 	addTool(server, "list_snapshots",
-		"List network configuration snapshots. Requires network_id. Shows historical network states with timestamps and status. Use to view configuration history and find specific snapshots for queries. Supports pagination (limit/offset) and memory storage for large datasets.",
+		"Tool to list network configuration snapshots with timestamps and status. Use when viewing configuration history or finding specific snapshots for queries. Requires network_id. Returns historical network states. Supports pagination and memory storage for large datasets.",
 		s.ListSnapshots)
 
 	addTool(server, "get_latest_snapshot",
