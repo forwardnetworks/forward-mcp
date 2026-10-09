@@ -1,6 +1,6 @@
 # Forward MCP
 
-**Version 4.0.0** • [![Architecture Grade](https://img.shields.io/badge/hexa-A%2B%20100%2F100-brightgreen)](https://github.com/gaberger/hexa)
+**Version 4.1.0** • [![Architecture Grade](https://img.shields.io/badge/hexa-A%2B%20100%2F100-brightgreen)](https://github.com/gaberger/hexa)
 
 Forward MCP is an open-source server that provides a set of tools and APIs for interacting with Forward Networks' platform. It enables automation, analysis, and integration with network data using the Model Context Protocol (MCP).
 
@@ -20,7 +20,7 @@ Built with hexagonal architecture for clean separation of concerns and easy exte
 - **Remote Server Mode (preview)**: Streamable HTTP transport (plus legacy SSE) with API-key or JWT (JWKS) authentication, per-user rate limits, and health endpoints
 - **BM25 Query Search**: ranks the NQE query library by term rarity and field weight, fused with embedding similarity when embeddings exist
 
-## What's New Since 4.0.0 (unreleased)
+## What's New in 4.1.0
 
 ### Remote Server Mode — Streamable HTTP Transport (ADR-2610091600, preview)
 You can now run forward-mcp on a separate host and connect to it over the network. The Forward API credentials stay on that one server, not on every laptop.

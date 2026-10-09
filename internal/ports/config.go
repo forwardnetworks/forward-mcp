@@ -22,3 +22,6 @@ const (
 	EvictionPolicyOldest = domain.EvictionPolicyOldest
 	EvictionPolicyRandom = domain.EvictionPolicyRandom
 )
+
+// Version is the forward-mcp release.
+const Version = domain.Version

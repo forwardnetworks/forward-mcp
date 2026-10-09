@@ -25,7 +25,7 @@ import (
 )
 
 // serverVersion is reported to MCP clients during the initialize handshake.
-const serverVersion = "4.0.0"
+const serverVersion = ports.Version
 
 const serverInstructions = "MCP server for Forward Networks: network discovery, NQE queries, " +
 	"path searches, configuration search/diff, snapshots, locations, and a knowledge-graph memory. " +

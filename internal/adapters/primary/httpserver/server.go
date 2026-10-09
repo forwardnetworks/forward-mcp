@@ -18,7 +18,6 @@ const (
 	defaultIdleTimeout       = 120 * time.Second
 	defaultReadHeaderTimeout = 10 * time.Second
 	defaultSessionTimeout    = 30 * time.Minute
-	serverVersion            = "4.0.0"
 )
 
 // MCP endpoints. /mcp is Streamable HTTP (current spec); /sse is the legacy
@@ -69,8 +68,8 @@ func (s *Server) Handler(mcpServer *mcp.Server) (http.Handler, error) {
 	writeTimeout := s.seconds(s.config.WriteTimeout, defaultWriteTimeout)
 
 	mux := http.NewServeMux()
-	mux.Handle("/health", http.TimeoutHandler(HealthHandler(serverVersion), writeTimeout, "timeout"))
-	mux.Handle("/ready", http.TimeoutHandler(ReadinessHandler(serverVersion), writeTimeout, "timeout"))
+	mux.Handle("/health", http.TimeoutHandler(HealthHandler(ports.Version), writeTimeout, "timeout"))
+	mux.Handle("/ready", http.TimeoutHandler(ReadinessHandler(ports.Version), writeTimeout, "timeout"))
 	mux.Handle(MCPPath, csrf.Handler(protect(streamable)))
 	mux.Handle(LegacySSEPath, csrf.Handler(protect(legacySSE)))
 

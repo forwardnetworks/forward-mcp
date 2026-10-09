@@ -1,5 +1,42 @@
 # Changelog
 
+## [4.1.0] - 2026-10-09 - Remote Server Mode and BM25 Query Search
+
+### Added
+- **Remote server mode (preview)** — run forward-mcp on one host and connect over the network (ADR-2610091600).
+  - Streamable HTTP, the current MCP transport, at `/mcp`. The older HTTP+SSE transport stays at `/sse`.
+  - API-key or JWT authentication. JWT is checked against the identity provider's JWKS keys, refreshed hourly.
+  - TLS 1.3 required unless `FORWARD_HTTP_ALLOW_INSECURE=true`; CORS `*` rejected; cross-origin POST protection.
+  - Per-user rate limits, `/health` and `/ready` probes. Configured with `FORWARD_HTTP_*` variables.
+- **BM25 query search** — `search_nqe_queries` ranks by term rarity and field weight (intent ×3, description ×2, path ×2). When embeddings exist, BM25 and embedding rankings are fused with Reciprocal Rank Fusion.
+- `ResultCache.GetExact` for exact-key lookups.
+- A working `Dockerfile` (Go 1.26, CGO, non-root, remote mode on :8080) and `.dockerignore`.
+- Tests for the HTTP adapter, BM25 ranking, and concurrent cache use.
+
+### Fixed
+- **Wrong cached results could be returned for NQE queries.** Results were looked up by embedding similarity of `query_id + params` keys, where a "similar" key is a different query or device. Lookups are now exact.
+- **Data races in the semantic cache** under concurrent clients (26 found by a new `-race` test).
+- **Offline query search returned nothing.** The loader dropped all 1,879 bundled queries because they have no descriptions, and reported success. They are now kept and searched by path.
+- Search scores could exceed 1 (shown as "500% similarity"); they are now 0–1.
+- Queries without an embedding were hidden whenever any query had one.
+- HTTP: streams cut after 30 s by the server write timeout; the logging wrapper hid `Flush` and logged every user as anonymous; JWT mode started two key-refresh loops; the rate-limit header always said 100.
+- The HTTP adapter imported `domain` directly, dropping the hexa grade to C; back to A+.
+- The `forward-mcp-guide` skill now loads (`.claude/skills/forward-mcp-guide/SKILL.md`).
+
+### Changed
+- Version is defined once (`domain.Version`).
+- CLAUDE.md describes the hexagonal layout; README documents remote mode and its limits.
+- Removed stale files: duplicate `scripts/demo-smart-search.go`, `tools.go.backup`, non-working `test_search.{sh,py}`; the `server` binary is no longer tracked.
+
+### Known limitations
+- Remote mode shares one server state between all users (default network, cache, memory).
+- `FORWARD_HTTP_MAX_CONNECTIONS` is not enforced; JWT mode has no tests.
+- The Docker image and the integration tests were not run for this release.
+
+## [4.0.0] - 2026-10-09 - Hexagonal Architecture and Tool Quality
+
+See [CHANGELOG-v4.0.0.md](CHANGELOG-v4.0.0.md).
+
 ## [2.1.0] - 2025-07-18 - Bloomsearch Integration for Large NQE Results
 
 ### 🎯 **MAJOR FEATURE: Bloomsearch Integration**
