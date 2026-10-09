@@ -38,11 +38,6 @@
     },
     "b5d1991e-03f1-4b13-a13f-a1eb6b14c176": {
       "files": [
-        "docs/tool-quality-phase2-complete.md",
-        "docs/format-hints-guide.md",
-        "docs/tool-quality-phase3-complete.md",
-        ".claude/skills/forward-mcp-guide.md",
-        "scripts/test-tool-quality.sh",
         "scripts/test-mcp-tools.go",
         "test-skill-loading.md",
         "docs/tool-quality-test-results.md",
@@ -63,7 +58,6 @@
         "internal/adapters/secondary/queryindex/index_test.go",
         "internal/adapters/secondary/queryindex/index.go",
         "internal/adapters/secondary/queryindex/bm25_test.go",
-        "README.md",
         "Dockerfile",
         ".dockerignore",
         "CLAUDE.md",
@@ -72,18 +66,24 @@
         "internal/adapters/secondary/semcache/exact_test.go",
         "internal/adapters/secondary/semcache/concurrency_test.go",
         "internal/adapters/secondary/semcache/semantic_cache.go",
-        "CHANGELOG.md",
         "internal/ports/session.go",
         "internal/adapters/primary/mcpserver/server.go",
         "internal/usecases/session_defaults.go",
         "internal/adapters/primary/mcpserver/session_test.go",
-        "internal/adapters/primary/httpserver/jwt_test.go"
+        "internal/adapters/primary/httpserver/jwt_test.go",
+        "internal/adapters/secondary/forwardapi/tls_test.go",
+        "internal/adapters/secondary/forwardapi/tls.go",
+        "internal/adapters/secondary/envconfig/validate.go",
+        "internal/adapters/secondary/envconfig/validate_test.go",
+        "env.example",
+        "README.md",
+        "CHANGELOG.md"
       ],
       "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go test -count=1 -skip TestIntegration ./internal/... && hexa analyze . --grade A+",
       "pid": 51545,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-09T20:20:55.634560+00:00"
+      "updated": "2026-10-09T20:29:17.843221+00:00"
     }
   }
 }

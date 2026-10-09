@@ -90,6 +90,7 @@ type HTTPConfig struct {
 	JWTIssuer       string            `json:"jwtIssuer" env:"FORWARD_HTTP_JWT_ISSUER"`
 	JWTAudience     string            `json:"jwtAudience" env:"FORWARD_HTTP_JWT_AUDIENCE"`
 	JWTPublicKeyURL string            `json:"jwtPublicKeyUrl" env:"FORWARD_HTTP_JWT_PUBLIC_KEY_URL"`
+	JWKSCACertPath  string            `json:"jwksCaCertPath" env:"FORWARD_HTTP_JWKS_CA_CERT"` // PEM to trust for the JWKS URL (self-signed or internal CA)
 	APIKeys         map[string]string `json:"apiKeys"` // key -> username (loaded from env)
 	CORSOrigins     []string          `json:"corsOrigins"`
 	RateLimit       int               `json:"rateLimit" env:"FORWARD_HTTP_RATE_LIMIT"`           // requests per minute per user

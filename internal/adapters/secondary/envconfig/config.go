@@ -75,10 +75,12 @@ func Load(log ports.Logger) (*Config, error) {
 			Host:            getEnv("FORWARD_HTTP_HOST", "0.0.0.0"),
 			TLSCertFile:     getEnv("FORWARD_HTTP_TLS_CERT", ""),
 			TLSKeyFile:      getEnv("FORWARD_HTTP_TLS_KEY", ""),
+			AllowInsecure:   getEnvAsBool("FORWARD_HTTP_ALLOW_INSECURE", false),
 			AuthMode:        getEnv("FORWARD_HTTP_AUTH_MODE", "api-key"),
 			JWTIssuer:       getEnv("FORWARD_HTTP_JWT_ISSUER", ""),
 			JWTAudience:     getEnv("FORWARD_HTTP_JWT_AUDIENCE", "forward-mcp"),
 			JWTPublicKeyURL: getEnv("FORWARD_HTTP_JWT_PUBLIC_KEY_URL", ""),
+			JWKSCACertPath:  getEnv("FORWARD_HTTP_JWKS_CA_CERT", ""),
 			APIKeys:         parseAPIKeys(getEnv("FORWARD_HTTP_API_KEYS", "")),
 			CORSOrigins:     parseStringList(getEnv("FORWARD_HTTP_CORS_ORIGINS", "")),
 			RateLimit:       getEnvAsInt("FORWARD_HTTP_RATE_LIMIT", 100),
@@ -100,6 +102,9 @@ func Load(log ports.Logger) (*Config, error) {
 		log.Debug("Could not load JSON config file: %v", err)
 	}
 
+	if err := validate(config, log); err != nil {
+		return nil, err
+	}
 	return config, nil
 }
 

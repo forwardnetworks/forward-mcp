@@ -2,8 +2,11 @@ package httpserver
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -117,3 +120,33 @@ func (j *JWKSCache) ValidateToken(ctx context.Context, tokenString string, issue
 // jwksHTTPClient is the client used to fetch JWKS. nil means the default
 // client; tests replace it to trust their own TLS server.
 var jwksHTTPClient *http.Client
+
+// jwksClientFor returns the client for fetching JWKS: the test override, or
+// one that trusts caPath (a self-signed or internal-CA certificate) on top of
+// the system store, or nil for the default client.
+func jwksClientFor(caPath string) (*http.Client, error) {
+	if jwksHTTPClient != nil {
+		return jwksHTTPClient, nil
+	}
+	if caPath == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, fmt.Errorf("FORWARD_HTTP_JWKS_CA_CERT: %w", err)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(data) {
+		return nil, fmt.Errorf("FORWARD_HTTP_JWKS_CA_CERT: %s contains no PEM certificates", caPath)
+	}
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS13,
+			RootCAs:    pool,
+		}},
+	}, nil
+}

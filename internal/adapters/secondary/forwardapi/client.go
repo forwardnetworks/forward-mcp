@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -40,14 +38,13 @@ func NewClient(config *ports.ForwardConfig, log ports.Logger) *Client {
 		},
 	}
 
-	// Load custom CA certificate if provided
+	// Trust an extra CA or a self-signed server certificate, on top of the
+	// system store. envconfig already refused an unusable file at startup.
 	if config.CACertPath != "" {
-		caCert, err := os.ReadFile(config.CACertPath)
-		if err == nil {
-			caCertPool := x509.NewCertPool()
-			if caCertPool.AppendCertsFromPEM(caCert) {
-				tlsConfig.RootCAs = caCertPool
-			}
+		if pool, err := LoadRootCAs(config.CACertPath); err != nil {
+			log.Error("%v", err)
+		} else {
+			tlsConfig.RootCAs = pool
 		}
 	}
 
@@ -124,6 +121,9 @@ func (c *Client) makeRequest(ctx context.Context, method, endpoint string, body 
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		if msg := describeTLSError(err, c.config.APIBaseURL); msg != "" {
+			return nil, fmt.Errorf("%s: %w", msg, err)
+		}
 		// Provide LLM-friendly error messages based on error type
 		errStr := err.Error()
 		if strings.Contains(errStr, "connection refused") {
@@ -255,6 +255,9 @@ func (c *Client) makeRequestWithRetry(ctx context.Context, method, endpoint stri
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			if msg := describeTLSError(err, c.config.APIBaseURL); msg != "" {
+				return fmt.Errorf("%s: %w", msg, err)
+			}
 			return fmt.Errorf("failed to send request: %w", err)
 		}
 

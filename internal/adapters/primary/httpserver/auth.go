@@ -44,7 +44,11 @@ func jwtAuthMiddleware(cfg *ports.HTTPConfig, log ports.Logger) func(http.Handle
 	var jwksCache *JWKSCache
 	if cfg.JWTPublicKeyURL != "" {
 		jwksCache = NewJWKSCache(cfg.JWTPublicKeyURL, log)
-		jwksCache.client = jwksHTTPClient
+		client, err := jwksClientFor(cfg.JWKSCACertPath)
+		if err != nil {
+			log.Error("%v", err)
+		}
+		jwksCache.client = client
 		// Fetch keys once at startup so the first request is fast. After that,
 		// GetKeySet refreshes them when they are older than the TTL.
 		go func() {

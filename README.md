@@ -183,6 +183,27 @@ Set the following environment variables before running:
 
 Note: TLS 1.3 is enforced for all API connections; certificate verification cannot be disabled.
 
+### Self-Signed Certificates
+
+Self-signed and internal-CA certificates are supported. You trust the specific certificate; checks are never switched off, so nobody on the network can read your API keys.
+
+**Forward server with a self-signed certificate.** Save its certificate and point `FORWARD_CA_CERT_PATH` at it:
+```sh
+openssl s_client -connect forward.example.com:443 -showcerts </dev/null \
+  | openssl x509 -outform PEM > forward.pem
+export FORWARD_CA_CERT_PATH=$PWD/forward.pem
+```
+Check the fingerprint (`openssl x509 -in forward.pem -noout -fingerprint -sha256`) against the server before you trust it. If an internal CA issued the certificate, use the CA certificate instead. The file is added to the system trust store, and the server refuses to start if the file is missing or holds no certificate.
+
+**Identity provider with a self-signed certificate (JWT mode).** Set `FORWARD_HTTP_JWKS_CA_CERT` the same way.
+
+**This server with a self-signed certificate (remote mode).** Pass it as `FORWARD_HTTP_TLS_CERT` / `FORWARD_HTTP_TLS_KEY`; any valid certificate works. Clients must trust it. For Claude Code, set `NODE_EXTRA_CA_CERTS=/path/to/cert.pem` before starting it.
+
+Common errors, and what they mean:
+- *"not trusted"*: set `FORWARD_CA_CERT_PATH` as above.
+- *"does not match its host name"*: use the host name the certificate was issued for. Certificates that set only the Common Name, with no Subject Alternative Name, are rejected. Reissue them with a SAN.
+- *"does not support TLS 1.3"*: the Forward server, or a proxy in front of it, only offers TLS 1.2.
+
 ### Bloomsearch Configuration (Optional)
 - `FORWARD_BLOOM_ENABLED` – (Optional, default: true) Enable bloomsearch for large results
 - `FORWARD_BLOOM_THRESHOLD` – (Optional, default: 100) Minimum result size to trigger bloom filter creation
@@ -264,7 +285,9 @@ curl https://forward-mcp.example.com/health
 | `FORWARD_HTTP_API_KEYS` | — | `key1:user1,key2:user2` |
 | `FORWARD_HTTP_JWT_ISSUER` | — | Expected `iss` claim |
 | `FORWARD_HTTP_JWT_AUDIENCE` | `forward-mcp` | Expected `aud` claim |
-| `FORWARD_HTTP_JWT_PUBLIC_KEY_URL` | — | JWKS URL of your identity provider |
+| `FORWARD_HTTP_JWT_PUBLIC_KEY_URL` | — | JWKS URL of your identity provider (`https://`) |
+| `FORWARD_HTTP_JWKS_CA_CERT` | — | PEM certificate to trust for the JWKS URL (self-signed or internal CA) |
+| `FORWARD_HTTP_MAX_CONNECTIONS` | `100` | Open MCP requests and streams; more get `503` with `Retry-After` |
 | `FORWARD_HTTP_CORS_ORIGINS` | — | Comma-separated `https://` origins. `*` is rejected. |
 | `FORWARD_HTTP_RATE_LIMIT` | `100` | Requests per minute per user |
 | `FORWARD_HTTP_READ_TIMEOUT` | `30` | Seconds to read a request |
@@ -274,9 +297,8 @@ curl https://forward-mcp.example.com/health
 
 This mode works, but it is a preview. Read these before you deploy it:
 
-1. **All users share one server state.** Every connection uses the same MCP server, so `set_default_network`, the cache, and the memory graph are shared between users.
-2. **`FORWARD_HTTP_MAX_CONNECTIONS` is read but not enforced yet.**
-3. **Not built yet:** OpenTelemetry metrics and tracing, a Dockerfile, and Kubernetes manifests (ADR-2610091600, phases 3–5).
+1. **The cache and the memory graph are shared between users, by design.** Every user reaches Forward with the server's credentials, so they see the same data. Do not store anything in the memory graph that other users must not see. The default network (`set_default_network`) is per session.
+2. **Not built yet:** OpenTelemetry metrics and tracing, and Kubernetes manifests (ADR-2610091600, phases 3–5).
 
 `FORWARD_HTTP_WRITE_TIMEOUT` applies only to `/health` and `/ready`. The MCP streams have no write timeout, so they stay open for as long as the client needs.
 

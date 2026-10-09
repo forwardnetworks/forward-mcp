@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Self-signed certificate support, without turning checks off.**
+  - `FORWARD_CA_CERT_PATH` is now added to the system trust store, instead of replacing it.
+  - New `FORWARD_HTTP_JWKS_CA_CERT` trusts a self-signed identity provider in JWT mode.
+  - Certificate errors now say what to do: untrusted certificate, host name mismatch (including Common-Name-only certificates), or a server that only offers TLS 1.2.
+- `FORWARD_HTTP_MAX_CONNECTIONS` is enforced. Requests beyond the limit get `503` with `Retry-After`.
+- Startup checks with clear messages: a missing or invalid CA file, a TLS certificate without its key, API-key mode with no keys, a JWT JWKS URL that is not `https://`, and an unknown auth mode.
+
+### Fixed
+- **4.1.0 documented two startup checks that were not in the code.** `FORWARD_HTTP_ALLOW_INSECURE` was never read, so plain-HTTP development mode could not start. A `*` CORS origin was not rejected. Both now work and are tested.
+- **`set_default_network` changed every remote user's default network**, and the write was a data race. The default is now per MCP session; stdio is unchanged.
+- **`FORWARD_CA_CERT_PATH` failed silently.** A wrong path or a bad file was ignored.
+- `env.example` recommended `FORWARD_INSECURE_SKIP_VERIFY` for self-signed certificates. The server refuses that setting.
+- The JWKS refresh goroutine never stopped. Keys now load once at startup, then refresh on demand.
+
+### Tests
+- First tests for configuration loading (16 cases).
+- JWT: rejects a wrong issuer, audience, or key, and expired or subject-less tokens; accepts a valid token end to end, including from a self-signed identity provider.
+- Self-signed and TLS 1.2-only Forward servers, per-session defaults, and the connection limit.
+
 ## [4.1.0] - 2026-10-09 - Remote Server Mode and BM25 Query Search
 
 ### Added
