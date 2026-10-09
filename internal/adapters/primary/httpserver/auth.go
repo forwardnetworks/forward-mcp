@@ -2,13 +2,11 @@ package httpserver
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/ports"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 // contextKey is a private type for context keys to avoid collisions
@@ -22,7 +20,7 @@ const (
 type UserInfo struct {
 	Username string
 	UserID   string
-	Claims   jwt.MapClaims
+	Email    string
 }
 
 // AuthMiddleware creates an authentication middleware based on config
@@ -41,8 +39,20 @@ func AuthMiddleware(cfg *domain.HTTPConfig, log ports.Logger) func(http.Handler)
 	}
 }
 
-// jwtAuthMiddleware validates JWT tokens
+// jwtAuthMiddleware validates JWT tokens using JWKS
 func jwtAuthMiddleware(cfg *domain.HTTPConfig, log ports.Logger) func(http.Handler) http.Handler {
+	// Create JWKS cache for public key management
+	var jwksCache *JWKSCache
+	if cfg.JWTPublicKeyURL != "" {
+		jwksCache = NewJWKSCache(cfg.JWTPublicKeyURL, log)
+
+		// Start background refresh in a goroutine
+		// Note: This will keep running until the process exits
+		// In production, you might want to manage this lifecycle more carefully
+		ctx := context.Background()
+		go jwksCache.StartBackgroundRefresh(ctx)
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Extract token from Authorization header
@@ -63,76 +73,37 @@ func jwtAuthMiddleware(cfg *domain.HTTPConfig, log ports.Logger) func(http.Handl
 
 			tokenString := parts[1]
 
-			// Parse and validate JWT
-			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-				// Validate signing method
-				if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-					return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-				}
-
-				// TODO: Fetch public key from JWKS URL (cfg.JWTPublicKeyURL)
-				// For now, this is a placeholder. In production, implement JWKS fetching
-				// using github.com/lestrrat-go/jwx/v2/jwk
-				return nil, fmt.Errorf("JWT public key validation not yet implemented")
-			})
-
-			if err != nil {
-				log.Debug("JWT validation failed: %v", err)
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
-				return
-			}
-
-			if !token.Valid {
-				log.Debug("JWT token is not valid")
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
-				return
-			}
-
-			// Extract claims
-			claims, ok := token.Claims.(jwt.MapClaims)
-			if !ok {
-				log.Debug("JWT claims extraction failed")
-				http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-				return
-			}
-
-			// Validate issuer
-			if cfg.JWTIssuer != "" {
-				if iss, ok := claims["iss"].(string); !ok || iss != cfg.JWTIssuer {
-					log.Debug("JWT issuer mismatch: expected %s, got %s", cfg.JWTIssuer, iss)
-					http.Error(w, "Invalid token issuer", http.StatusUnauthorized)
+			// Validate JWT using JWKS if configured
+			if jwksCache != nil {
+				token, err := jwksCache.ValidateToken(r.Context(), tokenString, cfg.JWTIssuer, cfg.JWTAudience)
+				if err != nil {
+					log.Debug("JWT validation failed: %v", err)
+					http.Error(w, "Invalid token", http.StatusUnauthorized)
 					return
 				}
-			}
 
-			// Validate audience
-			if cfg.JWTAudience != "" {
-				if aud, ok := claims["aud"].(string); !ok || aud != cfg.JWTAudience {
-					log.Debug("JWT audience mismatch: expected %s, got %s", cfg.JWTAudience, aud)
-					http.Error(w, "Invalid token audience", http.StatusUnauthorized)
+				// Extract user info from validated token
+				sub, ok := token.Subject()
+				if !ok || sub == "" {
+					log.Debug("JWT token missing subject")
+					http.Error(w, "Invalid token: missing subject", http.StatusUnauthorized)
 					return
 				}
-			}
 
-			// Extract user info
-			user := &UserInfo{
-				Claims: claims,
-			}
+				user := &UserInfo{
+					UserID:   sub,
+					Username: sub,
+				}
 
-			if sub, ok := claims["sub"].(string); ok {
-				user.UserID = sub
-			}
-			if name, ok := claims["name"].(string); ok {
-				user.Username = name
-			} else if email, ok := claims["email"].(string); ok {
-				user.Username = email
+				// Add user to context
+				ctx := context.WithValue(r.Context(), userContextKey, user)
+				log.Debug("JWT authenticated: user=%s (sub=%s)", user.Username, user.UserID)
+				next.ServeHTTP(w, r.WithContext(ctx))
 			} else {
-				user.Username = user.UserID
+				// No JWKS URL configured
+				log.Debug("JWT authentication requested but JWTPublicKeyURL not configured")
+				http.Error(w, "JWT authentication not configured", http.StatusInternalServerError)
 			}
-
-			// Add user to context
-			ctx := context.WithValue(r.Context(), userContextKey, user)
-			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
