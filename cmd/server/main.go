@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/forward-mcp/internal/adapters/primary/httpserver"
 	"github.com/forward-mcp/internal/adapters/primary/mcpserver"
 	"github.com/forward-mcp/internal/adapters/secondary/bloom"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
@@ -20,10 +21,11 @@ import (
 	"github.com/forward-mcp/internal/ports"
 	"github.com/forward-mcp/internal/usecases"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/sync/errgroup"
 )
 
 // serverVersion is reported to MCP clients during the initialize handshake.
-const serverVersion = "3.0.0"
+const serverVersion = "4.0.0"
 
 const serverInstructions = "MCP server for Forward Networks: network discovery, NQE queries, " +
 	"path searches, configuration search/diff, snapshots, locations, and a knowledge-graph memory. " +
@@ -116,15 +118,6 @@ func main() {
 	}
 	logger.Debug("Tools, prompts and resources registered")
 
-	// Check if we're in a TTY (interactive mode) or pipe mode
-	if fileInfo, _ := os.Stdin.Stat(); (fileInfo.Mode() & os.ModeCharDevice) != 0 {
-		logger.Debug("Running in interactive mode (TTY detected)")
-		logger.Debug("Server is ready and waiting for MCP protocol messages on stdin...")
-		logger.Debug("Send MCP messages as JSON to interact with the server")
-	} else {
-		logger.Debug("Running in pipe mode (stdin redirected)")
-	}
-
 	// Setup graceful shutdown
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
@@ -132,28 +125,105 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Run the server over stdio; Run blocks until the client disconnects
-	// (stdin EOF) or the context is cancelled.
-	logger.Debug("Starting Forward Networks MCP server...")
-	serverErr := make(chan error, 1)
-	go func() {
-		serverErr <- server.Run(ctx, &mcp.StdioTransport{})
-	}()
+	// Determine which transport(s) to start
+	httpEnabled := cfg.HTTP.Enabled
+	stdinAvailable := true
 
-	logger.Debug("MCP server is now running and waiting for connections...")
+	// Check if stdin is available (not a TTY means piped input)
+	if fileInfo, _ := os.Stdin.Stat(); (fileInfo.Mode() & os.ModeCharDevice) != 0 {
+		// TTY mode - only start HTTP if enabled, skip stdio
+		if httpEnabled {
+			logger.Debug("Running in HTTP-only mode (TTY detected, HTTP enabled)")
+			stdinAvailable = false
+		} else {
+			logger.Debug("Running in interactive mode (TTY detected)")
+			logger.Debug("Server is ready and waiting for MCP protocol messages on stdin...")
+			logger.Debug("Send MCP messages as JSON to interact with the server")
+		}
+	} else {
+		logger.Debug("Running in pipe mode (stdin redirected)")
+	}
 
-	// Wait for client disconnect, server error, or shutdown signal.
-	var runErr error
+	// Start server transports using errgroup for coordinated lifecycle
+	g, gctx := errgroup.WithContext(ctx)
+
+	// Start HTTP/SSE server if enabled
+	var httpSrv *httpserver.Server
+	if httpEnabled {
+		httpSrv = httpserver.New(&cfg.HTTP, logger)
+		if err := httpSrv.Start(gctx, server); err != nil {
+			logger.Fatalf("Failed to start HTTP server: %v", err)
+		}
+
+		logger.Info("HTTP/SSE transport started on http://%s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
+		logger.Info("HTTP auth mode: %s", cfg.HTTP.AuthMode)
+		if cfg.HTTP.TLSCertFile != "" {
+			logger.Info("TLS enabled: https://%s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
+		}
+
+		// Add HTTP server to errgroup for coordinated shutdown
+		g.Go(func() error {
+			<-gctx.Done()
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer shutdownCancel()
+			return httpSrv.Stop(shutdownCtx)
+		})
+	}
+
+	// Start stdio server if available and not in HTTP-only mode
+	var stdioDone chan error
+	if stdinAvailable && !httpEnabled {
+		logger.Debug("Starting stdio transport...")
+		stdioDone = make(chan error, 1)
+		g.Go(func() error {
+			err := server.Run(gctx, &mcp.StdioTransport{})
+			stdioDone <- err
+			return err
+		})
+		logger.Debug("Stdio transport started")
+	}
+
+	if !httpEnabled && !stdinAvailable {
+		logger.Fatalf("No transport available: HTTP disabled and stdin is a TTY. " +
+			"Either enable HTTP with FORWARD_HTTP_ENABLED=true or pipe data to stdin.")
+	}
+
+	logger.Info("Forward Networks MCP server is running...")
+	if httpEnabled {
+		logger.Info("  - HTTP/SSE: http://%s:%d/sse", cfg.HTTP.Host, cfg.HTTP.Port)
+		logger.Info("  - Health: http://%s:%d/health", cfg.HTTP.Host, cfg.HTTP.Port)
+	}
+	if stdinAvailable && !httpEnabled {
+		logger.Info("  - stdio: waiting for MCP messages")
+	}
+
+	// Wait for shutdown signal or server error
 	select {
-	case runErr = <-serverErr:
-		if runErr != nil {
-			logger.Error("Server error: %v", runErr)
+	case <-shutdown:
+		logger.Info("Received shutdown signal, stopping gracefully...")
+		cancel()
+	case err := <-stdioDone:
+		if err != nil {
+			logger.Error("Stdio server error: %v", err)
 		} else {
 			logger.Info("Client disconnected, shutting down...")
 		}
-	case sig := <-shutdown:
-		logger.Info("Received signal %v, shutting down gracefully...", sig)
 		cancel()
+	}
+
+	// Wait for all servers to stop (with timeout)
+	done := make(chan error)
+	go func() {
+		done <- g.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			logger.Error("Server shutdown error: %v", err)
+		}
+	case <-time.After(35 * time.Second):
+		logger.Error("Server shutdown timeout exceeded")
 	}
 
 	// Shutdown the ForwardMCPService to stop background goroutines and close databases.
@@ -167,9 +237,6 @@ func main() {
 	}
 
 	logger.Info("Server shutdown complete")
-	if runErr != nil {
-		os.Exit(1)
-	}
 }
 
 // newDeps builds the adapters the service runs on.
