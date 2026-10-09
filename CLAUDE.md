@@ -47,6 +47,90 @@ make test-coverage
 - Can hang/fail if API is slow or credentials are invalid
 - Tests use `-skip 'TestIntegration'` pattern to exclude them from unit test runs
 
+## Tool Design Standards (ADR-2610091555)
+
+All MCP tools follow Composio-inspired design standards for optimal agent experience:
+
+### Description Template
+
+**Every tool description follows:**
+```
+Tool to <what it does>.
+Use when <situation>.
+<Requirements and constraints>.
+Returns <what you get>.
+```
+
+**Rules:**
+- Maximum 1024 characters (OpenAI limit)
+- No emojis or markdown formatting
+- State constraints explicitly
+- One consistent style across all tools
+
+**Example:**
+```
+Tool to trace L3/L4 packet paths from source to destination through network devices and links.
+Use when troubleshooting connectivity, verifying traffic flow, or analyzing routing decisions.
+Requires dst_ip (IP or CIDR); from (device name) or src_ip optional.
+For multiple queries use search_paths_bulk.
+```
+
+### Parameter Schema Standards
+
+**Required for all parameters:**
+- Explicit "Required" or "Optional" status
+- Clear default behavior ("defaults to latest")
+- Format hints where appropriate (`format=ipv4`, `format=email`)
+- Constraint documentation ("at least one of X, Y required")
+
+**Example:**
+```go
+NetworkID string `json:"network_id" jsonschema:"Network ID. Required."`
+SnapshotID string `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
+SrcIP string `json:"src_ip,omitempty" jsonschema:"Source IP address or CIDR.;format=ipv4"`
+```
+
+**DO NOT use `format=uuid` for network_id or snapshot_id** — they are plain strings per Forward API spec.
+
+### Error Message Standards
+
+**Every error must:**
+1. Name the problem
+2. Say what to do next
+3. Not expose secrets or internal paths
+
+**Good example:**
+```go
+return nil, fmt.Errorf("network_id is required. Use list_networks to find available networks")
+```
+
+**Bad example:**
+```go
+return nil, fmt.Errorf("invalid input")  // no action
+```
+
+### When Adding New Tools
+
+**Checklist:**
+1. ✅ Write description following template
+2. ✅ Add explicit Required/Optional to all parameters
+3. ✅ Add format hints where appropriate (see docs/format-hints-guide.md)
+4. ✅ Document explicit constraints ("at least one of")
+5. ✅ Write LLM-friendly error messages
+6. ✅ Filter response to task-relevant fields (no debug data)
+7. ✅ Test with real agent queries
+8. ✅ Add to appropriate category in registerTools()
+
+**Current status:** 54/54 active tools follow standards (100%)
+
+### References
+
+- **ADR-2610091555:** Tool Quality Standards (docs/adrs/)
+- **Format Hints Guide:** docs/format-hints-guide.md
+- **Forward-MCP Guide Skill:** .claude/skills/forward-mcp-guide.md
+- **Composio Guide:** https://composio.dev/blog/how-to-build-tools-for-ai-agents-a-field-guide
+- **Forward API Spec:** https://docs.fwd.app/latest/api/spec/complete.yaml
+
 ## Database & Embedding Management
 
 ```bash

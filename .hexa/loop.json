@@ -49,13 +49,15 @@
         "docs/tool-quality-phase2-complete.md",
         "docs/format-hints-guide.md",
         "internal/adapters/primary/mcpserver/server.go",
-        "docs/tool-quality-phase3-complete.md"
+        "docs/tool-quality-phase3-complete.md",
+        ".claude/skills/forward-mcp-guide.md",
+        "CLAUDE.md"
       ],
       "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go test -count=1 -skip TestIntegration ./internal/... && hexa analyze . --grade A+",
       "pid": 51545,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-09T18:48:20.721771+00:00"
+      "updated": "2026-10-09T18:50:55.807938+00:00"
     }
   }
 }
