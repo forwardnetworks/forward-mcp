@@ -1,0 +1,170 @@
+{
+  "companyAnnouncements": [
+    "hexa: a scaffolding system with two gates\nRun `hexa analyze .` for the grade | `hexa status` for an overview"
+  ],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "hexa hook post-edit",
+            "timeout": 5000,
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit|MultiEdit"
+      },
+      {
+        "hooks": [
+          {
+            "blocking": false,
+            "command": "hexa analyze --file \"$TOOL_INPUT_PATH\" --quiet",
+            "timeout": 10000,
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit|MultiEdit"
+      },
+      {
+        "hooks": [
+          {
+            "blocking": false,
+            "command": "hexa hook observe-post",
+            "timeout": 500,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "hexa hook pre-edit",
+            "timeout": 5000,
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit|MultiEdit"
+      },
+      {
+        "hooks": [
+          {
+            "command": "hexa hook pre-bash",
+            "timeout": 3000,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "hexa hook pre-agent",
+            "timeout": 3000,
+            "type": "command"
+          }
+        ],
+        "matcher": "Agent"
+      },
+      {
+        "hooks": [
+          {
+            "blocking": false,
+            "command": "hexa hook observe-pre",
+            "timeout": 500,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "hexa hook session-end",
+            "timeout": 5000,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "hexa hook session-start",
+            "timeout": 10000,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "blocking": false,
+            "command": "hexa hook observe-stop",
+            "timeout": 500,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "blocking": true,
+            "command": "hexa analyze --violations-only --exit-code",
+            "timeout": 30000,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "command": "hexa hook subagent-start",
+            "timeout": 3000,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "command": "hexa hook subagent-stop",
+            "timeout": 3000,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "hexa hook route",
+            "timeout": 8000,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  },
+  "statusLine": {
+    "command": "hexa loop 2>/dev/null | head -1",
+    "type": "command"
+  }
+}

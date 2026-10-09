@@ -43,3 +43,6 @@ forward-mcp-server
 .claude-flow/
 .clj-kondo/
 .lsp/
+
+# hexa runtime state
+.hexa/loop.lock

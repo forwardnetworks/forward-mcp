@@ -1,0 +1,68 @@
+{
+  "sessions": {
+    "8186419a-5377-4b63-b1cc-26a23f2adaa6": {
+      "adr": "ADR-2610091315",
+      "files": [
+        "docs/adrs/ADR-2610091315-forward-mcp-is-a-hexagon.md",
+        "internal/ports/forward.go",
+        "internal/adapters/secondary/forwardapi/client_test.go",
+        "internal/adapters/primary/mcpserver/server_test.go",
+        "internal/adapters/secondary/sqlite/rowquery.go"
+      ],
+      "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go vet ./internal/... ./cmd/... && CGO_ENABLED=1 go test -race -count=1 -skip TestIntegration ./internal/... && hexa analyze . --violations-only --exit-code",
+      "pid": 87684,
+      "pid_start": null,
+      "stage": "build",
+      "tasks": [
+        {
+          "done_at": "2026-10-09T17:18:28.676067+00:00",
+          "status": "done",
+          "title": "Phase 1: domain, ports, forwardapi adapter, contexts threaded"
+        },
+        {
+          "done_at": "2026-10-09T17:32:29.552903+00:00",
+          "status": "done",
+          "title": "Phase 2: logger, config and storage ports and adapters"
+        },
+        {
+          "done_at": "2026-10-09T17:45:16.575697+00:00",
+          "status": "done",
+          "title": "Phase 3: split mcp_service.go into usecases and adapters/primary/mcp; compose in main.go"
+        },
+        {
+          "status": "doing",
+          "title": "Phase 4: harden to grade A; docs"
+        }
+      ],
+      "updated": "2026-10-09T17:45:16.575836+00:00"
+    },
+    "b5d1991e-03f1-4b13-a13f-a1eb6b14c176": {
+      "files": [
+        "internal/domain/config.go",
+        "internal/usecases/executable_queries.go",
+        "internal/usecases/paths.go",
+        "examples/test_mcp.go",
+        "docs/adrs/ADR-2610091555-mcp-tool-quality-standards.md",
+        "docs/tool-quality-audit.md",
+        "docs/tool-quality-phase1-complete.md",
+        "internal/usecases/tools.go",
+        "docs/tool-quality-phase2-complete.md",
+        "docs/format-hints-guide.md",
+        "internal/adapters/primary/mcpserver/server.go",
+        "docs/tool-quality-phase3-complete.md",
+        ".claude/skills/forward-mcp-guide.md",
+        "CLAUDE.md",
+        "scripts/test-tool-quality.sh",
+        "scripts/test-mcp-tools.go",
+        "test-skill-loading.md",
+        "docs/tool-quality-test-results.md",
+        "CHANGELOG-v4.0.0.md"
+      ],
+      "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go test -count=1 -skip TestIntegration ./internal/... && hexa analyze . --grade A+",
+      "pid": 51545,
+      "pid_start": null,
+      "stage": "gate",
+      "updated": "2026-10-09T19:01:14.204449+00:00"
+    }
+  }
+}

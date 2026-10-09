@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
+	"github.com/forward-mcp/internal/ports"
 	"os"
 	"time"
 
-	"github.com/forward-mcp/internal/logger"
-	"github.com/forward-mcp/internal/service"
+	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 )
 
 func main() {
@@ -14,7 +16,7 @@ func main() {
 	fmt.Println("==================================================")
 
 	// Initialize logger
-	logger := logger.New()
+	logger := stderrlog.New()
 
 	// Check which embedding service would be used
 	provider := os.Getenv("FORWARD_EMBEDDING_PROVIDER")
@@ -34,27 +36,27 @@ func main() {
 	}
 
 	// Initialize embedding service based on configuration
-	var embeddingService service.EmbeddingService
+	var embeddingService ports.EmbeddingService
 	var serviceName string
 
 	switch provider {
 	case "keyword":
-		embeddingService = service.NewKeywordEmbeddingService()
+		embeddingService = embeddings.NewKeywordEmbeddingService()
 		serviceName = "Keyword-based (fast, free, offline)"
 	case "openai":
 		if openaiKey == "" {
 			fmt.Printf("\n❌ Error: OPENAI_API_KEY required for OpenAI provider\n")
 			os.Exit(1)
 		}
-		embeddingService = service.NewOpenAIEmbeddingService(openaiKey)
+		embeddingService = embeddings.NewOpenAIEmbeddingService(openaiKey)
 		serviceName = "OpenAI API (high quality, costs money)"
 	default:
 		// Auto-detect
 		if openaiKey != "" {
-			embeddingService = service.NewOpenAIEmbeddingService(openaiKey)
+			embeddingService = embeddings.NewOpenAIEmbeddingService(openaiKey)
 			serviceName = "OpenAI API (auto-detected from OPENAI_API_KEY)"
 		} else {
-			embeddingService = service.NewKeywordEmbeddingService()
+			embeddingService = embeddings.NewKeywordEmbeddingService()
 			serviceName = "Keyword-based (auto-detected, no OpenAI key)"
 		}
 	}
@@ -62,7 +64,7 @@ func main() {
 	fmt.Printf("   🤖 Active Service: %s\n", serviceName)
 
 	// Initialize query index
-	queryIndex := service.NewNQEQueryIndex(embeddingService, logger)
+	queryIndex := queryindex.NewNQEQueryIndex(embeddingService, logger)
 
 	// Load queries
 	fmt.Printf("\n📖 Loading NQE Queries:\n")

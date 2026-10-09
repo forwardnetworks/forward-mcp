@@ -3,37 +3,39 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
-	"github.com/forward-mcp/internal/config"
-	"github.com/forward-mcp/internal/logger"
-	"github.com/forward-mcp/internal/service"
+	"github.com/forward-mcp/internal/adapters/primary/mcpserver"
+	"github.com/forward-mcp/internal/adapters/secondary/bloom"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
+	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
+	"github.com/forward-mcp/internal/adapters/secondary/semcache"
+	"github.com/forward-mcp/internal/adapters/secondary/sqlite"
+	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
+	"github.com/forward-mcp/internal/ports"
+	"github.com/forward-mcp/internal/usecases"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
 	// Load configuration
-	cfg := config.LoadConfig()
-	log := logger.New()
+	log := stderrlog.New()
+	cfg, err := envconfig.Load(log)
+	if err != nil {
+		log.Fatalf("Configuration error: %v", err)
+	}
 
 	// Create Forward MCP service
-	forwardService := service.NewForwardMCPService(cfg, log)
+	forwardService := usecases.New(cfg, log, newDeps(cfg, log))
 
 	// Create MCP server (stdio transport is attached at Run time)
 	server := mcp.NewServer(&mcp.Implementation{Name: "forward-mcp-example", Version: "0.0.1"}, nil)
 
-	// Register all Forward Networks tools
-	if err := forwardService.RegisterTools(server); err != nil {
-		log.Fatalf("Failed to register tools: %v", err)
-	}
-
-	// Register prompt workflows
-	if err := forwardService.RegisterPrompts(server); err != nil {
-		log.Fatalf("Failed to register prompts: %v", err)
-	}
-
-	// Register contextual resources
-	if err := forwardService.RegisterResources(server); err != nil {
-		log.Fatalf("Failed to register resources: %v", err)
+	// Serve the use cases as MCP tools, prompts and a resource
+	if err := mcpserver.Register(server, forwardService, log); err != nil {
+		log.Fatalf("Failed to register MCP capabilities: %v", err)
 	}
 
 	// List all registered tools (for demonstration)
@@ -70,7 +72,7 @@ func main() {
 	fmt.Println("\nExample tool usage:")
 
 	// Example: search_paths arguments
-	searchArgs := service.SearchPathsArgs{
+	searchArgs := usecases.SearchPathsArgs{
 		NetworkID:  "network-123",
 		DstIP:      "10.0.0.100",
 		SrcIP:      "10.0.0.1",
@@ -90,11 +92,11 @@ func main() {
 	fmt.Println("   - Results can be formatted as JSON objects for better readability")
 	fmt.Println("   - Common use cases: device information, interface details, routing tables")
 
-	// Example 1: Basic device query
-	nqeArgs1 := service.RunNQEQueryByStringArgs{
+	// Example 1: Basic device query (using a query ID from the library)
+	nqeArgs1 := usecases.RunNQEQueryByIDArgs{
 		NetworkID: "network-123",
-		Query:     "foreach device in network.devices select {Name: device.name, Platform: device.platform}",
-		Options: &service.NQEQueryOptions{
+		QueryID:   "devices",
+		Options: &usecases.NQEQueryOptions{
 			Limit: 10,
 		},
 	}
@@ -103,10 +105,10 @@ func main() {
 	fmt.Printf("\nBasic device query example:\n%s\n", string(nqeJSON1))
 
 	// Example 2: Interface query with filtering
-	nqeArgs2 := service.RunNQEQueryByStringArgs{
+	nqeArgs2 := usecases.RunNQEQueryByIDArgs{
 		NetworkID: "network-123",
-		Query:     "foreach interface in network.interfaces where interface.operStatus == 'up' select {DeviceName: interface.device.name, InterfaceName: interface.name, IPAddress: interface.ipv4Address}",
-		Options: &service.NQEQueryOptions{
+		QueryID:   "interfaces",
+		Options: &usecases.NQEQueryOptions{
 			Limit: 20,
 		},
 	}
@@ -115,10 +117,10 @@ func main() {
 	fmt.Printf("\nInterface query example:\n%s\n", string(nqeJSON2))
 
 	// Example 3: Routing table query
-	nqeArgs3 := service.RunNQEQueryByStringArgs{
+	nqeArgs3 := usecases.RunNQEQueryByIDArgs{
 		NetworkID: "network-123",
-		Query:     "foreach route in network.routes where route.protocol == 'ospf' select {DeviceName: route.device.name, Prefix: route.prefix, NextHop: route.nextHop, Metric: route.metric}",
-		Options: &service.NQEQueryOptions{
+		QueryID:   "routes",
+		Options: &usecases.NQEQueryOptions{
 			Limit: 50,
 		},
 	}
@@ -133,7 +135,7 @@ func main() {
 	fmt.Println("   - Common use cases: standard reports, compliance checks, network audits")
 
 	// Example: List and run predefined query
-	listArgs := service.ListNQEQueriesArgs{
+	listArgs := usecases.ListNQEQueriesArgs{
 		Directory: "/L3/Basic/",
 	}
 
@@ -141,10 +143,10 @@ func main() {
 	fmt.Printf("\nList NQE queries example:\n%s\n", string(listJSON))
 
 	// Example: Run predefined query by ID
-	nqeArgs4 := service.RunNQEQueryByIDArgs{
+	nqeArgs4 := usecases.RunNQEQueryByIDArgs{
 		NetworkID: "network-123",
 		QueryID:   "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029",
-		Options: &service.NQEQueryOptions{
+		Options: &usecases.NQEQueryOptions{
 			Limit: 10,
 		},
 	}
@@ -158,4 +160,36 @@ func main() {
 	fmt.Println("3. Use limit and offset in options to paginate results")
 	fmt.Println("4. Check the Forward Networks documentation for available query fields")
 	fmt.Println("5. Use list_nqe_queries to discover predefined queries")
+}
+
+// newDeps builds the adapters the service runs on.
+func newDeps(cfg *ports.Config, log ports.Logger) usecases.Deps {
+	instanceID := usecases.InstanceID(cfg)
+	embedder := embeddings.New(cfg.Forward.SemanticCache.EmbeddingProvider, os.Getenv("OPENAI_API_KEY"), log)
+
+	// A store that cannot open stays a nil interface: the service checks for
+	// nil and runs without it. A nil *NQEDatabase in the interface would not
+	// compare equal to nil.
+	var queryStore ports.QueryStore
+	if db, err := sqlite.NewNQEDatabase(log, instanceID); err != nil {
+		log.Error("Failed to create database: %v", err)
+	} else {
+		queryStore = db
+	}
+	var memory ports.MemoryStore
+	if m, err := sqlite.NewMemorySystem(log, instanceID); err != nil {
+		log.Error("Failed to create memory system: %v", err)
+	} else {
+		memory = m
+	}
+
+	return usecases.Deps{
+		API:        forwardapi.NewClient(&cfg.Forward, log),
+		Cache:      semcache.NewSemanticCache(embedder, log, instanceID, &cfg.Forward.SemanticCache),
+		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
+		QueryStore: queryStore,
+		Memory:     memory,
+		Bloom:      bloom.NewBloomSearchManager(log, instanceID),
+		Rows:       sqlite.RowQuerier{},
+	}
 }

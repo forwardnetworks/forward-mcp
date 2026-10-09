@@ -1,0 +1,735 @@
+package sqlite
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"github.com/forward-mcp/internal/ports"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/mattn/go-sqlite3"
+)
+
+var registerSQLiteWithFKOnce sync.Once
+
+// openSQLiteWithForeignKeys opens a SQLite DB with foreign key support enabled on every connection
+func openSQLiteWithForeignKeys(dbPath string) (*sql.DB, error) {
+	driverName := "sqlite3_with_fk"
+	registerSQLiteWithFKOnce.Do(func() {
+		sql.Register(driverName, &sqlite3.SQLiteDriver{
+			ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+				_, err := conn.Exec("PRAGMA foreign_keys = ON;", nil)
+				return err
+			},
+		})
+	})
+	return sql.Open(driverName, dbPath)
+}
+
+// MemorySystem manages the knowledge graph memory using SQLite
+type MemorySystem struct {
+	db         *sql.DB
+	logger     ports.Logger
+	dbPath     string
+	instanceID string
+}
+
+// NewMemorySystem creates a new memory system instance
+func NewMemorySystem(logger ports.Logger, instanceID string) (*MemorySystem, error) {
+	// Use same data directory approach as NQE database
+	dataDir, err := getWritableDataDirectory()
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine writable data directory: %w", err)
+	}
+
+	// Create data directory if it doesn't exist
+	// Security: Use restrictive permissions (owner-only access)
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %w", err)
+	}
+
+	return NewMemorySystemAt(filepath.Join(dataDir, "memory.db"), logger, instanceID)
+}
+
+// NewMemorySystemAt opens the memory store in the SQLite file at dbPath.
+func NewMemorySystemAt(dbPath string, logger ports.Logger, instanceID string) (*MemorySystem, error) {
+	db, err := openSQLiteWithForeignKeys(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open memory database: %w", err)
+	}
+
+	memory := &MemorySystem{
+		db:         db,
+		logger:     logger,
+		dbPath:     dbPath,
+		instanceID: instanceID,
+	}
+
+	// Initialize schema
+	if err := memory.initSchema(); err != nil {
+		return nil, fmt.Errorf("failed to initialize memory schema: %w", err)
+	}
+
+	logger.Info("Memory system initialized at: %s", dbPath)
+	return memory, nil
+}
+
+// initSchema creates the database tables for the memory system
+func (m *MemorySystem) initSchema() error {
+	schema := `
+	-- Entities table
+	CREATE TABLE IF NOT EXISTS entities (
+		id TEXT PRIMARY KEY,
+		instance_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		type TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		metadata TEXT,
+		UNIQUE(instance_id, name, type)
+	);
+
+	-- Relations table
+	CREATE TABLE IF NOT EXISTS relations (
+		id TEXT PRIMARY KEY,
+		instance_id TEXT NOT NULL,
+		from_id TEXT NOT NULL,
+		to_id TEXT NOT NULL,
+		type TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		properties TEXT,
+		FOREIGN KEY(from_id) REFERENCES entities(id) ON DELETE CASCADE,
+		FOREIGN KEY(to_id) REFERENCES entities(id) ON DELETE CASCADE,
+		UNIQUE(instance_id, from_id, to_id, type)
+	);
+
+	-- Observations table
+	CREATE TABLE IF NOT EXISTS observations (
+		id TEXT PRIMARY KEY,
+		instance_id TEXT NOT NULL,
+		entity_id TEXT NOT NULL,
+		content TEXT NOT NULL,
+		type TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		metadata TEXT,
+		FOREIGN KEY(entity_id) REFERENCES entities(id) ON DELETE CASCADE
+	);
+
+	-- Indexes for better performance
+	CREATE INDEX IF NOT EXISTS idx_entities_instance_type ON entities(instance_id, type);
+	CREATE INDEX IF NOT EXISTS idx_entities_instance_name ON entities(instance_id, name);
+	CREATE INDEX IF NOT EXISTS idx_relations_instance_from ON relations(instance_id, from_id);
+	CREATE INDEX IF NOT EXISTS idx_relations_instance_to ON relations(instance_id, to_id);
+	CREATE INDEX IF NOT EXISTS idx_observations_instance_entity ON observations(instance_id, entity_id);
+	CREATE INDEX IF NOT EXISTS idx_observations_content_fts ON observations(content);
+	`
+
+	_, err := m.db.Exec(schema)
+	if err != nil {
+		return fmt.Errorf("failed to create memory schema: %w", err)
+	}
+
+	return nil
+}
+
+// CreateEntity creates a new entity in the knowledge graph
+func (m *MemorySystem) CreateEntity(name, entityType string, metadata map[string]interface{}) (*ports.Entity, error) {
+	entityID := fmt.Sprintf("entity_%d", time.Now().UnixNano())
+	now := time.Now()
+
+	var metadataJSON string
+	if metadata != nil {
+		data, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		metadataJSON = string(data)
+	}
+
+	_, err := m.db.Exec(`
+		INSERT OR REPLACE INTO entities (id, instance_id, name, type, created_at, updated_at, metadata)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, entityID, m.instanceID, name, entityType, now.Unix(), now.Unix(), metadataJSON)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create entity: %w", err)
+	}
+
+	entity := &ports.Entity{
+		ID:        entityID,
+		Name:      name,
+		Type:      entityType,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  metadata,
+	}
+
+	m.logger.Debug("Created entity: %s (%s)", name, entityType)
+	return entity, nil
+}
+
+// CreateRelation creates a new relation between two entities
+func (m *MemorySystem) CreateRelation(fromID, toID, relationType string, properties map[string]interface{}) (*ports.Relation, error) {
+	relationID := fmt.Sprintf("relation_%d", time.Now().UnixNano())
+	now := time.Now()
+
+	var propertiesJSON string
+	if properties != nil {
+		data, err := json.Marshal(properties)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal properties: %w", err)
+		}
+		propertiesJSON = string(data)
+	}
+
+	_, err := m.db.Exec(`
+		INSERT OR REPLACE INTO relations (id, instance_id, from_id, to_id, type, created_at, properties)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, relationID, m.instanceID, fromID, toID, relationType, now.Unix(), propertiesJSON)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create relation: %w", err)
+	}
+
+	relation := &ports.Relation{
+		ID:         relationID,
+		FromID:     fromID,
+		ToID:       toID,
+		Type:       relationType,
+		CreatedAt:  now,
+		Properties: properties,
+	}
+
+	m.logger.Debug("Created relation: %s -> %s (%s)", fromID, toID, relationType)
+	return relation, nil
+}
+
+// AddObservation adds an observation to an entity
+func (m *MemorySystem) AddObservation(entityID, content, observationType string, metadata map[string]interface{}) (*ports.Observation, error) {
+	observationID := fmt.Sprintf("observation_%d", time.Now().UnixNano())
+	now := time.Now()
+
+	var metadataJSON string
+	if metadata != nil {
+		data, err := json.Marshal(metadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		metadataJSON = string(data)
+	}
+
+	_, err := m.db.Exec(`
+		INSERT INTO observations (id, instance_id, entity_id, content, type, created_at, metadata)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, observationID, m.instanceID, entityID, content, observationType, now.Unix(), metadataJSON)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to add observation: %w", err)
+	}
+
+	observation := &ports.Observation{
+		ID:        observationID,
+		EntityID:  entityID,
+		Content:   content,
+		Type:      observationType,
+		CreatedAt: now,
+		Metadata:  metadata,
+	}
+
+	m.logger.Debug("Added observation to entity %s: %s", entityID, content)
+	return observation, nil
+}
+
+// escapeLikePattern escapes special characters in SQL LIKE patterns to prevent SQL injection
+// SECURITY: Prevents LIKE pattern injection attacks by escaping wildcards
+func escapeLikePattern(pattern string) string {
+	// Escape backslash first (it's the escape character)
+	pattern = strings.ReplaceAll(pattern, "\\", "\\\\")
+	// Escape percent wildcard
+	pattern = strings.ReplaceAll(pattern, "%", "\\%")
+	// Escape underscore wildcard
+	pattern = strings.ReplaceAll(pattern, "_", "\\_")
+	return pattern
+}
+
+// SearchEntities searches for entities by name, type, or content
+func (m *MemorySystem) SearchEntities(query string, entityType string, limit int) ([]*ports.Entity, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var args []interface{}
+	whereClause := "WHERE e.instance_id = ?"
+	args = append(args, m.instanceID)
+
+	if entityType != "" {
+		whereClause += " AND e.type = ?"
+		args = append(args, entityType)
+	}
+
+	if query != "" {
+		whereClause += " AND (e.name LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM observations o WHERE o.entity_id = e.id AND o.content LIKE ? ESCAPE '\\'))"
+		// SECURITY FIX: Escape LIKE pattern to prevent SQL injection via wildcards
+		escapedQuery := escapeLikePattern(query)
+		queryPattern := "%" + escapedQuery + "%"
+		args = append(args, queryPattern, queryPattern)
+	}
+
+	sql := fmt.Sprintf(`
+		SELECT DISTINCT e.id, e.name, e.type, e.created_at, e.updated_at, e.metadata
+		FROM entities e
+		%s
+		ORDER BY e.updated_at DESC
+		LIMIT ?
+	`, whereClause)
+	args = append(args, limit)
+
+	rows, err := m.db.Query(sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search entities: %w", err)
+	}
+	defer rows.Close()
+
+	var entities []*ports.Entity
+	for rows.Next() {
+		entity, err := m.scanEntity(rows)
+		if err != nil {
+			return nil, err
+		}
+		entities = append(entities, entity)
+	}
+
+	return entities, nil
+}
+
+// GetEntity retrieves an entity by ID or name
+func (m *MemorySystem) GetEntity(identifier string) (*ports.Entity, error) {
+	var entity *ports.Entity
+	var err error
+
+	// Try by ID first
+	entity, err = m.getEntityByID(identifier)
+	if err == nil {
+		return entity, nil
+	}
+
+	// Try by name
+	entity, err = m.GetEntityByName(identifier)
+	if err == nil {
+		return entity, nil
+	}
+
+	return nil, fmt.Errorf("entity not found: %s", identifier)
+}
+
+// getEntityByID retrieves an entity by ID
+func (m *MemorySystem) getEntityByID(id string) (*ports.Entity, error) {
+	row := m.db.QueryRow(`
+		SELECT id, name, type, created_at, updated_at, metadata
+		FROM entities
+		WHERE instance_id = ? AND id = ?
+	`, m.instanceID, id)
+
+	return m.scanEntityRow(row)
+}
+
+// GetEntityByName retrieves the most recently updated entity with this name
+func (m *MemorySystem) GetEntityByName(name string) (*ports.Entity, error) {
+	row := m.db.QueryRow(`
+		SELECT id, name, type, created_at, updated_at, metadata
+		FROM entities
+		WHERE instance_id = ? AND name = ?
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`, m.instanceID, name)
+
+	return m.scanEntityRow(row)
+}
+
+// GetRelations retrieves relations for an entity
+func (m *MemorySystem) GetRelations(entityID string, relationType string) ([]*ports.Relation, error) {
+	var whereClause string
+	var args []interface{}
+
+	if relationType != "" {
+		whereClause = "WHERE instance_id = ? AND (from_id = ? OR to_id = ?) AND type = ?"
+		args = []interface{}{m.instanceID, entityID, entityID, relationType}
+	} else {
+		whereClause = "WHERE instance_id = ? AND (from_id = ? OR to_id = ?)"
+		args = []interface{}{m.instanceID, entityID, entityID}
+	}
+
+	rows, err := m.db.Query(fmt.Sprintf(`
+		SELECT id, from_id, to_id, type, created_at, properties
+		FROM relations
+		%s
+		ORDER BY created_at DESC
+	`, whereClause), args...)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get relations: %w", err)
+	}
+	defer rows.Close()
+
+	var relations []*ports.Relation
+	for rows.Next() {
+		relation, err := m.scanRelation(rows)
+		if err != nil {
+			return nil, err
+		}
+		relations = append(relations, relation)
+	}
+
+	return relations, nil
+}
+
+// GetObservations retrieves observations for an entity
+func (m *MemorySystem) GetObservations(entityID string, observationType string) ([]*ports.Observation, error) {
+	var whereClause string
+	var args []interface{}
+
+	if observationType != "" {
+		whereClause = "WHERE instance_id = ? AND entity_id = ? AND type = ?"
+		args = []interface{}{m.instanceID, entityID, observationType}
+	} else {
+		whereClause = "WHERE instance_id = ? AND entity_id = ?"
+		args = []interface{}{m.instanceID, entityID}
+	}
+
+	rows, err := m.db.Query(fmt.Sprintf(`
+		SELECT id, entity_id, content, type, created_at, metadata
+		FROM observations
+		%s
+		ORDER BY created_at DESC
+	`, whereClause), args...)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get observations: %w", err)
+	}
+	defer rows.Close()
+
+	var observations []*ports.Observation
+	for rows.Next() {
+		observation, err := m.scanObservation(rows)
+		if err != nil {
+			return nil, err
+		}
+		observations = append(observations, observation)
+	}
+
+	return observations, nil
+}
+
+// DeleteEntity removes an entity and all its relations and observations
+func (m *MemorySystem) DeleteEntity(entityID string) error {
+	_, err := m.db.Exec(`
+		DELETE FROM entities WHERE instance_id = ? AND id = ?
+	`, m.instanceID, entityID)
+
+	if err != nil {
+		return fmt.Errorf("failed to delete entity: %w", err)
+	}
+
+	m.logger.Debug("Deleted entity: %s", entityID)
+	return nil
+}
+
+// DeleteRelation removes a specific relation
+func (m *MemorySystem) DeleteRelation(relationID string) error {
+	_, err := m.db.Exec(`
+		DELETE FROM relations WHERE instance_id = ? AND id = ?
+	`, m.instanceID, relationID)
+
+	if err != nil {
+		return fmt.Errorf("failed to delete relation: %w", err)
+	}
+
+	m.logger.Debug("Deleted relation: %s", relationID)
+	return nil
+}
+
+// DeleteObservation removes a specific observation
+func (m *MemorySystem) DeleteObservation(observationID string) error {
+	_, err := m.db.Exec(`
+		DELETE FROM observations WHERE instance_id = ? AND id = ?
+	`, m.instanceID, observationID)
+
+	if err != nil {
+		return fmt.Errorf("failed to delete observation: %w", err)
+	}
+
+	m.logger.Debug("Deleted observation: %s", observationID)
+	return nil
+}
+
+// GetMemoryStats returns statistics about the memory system
+func (m *MemorySystem) GetMemoryStats() (map[string]interface{}, error) {
+	stats := make(map[string]interface{})
+
+	// Count entities
+	var entityCount int
+	err := m.db.QueryRow("SELECT COUNT(*) FROM entities WHERE instance_id = ?", m.instanceID).Scan(&entityCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count entities: %w", err)
+	}
+	stats["entity_count"] = entityCount
+
+	// Count relations
+	var relationCount int
+	err = m.db.QueryRow("SELECT COUNT(*) FROM relations WHERE instance_id = ?", m.instanceID).Scan(&relationCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count relations: %w", err)
+	}
+	stats["relation_count"] = relationCount
+
+	// Count observations
+	var observationCount int
+	err = m.db.QueryRow("SELECT COUNT(*) FROM observations WHERE instance_id = ?", m.instanceID).Scan(&observationCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count observations: %w", err)
+	}
+	stats["observation_count"] = observationCount
+
+	// Entity types
+	rows, err := m.db.Query(`
+		SELECT type, COUNT(*) 
+		FROM entities 
+		WHERE instance_id = ? 
+		GROUP BY type
+	`, m.instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get entity types: %w", err)
+	}
+	defer rows.Close()
+
+	entityTypes := make(map[string]int)
+	for rows.Next() {
+		var entityType string
+		var count int
+		if err := rows.Scan(&entityType, &count); err != nil {
+			continue
+		}
+		entityTypes[entityType] = count
+	}
+	stats["entity_types"] = entityTypes
+
+	stats["database_path"] = m.dbPath
+	stats["instance_id"] = m.instanceID
+
+	return stats, nil
+}
+
+// Close closes the memory database connection
+func (m *MemorySystem) Close() error {
+	if m.db != nil {
+		return m.db.Close()
+	}
+	return nil
+}
+
+// Helper methods for scanning database rows
+
+func (m *MemorySystem) scanEntity(rows *sql.Rows) (*ports.Entity, error) {
+	var entity ports.Entity
+	var metadataJSON sql.NullString
+	var createdAt, updatedAt int64
+
+	err := rows.Scan(
+		&entity.ID,
+		&entity.Name,
+		&entity.Type,
+		&createdAt,
+		&updatedAt,
+		&metadataJSON,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan entity: %w", err)
+	}
+
+	entity.CreatedAt = time.Unix(createdAt, 0)
+	entity.UpdatedAt = time.Unix(updatedAt, 0)
+
+	if metadataJSON.Valid && metadataJSON.String != "" {
+		if err := json.Unmarshal([]byte(metadataJSON.String), &entity.Metadata); err != nil {
+			m.logger.Warn("Failed to unmarshal entity metadata: %v", err)
+		}
+	}
+
+	return &entity, nil
+}
+
+func (m *MemorySystem) scanEntityRow(row *sql.Row) (*ports.Entity, error) {
+	var entity ports.Entity
+	var metadataJSON sql.NullString
+	var createdAt, updatedAt int64
+
+	err := row.Scan(
+		&entity.ID,
+		&entity.Name,
+		&entity.Type,
+		&createdAt,
+		&updatedAt,
+		&metadataJSON,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan entity: %w", err)
+	}
+
+	entity.CreatedAt = time.Unix(createdAt, 0)
+	entity.UpdatedAt = time.Unix(updatedAt, 0)
+
+	if metadataJSON.Valid && metadataJSON.String != "" {
+		if err := json.Unmarshal([]byte(metadataJSON.String), &entity.Metadata); err != nil {
+			m.logger.Warn("Failed to unmarshal entity metadata: %v", err)
+		}
+	}
+
+	return &entity, nil
+}
+
+func (m *MemorySystem) scanRelation(rows *sql.Rows) (*ports.Relation, error) {
+	var relation ports.Relation
+	var propertiesJSON sql.NullString
+	var createdAt int64
+
+	err := rows.Scan(
+		&relation.ID,
+		&relation.FromID,
+		&relation.ToID,
+		&relation.Type,
+		&createdAt,
+		&propertiesJSON,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan relation: %w", err)
+	}
+
+	relation.CreatedAt = time.Unix(createdAt, 0)
+
+	if propertiesJSON.Valid && propertiesJSON.String != "" {
+		if err := json.Unmarshal([]byte(propertiesJSON.String), &relation.Properties); err != nil {
+			m.logger.Warn("Failed to unmarshal relation properties: %v", err)
+		}
+	}
+
+	return &relation, nil
+}
+
+func (m *MemorySystem) scanObservation(rows *sql.Rows) (*ports.Observation, error) {
+	var observation ports.Observation
+	var metadataJSON sql.NullString
+	var createdAt int64
+
+	err := rows.Scan(
+		&observation.ID,
+		&observation.EntityID,
+		&observation.Content,
+		&observation.Type,
+		&createdAt,
+		&metadataJSON,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan observation: %w", err)
+	}
+
+	observation.CreatedAt = time.Unix(createdAt, 0)
+
+	if metadataJSON.Valid && metadataJSON.String != "" {
+		if err := json.Unmarshal([]byte(metadataJSON.String), &observation.Metadata); err != nil {
+			m.logger.Warn("Failed to unmarshal observation metadata: %v", err)
+		}
+	}
+
+	return &observation, nil
+}
+
+// StoreNQEResultWithChunking stores a large NQE result in chunked observations for LLM-friendly retrieval
+func (m *MemorySystem) StoreNQEResultWithChunking(queryID, networkID, snapshotID string, result *ports.NQERunResult, chunkSize int) (string, error) {
+	if chunkSize <= 0 {
+		chunkSize = 200 // Default chunk size if not specified
+	}
+	// 1. Create result entity
+	entity, err := m.CreateEntity(
+		fmt.Sprintf("%s-%s-%s", queryID, networkID, snapshotID),
+		"nqe_result",
+		map[string]interface{}{
+			"query_id": queryID, "network_id": networkID, "snapshot_id": snapshotID,
+			"row_count": len(result.Items),
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+
+	totalRows := len(result.Items)
+	totalChunks := (totalRows + chunkSize - 1) / chunkSize
+	for i := 0; i < totalChunks; i++ {
+		start := i * chunkSize
+		end := start + chunkSize
+		if end > totalRows {
+			end = totalRows
+		}
+		chunk := result.Items[start:end]
+		chunkJSON, _ := json.Marshal(chunk)
+		_, err := m.AddObservation(
+			entity.ID,
+			string(chunkJSON),
+			"nqe_result_chunk",
+			map[string]interface{}{
+				"chunk_index":  i,
+				"total_chunks": totalChunks,
+				"row_range":    []int{start, end - 1},
+			},
+		)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// Add a summary observation for LLMs and metadata
+	var columns []string
+	if len(result.Items) > 0 {
+		for k := range result.Items[0] {
+			columns = append(columns, k)
+		}
+	}
+	summary := map[string]interface{}{
+		"columns":      columns,
+		"row_count":    totalRows,
+		"total_chunks": totalChunks,
+		"query_id":     queryID,
+		"network_id":   networkID,
+		"snapshot_id":  snapshotID,
+	}
+	summaryJSON, _ := json.Marshal(summary)
+	_, _ = m.AddObservation(entity.ID, string(summaryJSON), "nqe_result_summary", nil)
+
+	return entity.ID, nil
+}
+
+// GetNQEResultChunks retrieves all chunk observations for a result entity, ordered by chunk_index
+func (m *MemorySystem) GetNQEResultChunks(resultEntityID string) ([]string, error) {
+	obs, err := m.GetObservations(resultEntityID, "nqe_result_chunk")
+	if err != nil {
+		return nil, err
+	}
+	// Sort by chunk_index in metadata
+	sort.Slice(obs, func(i, j int) bool {
+		ci, _ := obs[i].Metadata["chunk_index"].(float64)
+		cj, _ := obs[j].Metadata["chunk_index"].(float64)
+		return ci < cj
+	})
+	chunks := make([]string, len(obs))
+	for i, o := range obs {
+		chunks[i] = o.Content
+	}
+	return chunks, nil
+}
+
+// MemorySystem implements the MemoryStore port.
+var _ ports.MemoryStore = (*MemorySystem)(nil)

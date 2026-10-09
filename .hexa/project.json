@@ -1,0 +1,26 @@
+{
+  "analyze": {
+    "exclude": [],
+    "layers": {
+      "internal/domain": "domain",
+      "internal/ports": "ports",
+      "internal/usecases": "usecases",
+      "internal/adapters/primary": "adapters/primary",
+      "internal/adapters/secondary": "adapters/secondary",
+      "scripts/demo-smart-search.go": "entry-point",
+      "cmd/server/main.go": "composition-root",
+      "examples/test_mcp.go": "composition-root",
+      "cmd/test-client/main.go": "composition-root"
+    }
+  },
+  "createdAt": "2026-10-09T17:07:09.063501+00:00",
+  "hexVersion": "26.9.12",
+  "id": "2116521d-919c-49c9-a63b-38b8408d53b1",
+  "lifecycle_enforcement": "mandatory",
+  "name": "forward-mcp",
+  "workplan": {
+    "auto_invoke": {
+      "enabled": false
+    }
+  }
+}

@@ -6,7 +6,7 @@ Forward MCP is an open-source server that provides a set of tools and APIs for i
 
 ## Features
 - Exposes 54 Forward Networks tools via the MCP protocol, plus 6 workflow prompts and a network-context resource
-- Built on the official [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) (protocol revision 2025-06-18, negotiated with older clients)
+- Built on the official [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) (protocol revision 2026-07-28, negotiated down to 2024-11-05 for older clients)
 - Tool behavior annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so clients can distinguish queries from destructive operations
 - Schema-enforced input validation with LLM-friendly error messages
 - Supports prompt workflows and contextual resources

@@ -2,22 +2,24 @@ package main
 
 import (
 	"fmt"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"os"
 	"strings"
 
-	"github.com/forward-mcp/internal/logger"
-	"github.com/forward-mcp/internal/service"
+	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
+	"github.com/forward-mcp/internal/usecases"
 )
 
 func main() {
 	// Initialize logger
-	logger := logger.New()
+	logger := stderrlog.New()
 
 	// Create embedding service (use keyword for this demo)
-	embeddingService := service.NewKeywordEmbeddingService()
+	embeddingService := embeddings.NewKeywordEmbeddingService()
 
 	// Initialize query index
-	queryIndex := service.NewNQEQueryIndex(embeddingService, logger)
+	queryIndex := queryindex.NewNQEQueryIndex(embeddingService, logger)
 
 	fmt.Println("🚀 Forward Networks MCP - Smart Query Discovery Demo")
 	fmt.Println("=====================================================")
@@ -61,14 +63,14 @@ func main() {
 
 		// Step 2: Map to executable queries
 		fmt.Println("\n🎯 Step 2: Mapping to executable queries...")
-		mappings := service.MapSemanticToExecutable(semanticResults)
+		mappings := usecases.MapSemanticToExecutable(semanticResults)
 
 		if len(mappings) == 0 {
 			fmt.Println("   ❌ No executable mappings found")
 
 			// Show available executable queries
 			fmt.Println("\n💡 Available executable queries:")
-			execQueries := service.GetExecutableQueries()
+			execQueries := usecases.GetExecutableQueries()
 			for _, eq := range execQueries {
 				fmt.Printf("   • %s - %s\n", eq.Name, eq.Description)
 			}

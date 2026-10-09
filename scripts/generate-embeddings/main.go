@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
+	"github.com/forward-mcp/internal/ports"
 	"os"
 	"time"
 
-	"github.com/forward-mcp/internal/logger"
-	"github.com/forward-mcp/internal/service"
+	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 )
 
 func main() {
@@ -14,7 +16,7 @@ func main() {
 	fmt.Println("==============================================")
 
 	// Initialize logger
-	logger := logger.New()
+	logger := stderrlog.New()
 
 	// Check configuration
 	provider := os.Getenv("FORWARD_EMBEDDING_PROVIDER")
@@ -24,12 +26,12 @@ func main() {
 	fmt.Printf("   📋 Provider: %s\n", provider)
 
 	// Initialize embedding service based on provider
-	var embeddingService service.EmbeddingService
+	var embeddingService ports.EmbeddingService
 	var serviceName, costInfo string
 
 	switch provider {
 	case "keyword":
-		embeddingService = service.NewKeywordEmbeddingService()
+		embeddingService = embeddings.NewKeywordEmbeddingService()
 		serviceName = "Keyword-based Embeddings"
 		costInfo = "💰 Cost: $0.00 (free!)"
 	case "openai":
@@ -38,7 +40,7 @@ func main() {
 			fmt.Printf("💡 Set it with: export OPENAI_API_KEY=your-key-here\n")
 			os.Exit(1)
 		}
-		embeddingService = service.NewOpenAIEmbeddingService(openaiKey)
+		embeddingService = embeddings.NewOpenAIEmbeddingService(openaiKey)
 		serviceName = "OpenAI API Embeddings"
 		costInfo = "💰 Estimated cost: $1-5 for 6000+ queries"
 	default:
@@ -52,7 +54,7 @@ func main() {
 	fmt.Printf("   %s\n", costInfo)
 
 	// Initialize query index
-	queryIndex := service.NewNQEQueryIndex(embeddingService, logger)
+	queryIndex := queryindex.NewNQEQueryIndex(embeddingService, logger)
 
 	// Load queries
 	fmt.Printf("\n📖 Loading NQE Queries:\n")

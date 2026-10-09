@@ -3,43 +3,46 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
+	"github.com/forward-mcp/internal/adapters/secondary/sqlite"
+	"github.com/forward-mcp/internal/ports"
 	"os"
 
-	"github.com/forward-mcp/internal/config"
-	"github.com/forward-mcp/internal/forward"
-	"github.com/forward-mcp/internal/logger"
-	"github.com/forward-mcp/internal/service"
+	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
+	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 )
 
 func main() {
 	fmt.Println("🔍 Testing Forward Networks MCP Semantic Search")
 	fmt.Println("==============================================")
 
+	// Initialize logger
+	appLogger := stderrlog.New()
+
 	// Load config
-	cfg := config.LoadConfig()
+	cfg, err := envconfig.Load(appLogger)
+	if err != nil {
+		fmt.Printf("❌ %v\n", err)
+		return
+	}
 	if cfg.Forward.APIKey == "" {
 		fmt.Println("❌ No API key found. Make sure your .env file is configured.")
 		return
 	}
 
-	// Initialize logger
-	appLogger := logger.New()
-
-	// Initialize Forward client (for potential future use)
-	_ = forward.NewClient(&cfg.Forward)
-
 	// Initialize embedding service (will use keyword fallback if no OpenAI key)
-	var embeddingService service.EmbeddingService
+	var embeddingService ports.EmbeddingService
 	if openaiKey := os.Getenv("OPENAI_API_KEY"); openaiKey != "" {
-		embeddingService = service.NewOpenAIEmbeddingService(openaiKey)
+		embeddingService = embeddings.NewOpenAIEmbeddingService(openaiKey)
 		fmt.Println("🧠 Using OpenAI embedding service for AI semantic search")
 	} else {
-		embeddingService = service.NewKeywordEmbeddingService()
+		embeddingService = embeddings.NewKeywordEmbeddingService()
 		fmt.Println("🔤 Using keyword embedding service (no OpenAI key found)")
 	}
 
 	// Initialize database
-	database, err := service.NewNQEDatabase(appLogger, "default")
+	database, err := sqlite.NewNQEDatabase(appLogger, "default")
 	if err != nil {
 		fmt.Printf("❌ Failed to create database: %v\n", err)
 		return
@@ -47,7 +50,7 @@ func main() {
 	defer database.Close()
 
 	// Initialize NQE query index
-	queryIndex := service.NewNQEQueryIndex(embeddingService, appLogger)
+	queryIndex := queryindex.NewNQEQueryIndex(embeddingService, appLogger)
 
 	fmt.Println("📊 Testing query index loading...")
 
