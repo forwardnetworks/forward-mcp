@@ -24,12 +24,23 @@ type UpdateNetworkArgs struct {
 
 // NQE Tool Arguments
 type RunNQEQueryByIDArgs struct {
-	NetworkID  string                 `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
-	QueryID    string                 `json:"query_id" jsonschema:"Query ID from NQE library. Required. Use list_nqe_queries or search_nqe_queries to find query IDs."`
-	SnapshotID string                 `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
-	Parameters map[string]interface{} `json:"parameters,omitempty" jsonschema:"Query parameters for dynamic queries. Optional; depends on query definition."`
-	Options    *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for sorting, filtering, pagination. Optional."`
-	AllResults bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results with automatic pagination. Optional; default false."`
+	NetworkID          string                 `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
+	QueryID            string                 `json:"query_id" jsonschema:"Query ID from NQE library. Required. Use list_nqe_queries or search_nqe_queries to find query IDs."`
+	SnapshotID         string                 `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
+	CommitID           string                 `json:"commit_id,omitempty" jsonschema:"Commit ID for specific query version. Optional."`
+	UseLatestDataFiles bool                   `json:"use_latest_data_files,omitempty" jsonschema:"Use latest uploaded data files instead of snapshot versions. Optional."`
+	Parameters         map[string]interface{} `json:"parameters,omitempty" jsonschema:"Query parameters for dynamic queries. Optional; depends on query definition."`
+	Options            *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for sorting, filtering, pagination. Optional."`
+	AllResults         bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results with automatic pagination. Optional; default false."`
+}
+
+type CompareNQEResultsArgs struct {
+	BeforeSnapshotID string                 `json:"before_snapshot_id" jsonschema:"Base snapshot ID to compare from. Required."`
+	AfterSnapshotID  string                 `json:"after_snapshot_id" jsonschema:"Target snapshot ID to compare to. Required."`
+	QueryID          string                 `json:"query_id" jsonschema:"Query ID from NQE library. Required."`
+	CommitID         string                 `json:"commit_id,omitempty" jsonschema:"Commit ID for specific query version. Optional."`
+	Parameters       map[string]interface{} `json:"parameters,omitempty" jsonschema:"Query parameters. Optional."`
+	Options          *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for sorting, filtering, pagination. Optional."`
 }
 
 type NQEQueryOptions struct {
@@ -359,12 +370,29 @@ type SearchPathsArgs struct {
 	IPProto                 *int   `json:"ip_proto,omitempty" jsonschema:"IP protocol number (6=TCP, 17=UDP). Optional."`
 	SrcPort                 string `json:"src_port,omitempty" jsonschema:"Source port for L4 analysis. Optional."`
 	DstPort                 string `json:"dst_port,omitempty" jsonschema:"Destination port for L4 analysis. Optional."`
+	ICMPType                *int   `json:"icmp_type,omitempty" jsonschema:"ICMP type. Optional."`
 	Intent                  string `json:"intent,omitempty" jsonschema:"Path selection intent. Options: PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY. Default: PREFER_DELIVERED."`
-	MaxCandidates           int    `json:"max_candidates,omitempty" jsonschema:"Maximum number of path candidates to consider. Optional."`
-	MaxResults              int    `json:"max_results,omitempty" jsonschema:"Maximum number of path results to return. Optional."`
-	MaxReturnPathResults    int    `json:"max_return_path_results,omitempty" jsonschema:"Maximum number of return path results. Optional."`
-	MaxSeconds              int    `json:"max_seconds,omitempty" jsonschema:"Timeout in seconds for path search. Optional."`
-	IncludeNetworkFunctions bool   `json:"include_network_functions,omitempty" jsonschema:"Include network functions in path results. Optional; default false."`
+	// TCP Flags (0 or 1)
+	FIN *int `json:"fin,omitempty" jsonschema:"TCP FIN bit (0 or 1). Optional."`
+	SYN *int `json:"syn,omitempty" jsonschema:"TCP SYN bit (0 or 1). Optional."`
+	RST *int `json:"rst,omitempty" jsonschema:"TCP RST bit (0 or 1). Optional."`
+	PSH *int `json:"psh,omitempty" jsonschema:"TCP PSH bit (0 or 1). Optional."`
+	ACK *int `json:"ack,omitempty" jsonschema:"TCP ACK bit (0 or 1). Optional."`
+	URG *int `json:"urg,omitempty" jsonschema:"TCP URG bit (0 or 1). Optional."`
+	// Layer 7 parameters
+	AppID       string `json:"app_id,omitempty" jsonschema:"L7 application identifier. Optional."`
+	UserID      string `json:"user_id,omitempty" jsonschema:"L7 user identifier. Optional."`
+	UserGroupID string `json:"user_group_id,omitempty" jsonschema:"L7 user group identifier. Optional."`
+	URL         string `json:"url,omitempty" jsonschema:"L7 URL for HTTP/HTTPS traffic. Optional."`
+	Domain      string `json:"domain,omitempty" jsonschema:"L7 domain for any IP protocol. Optional."`
+	// Display options
+	IncludeTags             bool `json:"include_tags,omitempty" jsonschema:"Include device tags in path results. Optional; default false."`
+	IncludeNetworkFunctions bool `json:"include_network_functions,omitempty" jsonschema:"Include network functions in path results. Optional; default false."`
+	// Limits and timeouts
+	MaxCandidates        int `json:"max_candidates,omitempty" jsonschema:"Maximum number of path candidates to consider. Optional."`
+	MaxResults           int `json:"max_results,omitempty" jsonschema:"Maximum number of path results to return. Optional."`
+	MaxReturnPathResults int `json:"max_return_path_results,omitempty" jsonschema:"Maximum number of return path results. Optional."`
+	MaxSeconds           int `json:"max_seconds,omitempty" jsonschema:"Timeout in seconds for path search. Optional."`
 }
 
 // Path Search Workflow Arguments

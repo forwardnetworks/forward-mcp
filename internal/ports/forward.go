@@ -24,6 +24,7 @@ type ForwardAPI interface {
 
 	// NQE
 	RunNQEQueryByID(ctx context.Context, params *NQEQueryParams) (*NQERunResult, error)
+	DiffNQEQuery(ctx context.Context, before, after string, request *NQEDiffRequest) (*NQEDiffResult, error)
 	GetNQEQueries(ctx context.Context, dir string) ([]NQEQuery, error)
 	GetNQEOrgQueries(ctx context.Context) ([]NQEQuery, error)
 	GetNQEFwdQueries(ctx context.Context) ([]NQEQuery, error)

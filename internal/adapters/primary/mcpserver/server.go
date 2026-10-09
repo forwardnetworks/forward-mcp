@@ -82,6 +82,7 @@ var toolAnnotations = map[string]*mcp.ToolAnnotations{
 	"analyze_network_prefixes": annReadOnly,
 	"run_nqe_query_by_id":      annReadOnly,
 	"list_nqe_queries":         annReadOnly,
+	"compare_nqe_results":      annReadOnly,
 	"get_device_basic_info":    annReadOnly,
 	"get_device_hardware":      annReadOnly,
 	"get_hardware_support":     annReadOnly,
@@ -195,6 +196,10 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 	addTool(server, "list_nqe_queries",
 		"Tool to list available NQE queries from the Forward Networks query library. Use when browsing queries by directory path or discovering predefined queries for reports. Filter by directory (e.g., '/L3/Basic/', '/L3/Security/'). Returns query IDs for use with run_nqe_query_by_id. For semantic search use search_nqe_queries.",
 		s.ListNQEQueries)
+
+	addTool(server, "compare_nqe_results",
+		"Tool to compare NQE query results between two snapshots. Requires before_snapshot_id, after_snapshot_id, and query_id.",
+		s.CompareNQEResults)
 
 	// First-Class Query Tools - Most Important Network Operations
 	addTool(server, "get_device_basic_info",

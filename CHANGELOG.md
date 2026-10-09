@@ -1,5 +1,26 @@
 # Changelog
 
+## [4.2.0] - 2026-10-09 - Snapshot Comparison and Enhanced Path Analysis
+
+### Added
+- **`compare_nqe_results` tool** — compare the same NQE query across two snapshots to see what changed.
+  - Requires `before_snapshot_id`, `after_snapshot_id`, and `query_id`.
+  - Returns diff showing added, removed, and changed items between snapshots.
+  - Use case: validate changes after maintenance windows or configuration updates.
+- **Enhanced path search parameters** — `search_paths` now supports:
+  - **ICMP**: `icmp_type` parameter for tracing ping and ICMP traffic.
+  - **TCP flags**: `fin`, `syn`, `rst`, `psh`, `ack`, `urg` (0 or 1 each) for connection analysis.
+  - **Layer 7**: `app_id`, `user_id`, `user_group_id`, `url`, `domain` for application-aware tracing.
+  - **Display**: `include_tags` option to show device tags in path results.
+- **NQE query version control** — `run_nqe_query_by_id` now accepts:
+  - `commit_id` — run a specific version of a query.
+  - `use_latest_data_files` — use uploaded data files instead of snapshot versions.
+
+### Removed
+- Obsolete documentation: 21 stale guide files (10,872 lines) including duplicates, outdated implementation guides, and superseded tool quality reports.
+- `FEATURE_SUMMARY.md` — planning document from v2.2.0 (features already merged).
+- `scripts/test-tool-quality.sh` — test script for completed ADR, referenced deleted files.
+
 ## [4.1.1] - 2026-10-09 - Self-signed certificates and remote-mode fixes
 
 ### Added

@@ -110,13 +110,14 @@ type Hop struct {
 
 // NQE types
 type NQEQueryParams struct {
-	NetworkID  string                 `json:"networkId,omitempty"`
-	SnapshotID string                 `json:"snapshotId,omitempty"`
-	Query      string                 `json:"query,omitempty"`
-	QueryID    string                 `json:"queryId,omitempty"`
-	CommitID   string                 `json:"commitId,omitempty"`
-	Options    *NQEQueryOptions       `json:"queryOptions,omitempty"`
-	Parameters map[string]interface{} `json:"parameters,omitempty"`
+	NetworkID          string                 `json:"networkId,omitempty"`
+	SnapshotID         string                 `json:"snapshotId,omitempty"`
+	Query              string                 `json:"query,omitempty"`
+	QueryID            string                 `json:"queryId,omitempty"`
+	CommitID           string                 `json:"commitId,omitempty"`
+	UseLatestDataFiles bool                   `json:"useLatestDataFiles,omitempty"`
+	Options            *NQEQueryOptions       `json:"queryOptions,omitempty"`
+	Parameters         map[string]interface{} `json:"parameters,omitempty"`
 }
 
 type NQEQueryOptions struct {

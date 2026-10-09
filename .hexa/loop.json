@@ -1,5 +1,32 @@
 {
   "sessions": {
+    "1bd7df0e-e11a-49c6-8117-f5231a82fca7": {
+      "files": [
+        "docs/undocumented-api-features.md",
+        "internal/usecases/tools.go",
+        "internal/ports/forward.go",
+        "internal/domain/forward.go",
+        "internal/usecases/nqe.go",
+        "internal/adapters/primary/mcpserver/server.go",
+        "internal/adapters/primary/mcpserver/server_test.go",
+        "internal/usecases/mcp_service_test.go",
+        "/tmp/release-evaluation-v4.2.0.md"
+      ],
+      "gate": "go test ./internal/usecases -run TestCompareNQEResults && go test ./internal/adapters/primary/mcpserver -run TestRegisterServesEverything",
+      "pid": 38765,
+      "pid_start": null,
+      "stage": "gate",
+      "updated": "2026-10-09T21:30:32.269438+00:00"
+    },
+    "3f5b4b5d-bc12-4cc3-b8b3-1befe11ed79a": {
+      "files": [
+        "CHANGELOG.md",
+        "internal/domain/version.go"
+      ],
+      "pid": 38765,
+      "pid_start": null,
+      "updated": "2026-10-09T21:36:08.225172+00:00"
+    },
     "8186419a-5377-4b63-b1cc-26a23f2adaa6": {
       "adr": "ADR-2610091315",
       "files": [

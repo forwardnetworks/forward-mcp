@@ -91,10 +91,12 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 		var lastResult *domain.NQERunResult
 		for {
 			params := &domain.NQEQueryParams{
-				NetworkID:  networkID,
-				QueryID:    args.QueryID,
-				SnapshotID: snapshotID,
-				Parameters: args.Parameters,
+				NetworkID:          networkID,
+				QueryID:            args.QueryID,
+				SnapshotID:         snapshotID,
+				CommitID:           args.CommitID,
+				UseLatestDataFiles: args.UseLatestDataFiles,
+				Parameters:         args.Parameters,
 				Options: &domain.NQEQueryOptions{
 					Limit:  limit,
 					Offset: offset,
@@ -193,11 +195,13 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 	}
 
 	params := &domain.NQEQueryParams{
-		NetworkID:  networkID,
-		QueryID:    args.QueryID,
-		SnapshotID: snapshotID,
-		Parameters: args.Parameters,
-		Options:    s.convertNQEQueryOptions(args.Options),
+		NetworkID:          networkID,
+		QueryID:            args.QueryID,
+		SnapshotID:         snapshotID,
+		CommitID:           args.CommitID,
+		UseLatestDataFiles: args.UseLatestDataFiles,
+		Parameters:         args.Parameters,
+		Options:            s.convertNQEQueryOptions(args.Options),
 	}
 
 	// Ensure we have options even if none were provided
@@ -907,4 +911,39 @@ func (s *Service) ListInstanceIDs(ctx context.Context, args ListInstanceIDsArgs)
 	responseText.WriteString("```")
 
 	return textResult(responseText.String()), nil
+}
+
+func (s *Service) CompareNQEResults(ctx context.Context, args CompareNQEResultsArgs) (*Result, error) {
+	// Validate required parameters
+	if args.BeforeSnapshotID == "" {
+		return nil, fmt.Errorf("before_snapshot_id is required")
+	}
+	if args.AfterSnapshotID == "" {
+		return nil, fmt.Errorf("after_snapshot_id is required")
+	}
+	if args.QueryID == "" {
+		return nil, fmt.Errorf("query_id is required. Use list_nqe_queries or search_nqe_queries to find query IDs")
+	}
+
+	// Build diff request
+	diffRequest := &domain.NQEDiffRequest{
+		QueryID:    args.QueryID,
+		CommitID:   args.CommitID,
+		Options:    s.convertNQEQueryOptions(args.Options),
+		Parameters: args.Parameters,
+	}
+
+	// Execute diff query
+	result, err := s.forwardClient.DiffNQEQuery(ctx, args.BeforeSnapshotID, args.AfterSnapshotID, diffRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compare NQE results: %w", err)
+	}
+
+	// Format result as JSON
+	jsonBytes, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to format diff result: %w", err)
+	}
+
+	return textResult(string(jsonBytes)), nil
 }
