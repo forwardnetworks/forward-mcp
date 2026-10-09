@@ -2,13 +2,13 @@ package service
 
 import (
 	"fmt"
+	"github.com/forward-mcp/internal/ports"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/danthegoodman1/bloomsearch"
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 )
 
 // BloomSearchManager integrates bloomsearch library for efficient large result filtering
@@ -19,7 +19,7 @@ type BloomSearchManager struct {
 	// Metadata tracking
 	filterMetadata map[string]*FilterMetadata
 	mutex          sync.RWMutex
-	logger         *logger.Logger
+	logger         ports.Logger
 	instanceID     string
 }
 
@@ -44,7 +44,7 @@ type BloomSearchResult struct {
 }
 
 // NewBloomSearchManager creates a new bloom search manager
-func NewBloomSearchManager(logger *logger.Logger, instanceID string) *BloomSearchManager {
+func NewBloomSearchManager(logger ports.Logger, instanceID string) *BloomSearchManager {
 	// Create a simple in-memory configuration
 	config := bloomsearch.DefaultBloomSearchEngineConfig()
 	metaStore := bloomsearch.NewSimpleMetaStore()

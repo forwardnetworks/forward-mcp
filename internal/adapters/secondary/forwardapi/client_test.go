@@ -18,10 +18,11 @@ import (
 // nopLogger discards diagnostics.
 type nopLogger struct{}
 
-func (nopLogger) Debug(string, ...interface{}) {}
-func (nopLogger) Info(string, ...interface{})  {}
-func (nopLogger) Warn(string, ...interface{})  {}
-func (nopLogger) Error(string, ...interface{}) {}
+func (nopLogger) Debug(string, ...interface{})                          {}
+func (nopLogger) Info(string, ...interface{})                           {}
+func (nopLogger) Warn(string, ...interface{})                           {}
+func (nopLogger) Error(string, ...interface{})                          {}
+func (nopLogger) LogToolCall(string, interface{}, time.Duration, error) {}
 
 func testClient(url string) *Client {
 	return NewClient(&ports.ForwardConfig{

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forward-mcp/internal/logger"
+	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	_ "github.com/mattn/go-sqlite3"
 )
 

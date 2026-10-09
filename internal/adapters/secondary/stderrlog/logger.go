@@ -1,4 +1,6 @@
-package logger
+// Package stderrlog is the ports.Logger adapter: text on stderr, and JSON lines
+// in a log file when one is configured.
+package stderrlog
 
 import (
 	"encoding/json"

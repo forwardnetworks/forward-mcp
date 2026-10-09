@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forward-mcp/internal/logger"
+	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 )
 
 func TestBloomIndexManager(t *testing.T) {

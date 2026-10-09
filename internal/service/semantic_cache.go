@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/forward-mcp/internal/ports"
 	"io"
 	"math"
 	"os"
@@ -18,9 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 )
 
 // EmbeddingService interface for generating embeddings
@@ -71,16 +70,16 @@ type SemanticCache struct {
 	embeddingIndex   []*CacheEntry
 	mutex            sync.RWMutex
 	embeddingService EmbeddingService
-	logger           *logger.Logger
+	logger           ports.Logger
 	instanceID       string // Unique identifier for this Forward Networks instance
-	config           *config.SemanticCacheConfig
+	config           *domain.SemanticCacheConfig
 
 	// Enhanced configuration
 	maxEntries          int
 	maxMemoryBytes      int64
 	ttl                 time.Duration
 	similarityThreshold float64
-	evictionPolicy      config.CacheEvictionPolicy
+	evictionPolicy      domain.CacheEvictionPolicy
 	compressionEnabled  bool
 	compressionLevel    int
 	persistToDisk       bool
@@ -109,16 +108,16 @@ func truncateString(s string, maxLen int) string {
 }
 
 // NewSemanticCache creates a new semantic cache with enhanced configuration
-func NewSemanticCache(embeddingService EmbeddingService, logger *logger.Logger, instanceID string, cfg *config.SemanticCacheConfig) *SemanticCache {
+func NewSemanticCache(embeddingService EmbeddingService, logger ports.Logger, instanceID string, cfg *domain.SemanticCacheConfig) *SemanticCache {
 	if cfg == nil {
 		// Use default configuration
-		cfg = &config.SemanticCacheConfig{
+		cfg = &domain.SemanticCacheConfig{
 			Enabled:                 true,
 			MaxEntries:              1000,
 			TTLHours:                24,
 			SimilarityThreshold:     0.85,
 			MaxMemoryMB:             512,
-			EvictionPolicy:          config.EvictionPolicyLRU,
+			EvictionPolicy:          domain.EvictionPolicyLRU,
 			CompressResults:         true,
 			CompressionLevel:        6,
 			PersistToDisk:           false,
@@ -562,19 +561,19 @@ func (sc *SemanticCache) evictEntriesByPolicy(maxToEvict int) int {
 	policy := sc.config.EvictionPolicy
 
 	switch policy {
-	case config.EvictionPolicyLRU:
+	case domain.EvictionPolicyLRU:
 		// Evict based on Least Recently Used (by LastAccessed time)
 		for evicted < maxToEvict && len(sc.entries) > 0 {
 			sc.evictLRU()
 			evicted++
 		}
-	case config.EvictionPolicyLFU:
+	case domain.EvictionPolicyLFU:
 		// Evict based on Least Frequently Used
 		for evicted < maxToEvict && len(sc.entries) > 0 {
 			sc.evictLeastFrequent()
 			evicted++
 		}
-	case config.EvictionPolicySize:
+	case domain.EvictionPolicySize:
 		// Evict largest entries first
 		for evicted < maxToEvict && len(sc.entries) > 0 {
 			sc.evictLargest()

@@ -2,36 +2,36 @@ package service
 
 import (
 	"testing"
-	
-	"github.com/forward-mcp/internal/logger"
+
+	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 )
 
 func TestSearchQueries_MetadataFiltering(t *testing.T) {
 	// Create a mock embedding service for testing
 	mockEmbeddingService := NewMockEmbeddingService()
 	log := logger.New()
-	
+
 	idx := NewNQEQueryIndex(mockEmbeddingService, log)
-	
+
 	// Generate embeddings that will have high similarity with the mock service
 	// The mock service returns embeddings based on text hash, so we'll use the same text
 	searchEmbedding, _ := mockEmbeddingService.GenerateEmbedding("routes")
-	
+
 	// Convert to float32 for the test queries
 	embedding1 := make([]float32, len(searchEmbedding))
 	embedding2 := make([]float32, len(searchEmbedding))
 	embedding3 := make([]float32, len(searchEmbedding))
 	embedding4 := make([]float32, len(searchEmbedding))
 	embedding5 := make([]float32, len(searchEmbedding))
-	
+
 	for i, v := range searchEmbedding {
 		embedding1[i] = float32(v)
-		embedding2[i] = float32(v) * 0.9 // Slightly different
-		embedding3[i] = float32(v) * 0.8 // More different
+		embedding2[i] = float32(v) * 0.9  // Slightly different
+		embedding3[i] = float32(v) * 0.8  // More different
 		embedding4[i] = float32(v) * 0.95 // Very similar
 		embedding5[i] = float32(v) * 0.85 // Somewhat different
 	}
-	
+
 	idx.queries = []*NQEQueryIndexEntry{
 		{QueryID: "1", Intent: "Show all routes", Description: "Returns all routes in the routing table for each device.", Embedding: embedding1},
 		{QueryID: "2", Intent: "", Description: "", Embedding: embedding2},      // Should be ignored
@@ -59,16 +59,16 @@ func TestSearchQueries_MetadataFiltering(t *testing.T) {
 func TestSearchQueries_EmbeddingPreferred(t *testing.T) {
 	mockEmbeddingService := NewMockEmbeddingService()
 	log := logger.New()
-	
+
 	idx := NewNQEQueryIndex(mockEmbeddingService, log)
-	
+
 	// Generate compatible embeddings
 	searchEmbedding, _ := mockEmbeddingService.GenerateEmbedding("routes")
 	embedding1 := make([]float32, len(searchEmbedding))
 	for i, v := range searchEmbedding {
 		embedding1[i] = float32(v)
 	}
-	
+
 	idx.queries = []*NQEQueryIndexEntry{
 		{QueryID: "1", Intent: "Show all routes", Description: "Returns all routes in the routing table for each device.", Embedding: embedding1},
 		{QueryID: "2", Intent: "Show all routes", Description: "Returns all routes in the routing table for each device.", Embedding: nil}, // No embedding
@@ -89,7 +89,7 @@ func TestSearchQueries_EmbeddingPreferred(t *testing.T) {
 func TestSearchQueries_KeywordFallback(t *testing.T) {
 	mockEmbeddingService := NewMockEmbeddingService()
 	log := logger.New()
-	
+
 	idx := NewNQEQueryIndex(mockEmbeddingService, log)
 	idx.queries = []*NQEQueryIndexEntry{
 		{QueryID: "1", Intent: "Show all routes", Description: "Returns all routes in the routing table for each device.", Embedding: nil},

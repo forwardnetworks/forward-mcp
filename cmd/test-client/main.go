@@ -9,7 +9,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/forward-mcp/internal/config"
+	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
+	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 )
 
 // MCPRequest represents a request to the MCP server
@@ -39,7 +40,11 @@ func main() {
 	fmt.Println("===================================")
 
 	// Load config to verify setup
-	cfg := config.LoadConfig()
+	cfg, err := envconfig.Load(stderrlog.New())
+	if err != nil {
+		fmt.Printf("❌ %v\n", err)
+		return
+	}
 	if cfg.Forward.APIKey == "" {
 		fmt.Println("❌ No API key found. Make sure your .env file is configured.")
 		return

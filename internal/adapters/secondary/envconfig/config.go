@@ -1,4 +1,6 @@
-package config
+// Package envconfig loads configuration from the environment, a .env file and
+// an optional config.json.
+package envconfig
 
 import (
 	"encoding/json"
@@ -7,34 +9,25 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
+	"github.com/forward-mcp/internal/ports"
 	"github.com/joho/godotenv"
 )
 
-// The configuration types live in the domain; this package loads them.
+// The configuration types this adapter fills, named through the port.
 type (
-	Config              = domain.Config
-	ServerConfig        = domain.ServerConfig
-	ForwardConfig       = domain.ForwardConfig
-	CacheEvictionPolicy = domain.CacheEvictionPolicy
-	SemanticCacheConfig = domain.SemanticCacheConfig
-	MCPConfig           = domain.MCPConfig
+	Config              = ports.Config
+	ForwardConfig       = ports.ForwardConfig
+	SemanticCacheConfig = ports.SemanticCacheConfig
+	CacheEvictionPolicy = ports.CacheEvictionPolicy
+	MCPConfig           = ports.MCPConfig
+	ServerConfig        = ports.ServerConfig
 )
 
-const (
-	EvictionPolicyLRU    = domain.EvictionPolicyLRU
-	EvictionPolicyLFU    = domain.EvictionPolicyLFU
-	EvictionPolicyTTL    = domain.EvictionPolicyTTL
-	EvictionPolicySize   = domain.EvictionPolicySize
-	EvictionPolicyOldest = domain.EvictionPolicyOldest
-	EvictionPolicyRandom = domain.EvictionPolicyRandom
-)
-
-// LoadConfig loads configuration from environment variables and .env file
-func LoadConfig() *Config {
+// Load reads configuration from environment variables, a .env file and an
+// optional config.json. It refuses settings that would weaken TLS.
+func Load(log ports.Logger) (*Config, error) {
 	// Try to load .env file (fail silently if not found)
-	loadEnvFile()
+	loadEnvFile(log)
 
 	config := &Config{
 		Server: ServerConfig{
@@ -79,26 +72,23 @@ func LoadConfig() *Config {
 
 	// SECURITY: Check for deprecated InsecureSkipVerify setting
 	if getEnvAsBool("FORWARD_INSECURE_SKIP_VERIFY", false) {
-		debugLogger := logger.New()
-		debugLogger.Fatalf("SECURITY ERROR: FORWARD_INSECURE_SKIP_VERIFY is no longer supported. " +
+		return nil, fmt.Errorf("SECURITY ERROR: FORWARD_INSECURE_SKIP_VERIFY is no longer supported. " +
 			"This setting bypasses TLS certificate validation and enables man-in-the-middle attacks. " +
-			"Remove this environment variable. For custom CA certificates, use FORWARD_CA_CERT_PATH instead.")
+			"Remove this environment variable. For custom CA certificates, use FORWARD_CA_CERT_PATH instead")
 	}
 
 	// Try to load JSON config file
 	if err := loadJSONConfig(config); err != nil {
-		debugLogger := logger.New()
-		debugLogger.Debug("Could not load JSON config file: %v", err)
+		log.Debug("Could not load JSON config file: %v", err)
 	}
 
-	return config
+	return config, nil
 }
 
 // loadEnvFile loads environment variables from .env file
-func loadEnvFile() {
+func loadEnvFile(log ports.Logger) {
 	if err := godotenv.Load(); err != nil {
-		debugLogger := logger.New()
-		debugLogger.Debug("Could not load .env file: %v", err)
+		log.Debug("Could not load .env file: %v", err)
 	}
 }
 

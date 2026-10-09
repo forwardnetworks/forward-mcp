@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 	"github.com/forward-mcp/internal/ports"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -55,7 +54,7 @@ func getWritableDataDirectory() (string, error) {
 // NQEDatabase manages the SQLite database for NQE queries
 type NQEDatabase struct {
 	db              *sql.DB
-	logger          *logger.Logger
+	logger          ports.Logger
 	dbPath          string
 	instanceID      string   // Unique identifier for this Forward Networks instance
 	updateCallbacks []func() // Callbacks to notify when data is updated
@@ -74,7 +73,7 @@ func (db *NQEDatabase) notifyUpdateCallbacks() {
 }
 
 // NewNQEDatabase creates a new database instance
-func NewNQEDatabase(logger *logger.Logger, instanceID string) (*NQEDatabase, error) {
+func NewNQEDatabase(logger ports.Logger, instanceID string) (*NQEDatabase, error) {
 	// Get a writable directory for the database
 	dataDir, err := getWritableDataDirectory()
 	if err != nil {
@@ -590,7 +589,7 @@ func (db *NQEDatabase) Close() error {
 }
 
 // loadWithSmartCachingContext implements the smart caching strategy with context support
-func (db *NQEDatabase) loadWithSmartCachingContext(ctx context.Context, client ports.ForwardAPI, logger *logger.Logger) ([]domain.NQEQueryDetail, error) {
+func (db *NQEDatabase) loadWithSmartCachingContext(ctx context.Context, client ports.ForwardAPI, logger ports.Logger) ([]domain.NQEQueryDetail, error) {
 	logger.Info("Starting smart caching query load...")
 
 	// Step 1: Load existing queries from database for immediate availability
@@ -618,7 +617,7 @@ func (db *NQEDatabase) loadWithSmartCachingContext(ctx context.Context, client p
 }
 
 // backgroundEnhancedLoadWithContext runs Enhanced API loading in the background with context support
-func (db *NQEDatabase) backgroundEnhancedLoadWithContext(ctx context.Context, client ports.ForwardAPI, logger *logger.Logger, existingQueries []domain.NQEQueryDetail) {
+func (db *NQEDatabase) backgroundEnhancedLoadWithContext(ctx context.Context, client ports.ForwardAPI, logger ports.Logger, existingQueries []domain.NQEQueryDetail) {
 	logger.Info("🔄 Background Enhanced API loading started...")
 
 	// Check for cancellation before starting
@@ -698,7 +697,7 @@ func (db *NQEDatabase) backgroundEnhancedLoadWithContext(ctx context.Context, cl
 }
 
 // synchronousLoad performs synchronous loading when database is incomplete
-func (db *NQEDatabase) synchronousLoad(ctx context.Context, client ports.ForwardAPI, logger *logger.Logger, existingQueries []domain.NQEQueryDetail) ([]domain.NQEQueryDetail, error) {
+func (db *NQEDatabase) synchronousLoad(ctx context.Context, client ports.ForwardAPI, logger ports.Logger, existingQueries []domain.NQEQueryDetail) ([]domain.NQEQueryDetail, error) {
 	// Build commit ID map for incremental updates
 	existingCommitIDs := make(map[string]string)
 	for _, query := range existingQueries {
@@ -756,7 +755,7 @@ func (db *NQEDatabase) synchronousLoad(ctx context.Context, client ports.Forward
 }
 
 // loadFromEnhancedAPIWithCommitCheck loads queries using Enhanced API with commit-based incremental updates
-func (db *NQEDatabase) loadFromEnhancedAPIWithCommitCheck(ctx context.Context, client ports.ForwardAPI, logger *logger.Logger, existingCommitIDs map[string]string) ([]domain.NQEQueryDetail, error) {
+func (db *NQEDatabase) loadFromEnhancedAPIWithCommitCheck(ctx context.Context, client ports.ForwardAPI, logger ports.Logger, existingCommitIDs map[string]string) ([]domain.NQEQueryDetail, error) {
 	// Channel to receive results
 	resultChan := make(chan []domain.NQEQueryDetail, 1)
 	errorChan := make(chan error, 1)
@@ -793,7 +792,7 @@ func (db *NQEDatabase) loadFromEnhancedAPIWithCommitCheck(ctx context.Context, c
 }
 
 // loadFromBasicAPI loads queries from Basic API (both repositories)
-func (db *NQEDatabase) loadFromBasicAPI(ctx context.Context, client ports.ForwardAPI, logger *logger.Logger) ([]domain.NQEQueryDetail, error) {
+func (db *NQEDatabase) loadFromBasicAPI(ctx context.Context, client ports.ForwardAPI, logger ports.Logger) ([]domain.NQEQueryDetail, error) {
 	var allQueries []domain.NQEQueryDetail
 
 	// Load from org repository

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/forward-mcp/internal/logger"
+	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/service"
 )
 
@@ -15,7 +15,7 @@ func main() {
 	fmt.Println("=====================================================")
 
 	// Initialize logger
-	logger := logger.New()
+	logger := stderrlog.New()
 
 	// Initialize keyword embedding service for fast benchmarking
 	embeddingService := service.NewKeywordEmbeddingService()

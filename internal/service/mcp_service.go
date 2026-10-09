@@ -12,9 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/forward-mcp/internal/config"
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 	"github.com/forward-mcp/internal/ports"
 	_ "github.com/mattn/go-sqlite3"
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -130,8 +128,8 @@ func (wm *WorkflowManager) Close() {
 // ForwardMCPService implements Forward Networks MCP tools using mcp-golang
 type ForwardMCPService struct {
 	forwardClient     ports.ForwardAPI
-	config            *config.Config
-	logger            *logger.Logger
+	config            *domain.Config
+	logger            ports.Logger
 	instanceID        string // Unique identifier for this Forward Networks instance
 	defaults          *ServiceDefaults
 	workflowManager   *WorkflowManager
@@ -156,7 +154,7 @@ type ServiceDefaults struct {
 
 // NewForwardMCPService creates the service. api is the Forward Networks platform;
 // the caller chooses the adapter.
-func NewForwardMCPService(cfg *config.Config, logger *logger.Logger, api ports.ForwardAPI) *ForwardMCPService {
+func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, api ports.ForwardAPI) *ForwardMCPService {
 	// Use configured instance ID or generate one based on API URL
 	instanceID := cfg.Forward.InstanceID
 	if instanceID == "" {

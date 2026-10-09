@@ -7,10 +7,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
-	"github.com/forward-mcp/internal/config"
-	"github.com/forward-mcp/internal/instancelock"
-	"github.com/forward-mcp/internal/logger"
+	"github.com/forward-mcp/internal/adapters/secondary/instancelock"
+	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/service"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -26,10 +26,13 @@ const serverInstructions = "MCP server for Forward Networks: network discovery, 
 
 func main() {
 	// Initialize logger
-	logger := logger.New()
+	logger := stderrlog.New()
 
 	// Load configuration
-	cfg := config.LoadConfig()
+	cfg, err := envconfig.Load(logger)
+	if err != nil {
+		logger.Fatalf("Configuration error: %v", err)
+	}
 
 	// Create logger
 	logger.Info("Forward MCP Server starting...")

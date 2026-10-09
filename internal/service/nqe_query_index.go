@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/forward-mcp/internal/ports"
 	"math"
 	"os"
 	"path/filepath"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 )
 
 // NQEQueryIndexEntry represents a query in the NQE library with AI-powered search capabilities
@@ -35,7 +35,7 @@ type NQEQueryIndex struct {
 	queries             []*NQEQueryIndexEntry
 	embeddings          map[string][]float32
 	embeddingService    EmbeddingService
-	logger              *logger.Logger
+	logger              ports.Logger
 	mutex               sync.RWMutex
 	indexPath           string
 	embeddingsCachePath string // Path to save/load embeddings
@@ -76,7 +76,7 @@ type QuerySearchResult struct {
 }
 
 // NewNQEQueryIndex creates a new query index
-func NewNQEQueryIndex(embeddingService EmbeddingService, logger *logger.Logger) *NQEQueryIndex {
+func NewNQEQueryIndex(embeddingService EmbeddingService, logger ports.Logger) *NQEQueryIndex {
 	// Try to find the spec file using robust path resolution
 	specPath, err := findSpecFile("NQELibrary.json")
 	if err != nil {

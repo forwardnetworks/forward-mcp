@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 )
 
 func TestBloomSearchManager(t *testing.T) {

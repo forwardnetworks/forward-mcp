@@ -5,13 +5,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/forward-mcp/internal/logger"
+	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/service"
 )
 
 func main() {
 	// Initialize logger
-	logger := logger.New()
+	logger := stderrlog.New()
 
 	// Create embedding service (use keyword for this demo)
 	embeddingService := service.NewKeywordEmbeddingService()

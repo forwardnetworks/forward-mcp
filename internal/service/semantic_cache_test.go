@@ -5,9 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forward-mcp/internal/config"
+	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 )
 
 // TestSemanticCache tests the semantic cache functionality
@@ -179,10 +178,10 @@ func TestEnhancedEvictionPolicies(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
 
 	t.Run("lru_eviction", func(t *testing.T) {
-		cfg := &config.SemanticCacheConfig{
+		cfg := &domain.SemanticCacheConfig{
 			Enabled:         true,
 			MaxEntries:      3,
-			EvictionPolicy:  config.EvictionPolicyLRU,
+			EvictionPolicy:  domain.EvictionPolicyLRU,
 			TTLHours:        24,
 			MaxMemoryMB:     10,
 			CompressResults: false,
@@ -220,10 +219,10 @@ func TestEnhancedEvictionPolicies(t *testing.T) {
 	})
 
 	t.Run("lfu_eviction", func(t *testing.T) {
-		cfg := &config.SemanticCacheConfig{
+		cfg := &domain.SemanticCacheConfig{
 			Enabled:         true,
 			MaxEntries:      3,
-			EvictionPolicy:  config.EvictionPolicyLFU,
+			EvictionPolicy:  domain.EvictionPolicyLFU,
 			TTLHours:        24,
 			MaxMemoryMB:     10,
 			CompressResults: false,
@@ -262,10 +261,10 @@ func TestEnhancedEvictionPolicies(t *testing.T) {
 	})
 
 	t.Run("size_based_eviction", func(t *testing.T) {
-		cfg := &config.SemanticCacheConfig{
+		cfg := &domain.SemanticCacheConfig{
 			Enabled:         true,
 			MaxEntries:      5,
-			EvictionPolicy:  config.EvictionPolicySize,
+			EvictionPolicy:  domain.EvictionPolicySize,
 			TTLHours:        24,
 			MaxMemoryMB:     1, // Very small memory limit
 			CompressResults: false,
@@ -304,7 +303,7 @@ func TestCompressionFeatures(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
 
 	t.Run("compression_enabled", func(t *testing.T) {
-		cfg := &config.SemanticCacheConfig{
+		cfg := &domain.SemanticCacheConfig{
 			Enabled:          true,
 			MaxEntries:       10,
 			CompressResults:  true,
@@ -351,7 +350,7 @@ func TestCompressionFeatures(t *testing.T) {
 	})
 
 	t.Run("compression_disabled", func(t *testing.T) {
-		cfg := &config.SemanticCacheConfig{
+		cfg := &domain.SemanticCacheConfig{
 			Enabled:         true,
 			MaxEntries:      10,
 			CompressResults: false,
@@ -384,7 +383,7 @@ func TestMemoryManagement(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
 
 	t.Run("memory_tracking", func(t *testing.T) {
-		cfg := &config.SemanticCacheConfig{
+		cfg := &domain.SemanticCacheConfig{
 			Enabled:         true,
 			MaxEntries:      10,
 			MaxMemoryMB:     1, // 1MB limit
@@ -420,11 +419,11 @@ func TestMemoryManagement(t *testing.T) {
 	})
 
 	t.Run("memory_limit_enforcement", func(t *testing.T) {
-		cfg := &config.SemanticCacheConfig{
+		cfg := &domain.SemanticCacheConfig{
 			Enabled:                 true,
 			MaxEntries:              100,
 			MaxMemoryMB:             1, // Very small limit to trigger eviction
-			EvictionPolicy:          config.EvictionPolicyLRU,
+			EvictionPolicy:          domain.EvictionPolicyLRU,
 			CompressResults:         false,
 			MetricsEnabled:          true,
 			MemoryEvictionThreshold: 0.5, // 50% threshold
@@ -471,11 +470,11 @@ func TestMemoryManagement(t *testing.T) {
 func TestEnhancedMetrics(t *testing.T) {
 	embeddingService := NewMockEmbeddingService()
 
-	cfg := &config.SemanticCacheConfig{
+	cfg := &domain.SemanticCacheConfig{
 		Enabled:                 true,
 		MaxEntries:              10,
 		MaxMemoryMB:             10,
-		EvictionPolicy:          config.EvictionPolicyLRU,
+		EvictionPolicy:          domain.EvictionPolicyLRU,
 		CompressResults:         true,
 		CompressionLevel:        6,
 		MetricsEnabled:          true,
@@ -544,17 +543,17 @@ func TestCacheConfiguration(t *testing.T) {
 			t.Error("Expected compression to be enabled by default")
 		}
 
-		if cache.evictionPolicy != config.EvictionPolicyLRU {
+		if cache.evictionPolicy != domain.EvictionPolicyLRU {
 			t.Errorf("Expected default eviction policy LRU, got %v", cache.evictionPolicy)
 		}
 	})
 
 	t.Run("custom_configuration", func(t *testing.T) {
-		cfg := &config.SemanticCacheConfig{
+		cfg := &domain.SemanticCacheConfig{
 			Enabled:                 true,
 			MaxEntries:              500,
 			MaxMemoryMB:             256,
-			EvictionPolicy:          config.EvictionPolicyLFU,
+			EvictionPolicy:          domain.EvictionPolicyLFU,
 			CompressResults:         false,
 			CompressionLevel:        9,
 			PersistToDisk:           false,
@@ -575,7 +574,7 @@ func TestCacheConfiguration(t *testing.T) {
 			t.Error("Expected compression to be disabled")
 		}
 
-		if cache.evictionPolicy != config.EvictionPolicyLFU {
+		if cache.evictionPolicy != domain.EvictionPolicyLFU {
 			t.Errorf("Expected custom eviction policy LFU, got %v", cache.evictionPolicy)
 		}
 

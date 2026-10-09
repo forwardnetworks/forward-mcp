@@ -4,17 +4,20 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
-	"github.com/forward-mcp/internal/config"
-	"github.com/forward-mcp/internal/logger"
+	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/service"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
 	// Load configuration
-	cfg := config.LoadConfig()
-	log := logger.New()
+	log := stderrlog.New()
+	cfg, err := envconfig.Load(log)
+	if err != nil {
+		log.Fatalf("Configuration error: %v", err)
+	}
 
 	// Create Forward MCP service
 	forwardService := service.NewForwardMCPService(cfg, log, forwardapi.NewClient(&cfg.Forward, log))

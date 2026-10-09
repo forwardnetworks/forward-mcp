@@ -2,17 +2,17 @@ package service
 
 import (
 	"context"
+	"github.com/forward-mcp/internal/domain"
 	"testing"
 	"time"
 
-	"github.com/forward-mcp/internal/config"
-	"github.com/forward-mcp/internal/logger"
+	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 )
 
 // setupSmartSearchTestService creates a service for smart search testing
 func setupSmartSearchTestService() *ForwardMCPService {
-	cfg := &config.Config{
-		Forward: config.ForwardConfig{
+	cfg := &domain.Config{
+		Forward: domain.ForwardConfig{
 			APIKey:     "test-key",
 			APISecret:  "test-secret",
 			APIBaseURL: "https://test.example.com",

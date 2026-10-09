@@ -3,21 +3,21 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/forward-mcp/internal/ports"
 	"time"
 
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 )
 
 // APIMemoryTracker integrates the memory system with API result tracking
 type APIMemoryTracker struct {
 	memorySystem *MemorySystem
-	logger       *logger.Logger
+	logger       ports.Logger
 	instanceID   string
 }
 
 // NewAPIMemoryTracker creates a new API memory tracker
-func NewAPIMemoryTracker(memorySystem *MemorySystem, logger *logger.Logger, instanceID string) *APIMemoryTracker {
+func NewAPIMemoryTracker(memorySystem *MemorySystem, logger ports.Logger, instanceID string) *APIMemoryTracker {
 	return &APIMemoryTracker{
 		memorySystem: memorySystem,
 		logger:       logger,

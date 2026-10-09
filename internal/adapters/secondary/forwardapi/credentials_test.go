@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/forward-mcp/internal/config"
+	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/joho/godotenv"
 )
 
@@ -27,7 +27,10 @@ func TestForwardAPICredentials(t *testing.T) {
 	_ = godotenv.Load(envPath)
 
 	// Load configuration using the proper config loader
-	cfg := config.LoadConfig()
+	cfg, err := envconfig.Load(nopLogger{})
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
 
 	// Mask sensitive credentials in logs
 	maskedKey := ""

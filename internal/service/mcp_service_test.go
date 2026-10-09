@@ -8,9 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/forward-mcp/internal/config"
+	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 	"github.com/forward-mcp/internal/ports"
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -509,13 +508,13 @@ func (e *MockError) Error() string {
 
 // Helper function for tests
 func createTestService() *ForwardMCPService {
-	cfg := &config.Config{
-		Forward: config.ForwardConfig{
+	cfg := &domain.Config{
+		Forward: domain.ForwardConfig{
 			APIKey:     "test-key",
 			APISecret:  "test-secret",
 			APIBaseURL: "https://test.example.com",
 			Timeout:    10,
-			SemanticCache: config.SemanticCacheConfig{
+			SemanticCache: domain.SemanticCacheConfig{
 				Enabled:    true,
 				MaxEntries: 100,
 				TTLHours:   24,
@@ -1165,16 +1164,16 @@ func TestCacheIntegrationWithNQEQueries(t *testing.T) {
 // TestCacheMetricsAndMonitoring tests the enhanced metrics functionality
 func TestCacheMetricsAndMonitoring(t *testing.T) {
 	// Create test configuration
-	cfg := &config.Config{
-		Forward: config.ForwardConfig{
-			SemanticCache: config.SemanticCacheConfig{
+	cfg := &domain.Config{
+		Forward: domain.ForwardConfig{
+			SemanticCache: domain.SemanticCacheConfig{
 				Enabled:         true,
 				MaxEntries:      50,
 				TTLHours:        1,
 				MaxMemoryMB:     10,
 				CompressResults: true,
 				MetricsEnabled:  true,
-				EvictionPolicy:  config.EvictionPolicyLRU,
+				EvictionPolicy:  domain.EvictionPolicyLRU,
 			},
 		},
 	}

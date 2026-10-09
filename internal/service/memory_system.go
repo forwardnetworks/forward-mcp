@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/forward-mcp/internal/ports"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 	"github.com/mattn/go-sqlite3"
 )
 
@@ -65,13 +65,13 @@ type Observation struct {
 // MemorySystem manages the knowledge graph memory using SQLite
 type MemorySystem struct {
 	db         *sql.DB
-	logger     *logger.Logger
+	logger     ports.Logger
 	dbPath     string
 	instanceID string
 }
 
 // NewMemorySystem creates a new memory system instance
-func NewMemorySystem(logger *logger.Logger, instanceID string) (*MemorySystem, error) {
+func NewMemorySystem(logger ports.Logger, instanceID string) (*MemorySystem, error) {
 	// Use same data directory approach as NQE database
 	dataDir, err := getWritableDataDirectory()
 	if err != nil {

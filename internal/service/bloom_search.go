@@ -3,20 +3,20 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/forward-mcp/internal/ports"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/danthegoodman1/bloomsearch"
-	"github.com/forward-mcp/internal/logger"
 )
 
 // BloomIndexManager manages persistent bloomsearch engines for efficient filtering
 type BloomIndexManager struct {
 	engines map[string]*bloomsearch.BloomSearchEngine
 	mutex   sync.RWMutex
-	logger  *logger.Logger
+	logger  ports.Logger
 	baseDir string
 }
 
@@ -68,7 +68,7 @@ type BlockStats struct {
 }
 
 // NewBloomIndexManager creates a new bloom index manager
-func NewBloomIndexManager(logger *logger.Logger, baseDir string) *BloomIndexManager {
+func NewBloomIndexManager(logger ports.Logger, baseDir string) *BloomIndexManager {
 	return &BloomIndexManager{
 		engines: make(map[string]*bloomsearch.BloomSearchEngine),
 		logger:  logger,

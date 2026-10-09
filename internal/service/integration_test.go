@@ -2,15 +2,15 @@ package service
 
 import (
 	"context"
+	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/forward-mcp/internal/config"
+	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/domain"
-	"github.com/forward-mcp/internal/logger"
 	"github.com/joho/godotenv"
 )
 
@@ -40,8 +40,11 @@ func setupIntegrationTest(t *testing.T) *ForwardMCPService {
 	_ = godotenv.Load(envPath)
 
 	// Use the standard config loading which includes all TLS settings
-	cfg := config.LoadConfig()
 	log := logger.New()
+	cfg, err := envconfig.Load(log)
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
 
 	// Verify required credentials are set
 	if cfg.Forward.APIKey == "" || cfg.Forward.APISecret == "" || cfg.Forward.APIBaseURL == "" {
