@@ -590,11 +590,11 @@ func TestListNetworks(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	if len(response.Content) != 1 {
-		t.Fatalf("Expected 1 content item, got: %d", len(response.Content))
+	if response.Text == "" {
+		t.Fatal("Expected text content, got none")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	if content == "" {
 		t.Fatal("Expected non-empty content")
 	}
@@ -621,7 +621,7 @@ func TestCreateNetwork(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	if !contains(content, "New Test Network") {
 		t.Error("Expected response to contain new network name")
 	}
@@ -643,7 +643,7 @@ func TestDeleteNetwork(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	if !contains(content, "deleted successfully") {
 		t.Error("Expected response to indicate successful deletion")
 	}
@@ -674,7 +674,7 @@ func TestSearchPaths(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	t.Logf("Actual path search response content: %s", content)
 	if !contains(content, "Bulk path search completed") {
 		t.Error("Expected response to indicate bulk path search completion")
@@ -702,7 +702,7 @@ func TestRunNQEQuery(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	// Debug: Print actual content to understand what's happening
 	t.Logf("Actual response content: %s", content)
 
@@ -749,7 +749,7 @@ func TestRunNQEQueryByID(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	if !contains(content, "NQE query completed") {
 		t.Error("Expected response to indicate NQE query completion")
 	}
@@ -775,7 +775,7 @@ func TestListNQEQueries(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	if !contains(content, "Found") && !contains(content, "queries") {
 		t.Error("Expected response to contain query information")
 	}
@@ -799,7 +799,7 @@ func TestListDevices(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	if !contains(content, "router-1") {
 		t.Error("Expected response to contain device names")
 	}
@@ -821,7 +821,7 @@ func TestGetDeviceLocations(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	if !contains(content, "device locations") {
 		t.Error("Expected response to contain device location information")
 	}
@@ -1224,7 +1224,7 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 		}
 
 		// Verify response contains expected information
-		content := contentText(response.Content[0])
+		content := response.Text
 		if !contains(content, "total_entries") {
 			t.Error("Expected cache stats to contain total_entries")
 		}

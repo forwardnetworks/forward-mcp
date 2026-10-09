@@ -15,9 +15,22 @@ func newTextContent(text string) mcp.Content {
 	return &mcp.TextContent{Text: text}
 }
 
-// newToolResponse builds a tool result from one or more content blocks.
-func newToolResponse(content ...mcp.Content) *mcp.CallToolResult {
-	return &mcp.CallToolResult{Content: content}
+// Result is what a tool handler produces: one block of text for the model.
+type Result struct {
+	Text string
+}
+
+// textResult builds a tool result from text.
+func textResult(text string) *Result {
+	return &Result{Text: text}
+}
+
+// toCallToolResult renders a Result as an MCP tool result.
+func toCallToolResult(r *Result) *mcp.CallToolResult {
+	if r == nil {
+		return nil
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{newTextContent(r.Text)}}
 }
 
 // addTool registers a typed handler with the go-sdk server. The input schema is
@@ -25,23 +38,15 @@ func newToolResponse(content ...mcp.Content) *mcp.CallToolResult {
 // the SDK before the handler runs, and handler errors are returned as tool
 // execution errors (isError) per the MCP spec. The handler receives the request
 // context, so a client that cancels the call stops the work behind it.
-func addTool[In any](server *mcp.Server, name, description string, h func(context.Context, In) (*mcp.CallToolResult, error)) {
+func addTool[In any](server *mcp.Server, name, description string, h func(context.Context, In) (*Result, error)) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        name,
 		Description: description,
 		Annotations: toolAnnotations[name],
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 		res, err := h(ctx, in)
-		return res, nil, err
+		return toCallToolResult(res), nil, err
 	})
-}
-
-// contentText returns the text of a content block, or "" if it is not text.
-func contentText(c mcp.Content) string {
-	if tc, ok := c.(*mcp.TextContent); ok {
-		return tc.Text
-	}
-	return ""
 }
 
 // promptResult builds a single-message prompt result attributed to the assistant.

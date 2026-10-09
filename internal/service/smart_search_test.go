@@ -70,7 +70,7 @@ func TestSearchNQEQueries_AutoInitialization(t *testing.T) {
 	}
 
 	// Response should be non-empty (either successful results or auto-initialization message)
-	responseText := contentText(response.Content[0])
+	responseText := response.Text
 	if responseText == "" {
 		t.Error("Expected non-empty response text")
 	}
@@ -114,7 +114,7 @@ func TestSearchNQEQueries_EmptyQuery(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	responseText := contentText(response.Content[0])
+	responseText := response.Text
 	if !contains(responseText, "Please provide a search query") {
 		t.Error("Expected response to ask for search query")
 	}
@@ -209,7 +209,7 @@ func TestFindExecutableQuery_AutoInitialization(t *testing.T) {
 			t.Fatal("Expected response, got nil")
 		}
 
-		responseText := contentText(response.Content[0])
+		responseText := response.Text
 		// Should either show results or explain auto-initialization
 		if len(responseText) == 0 {
 			t.Error("Response should not be empty")
@@ -238,7 +238,7 @@ func TestFindExecutableQuery_EmptyQuery(t *testing.T) {
 			t.Fatal("Expected response, got nil")
 		}
 
-		responseText := contentText(response.Content[0])
+		responseText := response.Text
 		if !contains(responseText, "Please describe what you want to analyze") {
 			t.Error("Expected response to ask for query description")
 		}
@@ -307,7 +307,7 @@ func TestFindExecutableQuery_Parameters(t *testing.T) {
 					if response == nil {
 						t.Error("Expected response, got nil")
 					} else {
-						responseText := contentText(response.Content[0])
+						responseText := response.Text
 						if len(responseText) == 0 {
 							t.Error("Response should not be empty")
 						}
@@ -413,7 +413,7 @@ func TestInitializeQueryIndex(t *testing.T) {
 		if response == nil {
 			t.Error("Expected response, got nil")
 		} else {
-			responseText := contentText(response.Content[0])
+			responseText := response.Text
 			if !contains(responseText, "query index") {
 				t.Error("Expected response to mention query index")
 			}
@@ -442,7 +442,7 @@ func TestGetQueryIndexStats(t *testing.T) {
 			t.Fatal("Expected response, got nil")
 		}
 
-		responseText := contentText(response.Content[0])
+		responseText := response.Text
 		if !contains(responseText, "Query Index Statistics") {
 			t.Error("Expected response to contain statistics header")
 		}
@@ -470,7 +470,7 @@ func TestGetQueryIndexStats_Detailed(t *testing.T) {
 			t.Fatal("Expected response, got nil")
 		}
 
-		responseText := contentText(response.Content[0])
+		responseText := response.Text
 		if !contains(responseText, "Query Index Statistics") {
 			t.Error("Expected response to contain statistics header")
 		}

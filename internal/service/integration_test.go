@@ -82,11 +82,11 @@ func TestIntegrationListNetworks(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	if len(response.Content) != 1 {
-		t.Fatalf("Expected 1 content item, got: %d", len(response.Content))
+	if response.Text == "" {
+		t.Fatal("Expected text content, got none")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	if content == "" {
 		t.Fatal("Expected non-empty content")
 	}
@@ -133,7 +133,7 @@ func TestIntegrationSearchPaths(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	t.Logf("Path search response: %s", content)
 }
 
@@ -273,11 +273,11 @@ func TestIntegrationSearchPathsSpecificIPs(t *testing.T) {
 				t.Fatal("Expected response, got nil")
 			}
 
-			if len(response.Content) == 0 {
+			if response.Text == "" {
 				t.Fatal("Expected content in response")
 			}
 
-			content := contentText(response.Content[0])
+			content := response.Text
 			t.Logf("Response for %s:\n%s", tc.name, content)
 
 			// Validate response structure
@@ -352,11 +352,11 @@ func TestIntegrationPathSearchResponseStructure(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	if len(response.Content) != 1 {
-		t.Fatalf("Expected 1 content item, got %d", len(response.Content))
+	if response.Text == "" {
+		t.Fatal("Expected text content, got none")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	if content == "" {
 		t.Fatal("Expected non-empty content")
 	}
@@ -414,7 +414,7 @@ func TestIntegrationRunNQEQuery(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	t.Logf("NQE query response: %s", content)
 }
 
@@ -590,11 +590,11 @@ func TestIntegrationPathSearchSpecificCustomerIPs(t *testing.T) {
 				t.Fatal("Expected response, got nil")
 			}
 
-			if len(response.Content) == 0 {
+			if response.Text == "" {
 				t.Fatal("Expected content in response")
 			}
 
-			content := contentText(response.Content[0])
+			content := response.Text
 			t.Logf("✅ Response for %s:", tc.name)
 
 			// Log a shortened version for readability
@@ -676,7 +676,7 @@ func TestIntegrationListDevices(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	t.Logf("Devices response: %s", content)
 }
 
@@ -710,6 +710,6 @@ func TestIntegrationListSnapshots(t *testing.T) {
 		t.Fatal("Expected response, got nil")
 	}
 
-	content := contentText(response.Content[0])
+	content := response.Text
 	t.Logf("Snapshots response: %s", content)
 }

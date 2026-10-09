@@ -32,7 +32,7 @@ func TestServiceRunsWithoutStores(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get_database_status without a query store: %v", err)
 	}
-	if res == nil || len(res.Content) == 0 {
+	if res == nil || res.Text == "" {
 		t.Fatal("get_database_status returned no content")
 	}
 }
