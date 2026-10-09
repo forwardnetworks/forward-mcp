@@ -10,7 +10,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +27,9 @@ type NQEQueryIndex struct {
 	offlineMode         bool   // Whether to work with cached embeddings only
 	isLoading           bool   // Whether the index is currently loading
 	isReady             bool   // Whether the index is ready for use
+
+	bm25Mu sync.Mutex
+	bm25   *bm25Index // built lazily from queries; see getBM25
 }
 
 // IsReady returns true if the query index is ready for use
@@ -130,12 +132,15 @@ func (idx *NQEQueryIndex) LoadFromSpec() error {
 		if len(segments) > 0 {
 			query.Intent = segments[len(segments)-1]
 		}
-		// Tightened filter: Require BOTH intent and description to be non-empty and >=10 chars
+		// The bundled library has paths but no descriptions. BM25 ranks on the
+		// path and intent, so keep those queries; only the ones with real
+		// descriptions count as strong metadata.
 		intent := strings.TrimSpace(query.Intent)
 		desc := strings.TrimSpace(query.Description)
-		if len(intent) < 10 || len(desc) < 10 {
+		if len(intent) < 3 {
 			continue
 		}
+		query.IsStrongMeta = len(intent) >= 10 && len(desc) >= 10
 		// Exclude generic/test names
 		lowerIntent := strings.ToLower(intent)
 		if lowerIntent == "test" || lowerIntent == "example" || lowerIntent == "demo" ||
@@ -145,8 +150,11 @@ func (idx *NQEQueryIndex) LoadFromSpec() error {
 		filtered = append(filtered, query)
 	}
 
+	if len(filtered) == 0 {
+		return fmt.Errorf("spec file %s had %d queries but none were usable", specPath, len(nqeLibrary.Queries))
+	}
 	idx.queries = filtered
-	idx.logger.Info("Loaded %d NQE queries into search index (filtered for strong metadata)", len(filtered))
+	idx.logger.Info("Loaded %d NQE queries into search index from spec file", len(filtered))
 
 	// Try to load pre-generated embeddings
 	if err := idx.loadEmbeddingsFromCache(); err != nil {
@@ -426,229 +434,6 @@ func calculateCosineSimilarity(a, b []float32) float64 {
 	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
-// SearchQueries performs semantic search on the query index
-func (idx *NQEQueryIndex) SearchQueries(searchText string, limit int) ([]*ports.QuerySearchResult, error) {
-	idx.mutex.RLock()
-	defer idx.mutex.RUnlock()
-
-	if len(idx.queries) == 0 {
-		return nil, fmt.Errorf("query index is empty - run LoadFromSpec() first")
-	}
-
-	embeddedCount := 0
-	for _, query := range idx.queries {
-		if len(query.Embedding) > 0 {
-			embeddedCount++
-		}
-	}
-
-	if embeddedCount > 0 {
-		searchEmbedding64, err := idx.embeddingService.GenerateEmbedding(searchText)
-		if err != nil {
-			idx.logger.Debug("Failed to generate search embedding, falling back to keyword search: %v", err)
-			return idx.searchWithKeywords(searchText, limit)
-		}
-		searchEmbedding := make([]float32, len(searchEmbedding64))
-		for i, v := range searchEmbedding64 {
-			searchEmbedding[i] = float32(v)
-		}
-		var strongResults, weakResults []*ports.QuerySearchResult
-		for _, query := range idx.queries {
-			if len(query.Embedding) == 0 {
-				continue
-			}
-			similarity := calculateCosineSimilarity(searchEmbedding, query.Embedding)
-			if query.IsStrongMeta {
-				similarity *= 1.2 // Boost for strong metadata
-			}
-			if similarity > 0.01 {
-				result := &ports.QuerySearchResult{
-					NQEQueryIndexEntry: query,
-					SimilarityScore:    similarity,
-					MatchType:          "semantic",
-				}
-				if query.IsStrongMeta {
-					strongResults = append(strongResults, result)
-				} else {
-					weakResults = append(weakResults, result)
-				}
-			}
-		}
-		// Sort both slices by similarity descending
-		sort.Slice(strongResults, func(i, j int) bool {
-			return strongResults[i].SimilarityScore > strongResults[j].SimilarityScore
-		})
-		sort.Slice(weakResults, func(i, j int) bool {
-			return weakResults[i].SimilarityScore > weakResults[j].SimilarityScore
-		})
-		// Merge, preferring strong results
-		results := append(strongResults, weakResults...)
-		if len(results) > limit {
-			results = results[:limit]
-		}
-		idx.logger.Debug("Semantic search: %d strong, %d weak in top %d results for '%s'", len(strongResults), len(weakResults), len(results), searchText)
-		return results, nil
-	}
-	// Only fall back to keyword-based search if no queries have embeddings
-	return idx.searchWithKeywords(searchText, limit)
-}
-
-func (idx *NQEQueryIndex) searchWithKeywords(searchText string, limit int) ([]*ports.QuerySearchResult, error) {
-	searchTerms := strings.Fields(strings.ToLower(searchText))
-	var results []*ports.QuerySearchResult
-
-	for _, query := range idx.queries {
-		// Remove metadata filtering - include all queries in keyword search
-		score := idx.calculateKeywordScore(query, searchTerms)
-		if score > 0 {
-			result := &ports.QuerySearchResult{
-				NQEQueryIndexEntry: query,
-				SimilarityScore:    score,
-				MatchType:          "keyword",
-			}
-			results = append(results, result)
-		}
-	}
-
-	for i := 0; i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[i].SimilarityScore < results[j].SimilarityScore {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
-
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	return results, nil
-}
-
-// calculateKeywordScore calculates a keyword-based similarity score
-func (idx *NQEQueryIndex) calculateKeywordScore(query *ports.NQEQueryIndexEntry, searchTerms []string) float64 {
-	// Include intent and description as primary fields for matching
-	searchableText := strings.ToLower(fmt.Sprintf("%s %s %s %s %s %s %s",
-		query.Path,
-		query.Intent,
-		query.Description, // Use extracted @description
-		query.Category,
-		query.Subcategory,
-		query.Code,
-		query.QueryID, // Allow searching by queryId
-	))
-
-	// For long queries, split into key concepts and require fewer matches
-	var keyTerms []string
-	if len(searchTerms) > 4 {
-		// Group related terms together
-		keyTerms = idx.extractKeyTerms(searchTerms)
-	} else {
-		keyTerms = searchTerms
-	}
-
-	score := 0.0
-	matchedTerms := 0
-	matchedKeyTerms := 0
-
-	// First check for key term matches (more important)
-	for _, term := range keyTerms {
-		if strings.Contains(searchableText, term) {
-			matchedKeyTerms++
-			// Strong boost for matches in intent/description
-			if strings.Contains(strings.ToLower(query.Intent), term) {
-				score += 5.0 // Intent is most valuable
-			} else if strings.Contains(strings.ToLower(query.Description), term) {
-				score += 4.0 // Description is very valuable
-			} else if strings.Contains(strings.ToLower(query.QueryID), term) {
-				score += 3.0 // QueryID match is very valuable
-			} else if strings.Contains(strings.ToLower(query.Path), term) {
-				score += 2.0 // Path matches are valuable
-			} else if strings.Contains(strings.ToLower(query.Category), term) {
-				score += 1.5 // Category matches are valuable
-			} else if strings.Contains(strings.ToLower(query.Code), term) {
-				score += 1.0 // Code matches are valuable
-			} else {
-				score += 0.5 // General matches
-			}
-		}
-	}
-
-	// Then check for individual term matches (less important)
-	for _, term := range searchTerms {
-		if strings.Contains(searchableText, term) {
-			matchedTerms++
-			score += 0.2 // Small boost for any match
-		}
-	}
-
-	// NEW: Recognize foundational data retrieval patterns
-	// Boost queries that return raw data per device when searching for counting operations
-	if idx.isFoundationalDataQuery(query, searchTerms) {
-		score += 3.0 // Significant boost for foundational queries
-		idx.logger.Debug("Boosted foundational query %s for search terms: %v", query.QueryID, searchTerms)
-	}
-
-	// Return a minimum score if we matched anything
-	if matchedTerms > 0 || matchedKeyTerms > 0 {
-		return math.Max(score, 0.1) // Ensure minimum score for any match
-	}
-
-	return 0.0
-}
-
-// isFoundationalDataQuery checks if a query is a foundational data source for counting operations
-func (idx *NQEQueryIndex) isFoundationalDataQuery(query *ports.NQEQueryIndexEntry, searchTerms []string) bool {
-	// Check if search is about counting/analysis
-	isCountingSearch := false
-	for _, term := range searchTerms {
-		if term == "count" || term == "counts" || term == "summary" || term == "total" ||
-			term == "number" || term == "how" || term == "many" {
-			isCountingSearch = true
-			break
-		}
-	}
-
-	if !isCountingSearch {
-		return false
-	}
-
-	// Check if query returns foundational data (not already counting)
-	queryText := strings.ToLower(query.Code + " " + query.Intent + " " + query.Description)
-
-	// Skip if query already does counting
-	if strings.Contains(queryText, "count(") || strings.Contains(queryText, "length(") ||
-		strings.Contains(queryText, "sum(") || strings.Contains(queryText, "aggregate") {
-		return false
-	}
-
-	// Check for foundational patterns
-	foundationalPatterns := []string{
-		"foreach device",    // Iterates through devices
-		"device.name",       // Returns device names
-		"per device",        // Explicitly per device
-		"routing table",     // Routing data
-		"routes",            // Route data
-		"network instances", // Network data
-		"interfaces",        // Interface data
-		"configuration",     // Config data
-		"select distinct",   // Data retrieval
-		"returns",           // Data return
-		"get",               // Data retrieval
-		"show",              // Data display
-	}
-
-	patternMatches := 0
-	for _, pattern := range foundationalPatterns {
-		if strings.Contains(queryText, pattern) {
-			patternMatches++
-		}
-	}
-
-	// Consider foundational if it has multiple foundational patterns
-	return patternMatches >= 2
-}
-
 // GetQueryByID retrieves a specific query by its ID
 func (idx *NQEQueryIndex) GetQueryByID(queryID string) (*ports.NQEQueryIndexEntry, error) {
 	idx.mutex.RLock()
@@ -818,76 +603,6 @@ func findProjectRoot() (string, error) {
 	}
 
 	return "", fmt.Errorf("project root not found")
-}
-
-// extractKeyTerms groups related search terms into key concepts
-func (idx *NQEQueryIndex) extractKeyTerms(searchTerms []string) []string {
-	// Define groups of related terms
-	securityTerms := []string{"security", "vulnerabilities", "vulnerability", "secure", "insecure"}
-	accessTerms := []string{"access", "authentication", "authorization", "control", "permission"}
-	cryptoTerms := []string{"encryption", "encrypted", "decrypt", "crypto", "certificate", "tls", "ssl"}
-	weaknessTerms := []string{"weak", "password", "credentials", "default", "misconfiguration"}
-	protocolTerms := []string{"protocol", "protocols", "http", "https", "ssh", "telnet", "ftp"}
-	networkTerms := []string{"network", "routing", "bgp", "ospf", "interface", "vlan"}
-	complianceTerms := []string{"compliance", "compliant", "policy", "policies", "standard", "requirement"}
-
-	// Map to track which terms we've already used
-	usedTerms := make(map[string]bool)
-	var keyTerms []string
-
-	// Helper to check if a term belongs to a group
-	belongsToGroup := func(term string, group []string) bool {
-		for _, g := range group {
-			if strings.Contains(term, g) || strings.Contains(g, term) {
-				return true
-			}
-		}
-		return false
-	}
-
-	// Helper to add a representative term for a group
-	addGroupTerm := func(term string, group []string, representative string) {
-		if belongsToGroup(term, group) {
-			if !usedTerms[representative] {
-				keyTerms = append(keyTerms, representative)
-				usedTerms[representative] = true
-			}
-		}
-	}
-
-	// Process each search term
-	for _, term := range searchTerms {
-		if usedTerms[term] {
-			continue
-		}
-
-		// Check each group and add representative terms
-		addGroupTerm(term, securityTerms, "security")
-		addGroupTerm(term, accessTerms, "access-control")
-		addGroupTerm(term, cryptoTerms, "encryption")
-		addGroupTerm(term, weaknessTerms, "weak-credentials")
-		addGroupTerm(term, protocolTerms, "protocols")
-		addGroupTerm(term, networkTerms, "network")
-		addGroupTerm(term, complianceTerms, "compliance")
-
-		// If term doesn't belong to any group, add it as is
-		matched := false
-		for _, group := range [][]string{
-			securityTerms, accessTerms, cryptoTerms, weaknessTerms,
-			protocolTerms, networkTerms, complianceTerms,
-		} {
-			if belongsToGroup(term, group) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			keyTerms = append(keyTerms, term)
-			usedTerms[term] = true
-		}
-	}
-
-	return keyTerms
 }
 
 // Queries returns the list of NQE queries in the index (read-only)

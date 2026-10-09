@@ -63,17 +63,22 @@
         "cmd/server/main.go",
         "internal/adapters/primary/httpserver/jwks.go",
         "internal/adapters/primary/httpserver/auth.go",
-        "README.md",
-        "CLAUDE.md",
         "internal/adapters/primary/httpserver/server.go",
         "internal/adapters/primary/httpserver/middleware.go",
-        "internal/adapters/primary/httpserver/server_test.go"
+        "internal/adapters/primary/httpserver/server_test.go",
+        "internal/adapters/secondary/queryindex/bm25.go",
+        "internal/adapters/secondary/queryindex/search.go",
+        "internal/adapters/secondary/queryindex/index_test.go",
+        "internal/adapters/secondary/queryindex/index.go",
+        "internal/adapters/secondary/queryindex/bm25_test.go",
+        "README.md",
+        "CLAUDE.md"
       ],
       "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go test -count=1 -skip TestIntegration ./internal/... && hexa analyze . --grade A+",
       "pid": 51545,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-09T19:38:59.463321+00:00"
+      "updated": "2026-10-09T19:45:49.525895+00:00"
     }
   }
 }

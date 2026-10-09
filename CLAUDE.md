@@ -236,7 +236,9 @@ Background refresh triggers on commit ID changes from API.
 
 ### Semantic Search Embeddings
 Two embedding providers (configurable via `FORWARD_EMBEDDING_PROVIDER`):
-- **keyword**: hand-weighted network keyword list plus SHA-256 hash features (not TF-IDF, not BM25), no API required, fast, free
+- **keyword**: hand-weighted network keyword list plus SHA-256 hash features, no API required, fast, free
+
+Query search itself does not depend on embeddings: `SearchQueries` ranks with BM25 (`internal/adapters/secondary/queryindex/bm25.go`) and, when queries carry embeddings, fuses that with cosine ranking via Reciprocal Rank Fusion (`search.go`).
 - **openai**: text-embedding-3-small (1536 dims), requires `OPENAI_API_KEY`, better semantic quality
 
 Cache file: `spec/nqe-embeddings.json`

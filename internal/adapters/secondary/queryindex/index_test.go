@@ -58,7 +58,9 @@ func TestSearchQueries_MetadataFiltering(t *testing.T) {
 	}
 }
 
-func TestSearchQueries_EmbeddingPreferred(t *testing.T) {
+// A query without an embedding is still found by BM25; the query that matches
+// on both rankings comes first.
+func TestSearchQueries_HybridKeepsUnembeddedQueries(t *testing.T) {
 	mockEmbeddingService := embeddings.NewMockEmbeddingService()
 	log := logger.New()
 
@@ -80,11 +82,14 @@ func TestSearchQueries_EmbeddingPreferred(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(results) != 1 {
-		t.Errorf("expected 1 result with embedding, got %d", len(results))
+	if len(results) != 2 {
+		t.Fatalf("expected both queries, got %d", len(results))
 	}
-	if len(results) > 0 && results[0].QueryID != "1" {
-		t.Errorf("expected QueryID 1, got %s", results[0].QueryID)
+	if results[0].QueryID != "1" || results[0].MatchType != "hybrid" {
+		t.Errorf("first = %s/%s, want 1/hybrid", results[0].QueryID, results[0].MatchType)
+	}
+	if results[1].QueryID != "2" || results[1].MatchType != "bm25" {
+		t.Errorf("second = %s/%s, want 2/bm25", results[1].QueryID, results[1].MatchType)
 	}
 }
 
