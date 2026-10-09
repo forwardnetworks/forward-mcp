@@ -2,7 +2,6 @@ package usecases
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/forward-mcp/internal/domain"
 	"github.com/forward-mcp/internal/ports"
-	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -136,6 +134,7 @@ type Service struct {
 	memorySystem    ports.MemoryStore  // Knowledge graph memory system
 	apiTracker      *APIMemoryTracker  // API result tracking using memory system
 	bloomManager    ports.BloomFilters // Bloom filters for efficient large result filtering
+	rowQuerier      ports.RowQuerier
 	// Context cancellation for graceful shutdown
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -160,6 +159,7 @@ type Deps struct {
 	QueryStore ports.QueryStore
 	Memory     ports.MemoryStore
 	Bloom      ports.BloomFilters
+	Rows       ports.RowQuerier
 }
 
 // New creates the service from its configuration and deps.
@@ -212,6 +212,7 @@ func New(cfg *domain.Config, logger ports.Logger, deps Deps) *Service {
 		memorySystem:    memorySystem,
 		apiTracker:      apiTracker,
 		bloomManager:    bloomManager,
+		rowQuerier:      deps.Rows,
 		ctx:             ctx,
 		cancelFunc:      cancelFunc,
 	}
@@ -3404,75 +3405,17 @@ func (s *Service) AnalyzeNQEResultSQL(ctx context.Context, args AnalyzeNQEResult
 	if len(allRows) == 0 {
 		return nil, fmt.Errorf("no rows found for entity %s", args.EntityID)
 	}
-	// Create in-memory SQLite DB
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create in-memory sqlite db: %w", err)
-	}
-	defer db.Close()
-	// Infer columns from first row
-	firstRow := allRows[0]
-	var columns []string
-	for k := range firstRow {
-		columns = append(columns, k)
-	}
-	// Create table
-	tableCols := ""
-	for i, col := range columns {
-		if i > 0 {
-			tableCols += ", "
-		}
-		tableCols += fmt.Sprintf("%s TEXT", col)
-	}
-	tableName := "nqe_result"
-	createStmt := fmt.Sprintf("CREATE TABLE %s (%s);", tableName, tableCols)
-	_, err = db.Exec(createStmt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create table: %w", err)
-	}
-	// Insert rows
-	insertStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, strings.Join(columns, ", "), strings.TrimRight(strings.Repeat("?,", len(columns)), ","))
-	for _, row := range allRows {
-		vals := make([]interface{}, len(columns))
-		for i, col := range columns {
-			if v, ok := row[col]; ok {
-				vals[i] = fmt.Sprintf("%v", v)
-			} else {
-				vals[i] = nil
-			}
-		}
-		_, err := db.Exec(insertStmt, vals...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to insert row: %w", err)
-		}
-	}
 	// Run the query (limit to 100 rows)
 	query := args.SQLQuery
 	if !strings.Contains(strings.ToLower(query), "limit") {
 		query += " LIMIT 100"
 	}
-	rows, err := db.Query(query)
-	if err != nil {
-		return nil, fmt.Errorf("SQL query error: %w", err)
+	if s.rowQuerier == nil {
+		return nil, fmt.Errorf("SQL analysis is not available")
 	}
-	defer rows.Close()
-	// Read results
-	resultRows := []map[string]interface{}{}
-	cols, _ := rows.Columns()
-	for rows.Next() {
-		vals := make([]interface{}, len(cols))
-		valPtrs := make([]interface{}, len(cols))
-		for i := range vals {
-			valPtrs[i] = &vals[i]
-		}
-		if err := rows.Scan(valPtrs...); err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
-		}
-		rowMap := map[string]interface{}{}
-		for i, col := range cols {
-			rowMap[col] = vals[i]
-		}
-		resultRows = append(resultRows, rowMap)
+	resultRows, err := s.rowQuerier.QueryRows(ctx, allRows, query)
+	if err != nil {
+		return nil, err
 	}
 	resultJSON, _ := json.MarshalIndent(resultRows, "", "  ")
 	response := fmt.Sprintf("SQL query result (%d rows, max 100 shown):\n%s", len(resultRows), string(resultJSON))

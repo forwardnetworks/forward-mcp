@@ -200,5 +200,6 @@ func newDeps(cfg *ports.Config, log ports.Logger) usecases.Deps {
 		QueryStore: queryStore,
 		Memory:     memory,
 		Bloom:      bloom.NewBloomSearchManager(log, instanceID),
+		Rows:       sqlite.RowQuerier{},
 	}
 }
