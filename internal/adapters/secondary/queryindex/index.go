@@ -1,4 +1,7 @@
-package service
+// Package queryindex is the ports.QueryIndex adapter: the NQE query library in
+// memory, loaded from the database or spec/nqe-queries.json, searched by
+// embedding similarity with keyword fallback.
+package queryindex
 
 import (
 	"encoding/json"
@@ -11,28 +14,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/forward-mcp/internal/domain"
 )
-
-// NQEQueryIndexEntry represents a query in the NQE library with AI-powered search capabilities
-type NQEQueryIndexEntry struct {
-	QueryID      string    `json:"queryId"`
-	Path         string    `json:"path"`
-	Intent       string    `json:"intent"`
-	Description  string    `json:"description"` // Add this field for extracted @description
-	Code         string    `json:"code"`
-	Category     string    `json:"category"`
-	Subcategory  string    `json:"subcategory"`
-	Repository   string    `json:"repository"` // Track which repository this query comes from
-	Embedding    []float32 `json:"embedding,omitempty"`
-	LastUpdated  time.Time `json:"lastUpdated"`
-	IsStrongMeta bool      `json:"isStrongMeta"` // New: flag for strong metadata
-}
 
 // NQEQueryIndex manages the searchable index of NQE queries
 type NQEQueryIndex struct {
-	queries             []*NQEQueryIndexEntry
+	queries             []*ports.NQEQueryIndexEntry
 	embeddings          map[string][]float32
 	embeddingService    ports.EmbeddingService
 	logger              ports.Logger
@@ -68,13 +54,6 @@ func (idx *NQEQueryIndex) SetLoading(loading bool) {
 	}
 }
 
-// QuerySearchResult represents a search result with similarity score
-type QuerySearchResult struct {
-	*NQEQueryIndexEntry
-	SimilarityScore float64 `json:"similarityScore"`
-	MatchType       string  `json:"matchType"` // "intent", "path", "code"
-}
-
 // NewNQEQueryIndex creates a new query index
 func NewNQEQueryIndex(embeddingService ports.EmbeddingService, logger ports.Logger) *NQEQueryIndex {
 	// Try to find the spec file using robust path resolution
@@ -93,7 +72,7 @@ func NewNQEQueryIndex(embeddingService ports.EmbeddingService, logger ports.Logg
 	}
 
 	return &NQEQueryIndex{
-		queries:             make([]*NQEQueryIndexEntry, 0),
+		queries:             make([]*ports.NQEQueryIndexEntry, 0),
 		embeddings:          make(map[string][]float32),
 		embeddingService:    embeddingService,
 		logger:              logger,
@@ -126,7 +105,7 @@ func (idx *NQEQueryIndex) LoadFromSpec() error {
 
 	// Parse the JSON file
 	var nqeLibrary struct {
-		Queries []*NQEQueryIndexEntry `json:"queries"`
+		Queries []*ports.NQEQueryIndexEntry `json:"queries"`
 	}
 
 	decoder := json.NewDecoder(file)
@@ -139,7 +118,7 @@ func (idx *NQEQueryIndex) LoadFromSpec() error {
 		return fmt.Errorf("no queries found in spec file")
 	}
 
-	filtered := make([]*NQEQueryIndexEntry, 0, len(nqeLibrary.Queries))
+	filtered := make([]*ports.NQEQueryIndexEntry, 0, len(nqeLibrary.Queries))
 	for _, query := range nqeLibrary.Queries {
 		segments := strings.Split(strings.Trim(query.Path, "/"), "/")
 		if len(segments) > 0 {
@@ -187,7 +166,7 @@ func (idx *NQEQueryIndex) LoadFromSpec() error {
 }
 
 // LoadFromQueries loads queries from a provided slice of NQEQueryDetail
-func (idx *NQEQueryIndex) LoadFromQueries(queries []domain.NQEQueryDetail) error {
+func (idx *NQEQueryIndex) LoadFromQueries(queries []ports.NQEQueryDetail) error {
 	idx.mutex.Lock()
 	defer idx.mutex.Unlock()
 
@@ -197,7 +176,7 @@ func (idx *NQEQueryIndex) LoadFromQueries(queries []domain.NQEQueryDetail) error
 		idx.isReady = true
 	}()
 
-	var strongMeta, weakMeta []*NQEQueryIndexEntry
+	var strongMeta, weakMeta []*ports.NQEQueryIndexEntry
 	for _, query := range queries {
 		segments := strings.Split(strings.Trim(query.Path, "/"), "/")
 		category := ""
@@ -227,7 +206,7 @@ func (idx *NQEQueryIndex) LoadFromQueries(queries []domain.NQEQueryDetail) error
 		}
 
 		isStrong := intent != "" && len(intent) >= 10 && desc != "" && len(desc) >= 10
-		entry := &NQEQueryIndexEntry{
+		entry := &ports.NQEQueryIndexEntry{
 			QueryID:      query.QueryID,
 			Path:         query.Path,
 			Intent:       intent,
@@ -257,7 +236,7 @@ func (idx *NQEQueryIndex) LoadFromMockData() error {
 	defer idx.mutex.Unlock()
 
 	// Create mock queries for testing
-	mockQueries := []*NQEQueryIndexEntry{
+	mockQueries := []*ports.NQEQueryIndexEntry{
 		{
 			QueryID:      "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029",
 			Path:         "/L3/Basic/All Devices",
@@ -448,7 +427,7 @@ func calculateCosineSimilarity(a, b []float32) float64 {
 }
 
 // SearchQueries performs semantic search on the query index
-func (idx *NQEQueryIndex) SearchQueries(searchText string, limit int) ([]*QuerySearchResult, error) {
+func (idx *NQEQueryIndex) SearchQueries(searchText string, limit int) ([]*ports.QuerySearchResult, error) {
 	idx.mutex.RLock()
 	defer idx.mutex.RUnlock()
 
@@ -473,7 +452,7 @@ func (idx *NQEQueryIndex) SearchQueries(searchText string, limit int) ([]*QueryS
 		for i, v := range searchEmbedding64 {
 			searchEmbedding[i] = float32(v)
 		}
-		var strongResults, weakResults []*QuerySearchResult
+		var strongResults, weakResults []*ports.QuerySearchResult
 		for _, query := range idx.queries {
 			if len(query.Embedding) == 0 {
 				continue
@@ -483,7 +462,7 @@ func (idx *NQEQueryIndex) SearchQueries(searchText string, limit int) ([]*QueryS
 				similarity *= 1.2 // Boost for strong metadata
 			}
 			if similarity > 0.01 {
-				result := &QuerySearchResult{
+				result := &ports.QuerySearchResult{
 					NQEQueryIndexEntry: query,
 					SimilarityScore:    similarity,
 					MatchType:          "semantic",
@@ -514,15 +493,15 @@ func (idx *NQEQueryIndex) SearchQueries(searchText string, limit int) ([]*QueryS
 	return idx.searchWithKeywords(searchText, limit)
 }
 
-func (idx *NQEQueryIndex) searchWithKeywords(searchText string, limit int) ([]*QuerySearchResult, error) {
+func (idx *NQEQueryIndex) searchWithKeywords(searchText string, limit int) ([]*ports.QuerySearchResult, error) {
 	searchTerms := strings.Fields(strings.ToLower(searchText))
-	var results []*QuerySearchResult
+	var results []*ports.QuerySearchResult
 
 	for _, query := range idx.queries {
 		// Remove metadata filtering - include all queries in keyword search
 		score := idx.calculateKeywordScore(query, searchTerms)
 		if score > 0 {
-			result := &QuerySearchResult{
+			result := &ports.QuerySearchResult{
 				NQEQueryIndexEntry: query,
 				SimilarityScore:    score,
 				MatchType:          "keyword",
@@ -547,7 +526,7 @@ func (idx *NQEQueryIndex) searchWithKeywords(searchText string, limit int) ([]*Q
 }
 
 // calculateKeywordScore calculates a keyword-based similarity score
-func (idx *NQEQueryIndex) calculateKeywordScore(query *NQEQueryIndexEntry, searchTerms []string) float64 {
+func (idx *NQEQueryIndex) calculateKeywordScore(query *ports.NQEQueryIndexEntry, searchTerms []string) float64 {
 	// Include intent and description as primary fields for matching
 	searchableText := strings.ToLower(fmt.Sprintf("%s %s %s %s %s %s %s",
 		query.Path,
@@ -619,7 +598,7 @@ func (idx *NQEQueryIndex) calculateKeywordScore(query *NQEQueryIndexEntry, searc
 }
 
 // isFoundationalDataQuery checks if a query is a foundational data source for counting operations
-func (idx *NQEQueryIndex) isFoundationalDataQuery(query *NQEQueryIndexEntry, searchTerms []string) bool {
+func (idx *NQEQueryIndex) isFoundationalDataQuery(query *ports.NQEQueryIndexEntry, searchTerms []string) bool {
 	// Check if search is about counting/analysis
 	isCountingSearch := false
 	for _, term := range searchTerms {
@@ -671,7 +650,7 @@ func (idx *NQEQueryIndex) isFoundationalDataQuery(query *NQEQueryIndexEntry, sea
 }
 
 // GetQueryByID retrieves a specific query by its ID
-func (idx *NQEQueryIndex) GetQueryByID(queryID string) (*NQEQueryIndexEntry, error) {
+func (idx *NQEQueryIndex) GetQueryByID(queryID string) (*ports.NQEQueryIndexEntry, error) {
 	idx.mutex.RLock()
 	defer idx.mutex.RUnlock()
 
@@ -766,7 +745,7 @@ func (idx *NQEQueryIndex) LoadIndex(filename string) error {
 		return fmt.Errorf("failed to read index file: %w", err)
 	}
 
-	var queries []*NQEQueryIndexEntry
+	var queries []*ports.NQEQueryIndexEntry
 	if err := json.Unmarshal(data, &queries); err != nil {
 		return fmt.Errorf("failed to unmarshal index: %w", err)
 	}
@@ -912,14 +891,14 @@ func (idx *NQEQueryIndex) extractKeyTerms(searchTerms []string) []string {
 }
 
 // Queries returns the list of NQE queries in the index (read-only)
-func (idx *NQEQueryIndex) Queries() []*NQEQueryIndexEntry {
+func (idx *NQEQueryIndex) Queries() []*ports.NQEQueryIndexEntry {
 	idx.mutex.RLock()
 	defer idx.mutex.RUnlock()
 	return idx.queries
 }
 
 // FilterQueriesByDirectory returns queries that match the specified directory path
-func (idx *NQEQueryIndex) FilterQueriesByDirectory(directory string) []*NQEQueryIndexEntry {
+func (idx *NQEQueryIndex) FilterQueriesByDirectory(directory string) []*ports.NQEQueryIndexEntry {
 	idx.mutex.RLock()
 	defer idx.mutex.RUnlock()
 
@@ -930,7 +909,7 @@ func (idx *NQEQueryIndex) FilterQueriesByDirectory(directory string) []*NQEQuery
 
 	// Normalize the directory path
 	normalizedDir := strings.Trim(directory, "/")
-	var filteredQueries []*NQEQueryIndexEntry
+	var filteredQueries []*ports.NQEQueryIndexEntry
 
 	for _, query := range idx.queries {
 		// Normalize the query path for comparison
@@ -950,13 +929,16 @@ func (idx *NQEQueryIndex) FilterQueriesByDirectory(directory string) []*NQEQuery
 	return filteredQueries
 }
 
-// ConvertToNQEQuery converts NQEQueryIndexEntry to domain.NQEQuery for compatibility
-func (entry *NQEQueryIndexEntry) ConvertToNQEQuery() domain.NQEQuery {
-	// Use the actual repository information from the API instead of inferring from path
-	return domain.NQEQuery{
-		QueryID:    entry.QueryID,
-		Path:       entry.Path,
-		Intent:     entry.Intent,
-		Repository: entry.Repository, // Use the stored repository from API
-	}
+// SpecPath locates the query specification that LoadFromSpec reads.
+func (idx *NQEQueryIndex) SpecPath() (string, error) {
+	return findSpecFile("NQELibrary.json")
 }
+
+// UsesSyntheticEmbeddings reports whether the embedding service produces
+// meaningless vectors, in which case GenerateEmbeddings refuses to run.
+func (idx *NQEQueryIndex) UsesSyntheticEmbeddings() bool {
+	return ports.IsSynthetic(idx.embeddingService)
+}
+
+// NQEQueryIndex implements the QueryIndex port.
+var _ ports.QueryIndex = (*NQEQueryIndex)(nil)

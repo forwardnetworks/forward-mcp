@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/adapters/secondary/semcache"
 	"github.com/forward-mcp/internal/domain"
 	"testing"
@@ -26,7 +27,7 @@ func setupSmartSearchTestService() *ForwardMCPService {
 	embeddingService := embeddings.NewMockEmbeddingService()
 
 	// Initialize query index
-	queryIndex := NewNQEQueryIndex(embeddingService, testLogger)
+	queryIndex := queryindex.NewNQEQueryIndex(embeddingService, testLogger)
 
 	// Initialize query index for tests with mock data instead of spec file
 	if err := queryIndex.LoadFromMockData(); err != nil {
@@ -320,9 +321,9 @@ func TestFindExecutableQuery_Parameters(t *testing.T) {
 // Test executable query mapping logic
 func TestExecutableQueryMapping(t *testing.T) {
 	// Create mock semantic results
-	semanticResults := []*QuerySearchResult{
+	semanticResults := []*domain.QuerySearchResult{
 		{
-			NQEQueryIndexEntry: &NQEQueryIndexEntry{
+			NQEQueryIndexEntry: &domain.NQEQueryIndexEntry{
 				Path:   "device_basic_info",
 				Intent: "Get basic device information",
 			},
@@ -330,7 +331,7 @@ func TestExecutableQueryMapping(t *testing.T) {
 			MatchType:       "semantic",
 		},
 		{
-			NQEQueryIndexEntry: &NQEQueryIndexEntry{
+			NQEQueryIndexEntry: &domain.NQEQueryIndexEntry{
 				Path:   "device_hardware",
 				Intent: "Get device hardware details",
 			},

@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"math"
 	"sort"
 	"time"
 
 	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
-	"github.com/forward-mcp/internal/service"
 )
 
 func main() {
@@ -20,7 +20,7 @@ func main() {
 
 	// Initialize keyword embedding service for fast benchmarking
 	embeddingService := embeddings.NewKeywordEmbeddingService()
-	queryIndex := service.NewNQEQueryIndex(embeddingService, logger)
+	queryIndex := queryindex.NewNQEQueryIndex(embeddingService, logger)
 
 	// Load queries
 	fmt.Printf("📖 Loading queries...")

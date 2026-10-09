@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/ports"
 	"os"
 	"time"
 
 	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
-	"github.com/forward-mcp/internal/service"
 )
 
 func main() {
@@ -64,7 +64,7 @@ func main() {
 	fmt.Printf("   🤖 Active Service: %s\n", serviceName)
 
 	// Initialize query index
-	queryIndex := service.NewNQEQueryIndex(embeddingService, logger)
+	queryIndex := queryindex.NewNQEQueryIndex(embeddingService, logger)
 
 	// Load queries
 	fmt.Printf("\n📖 Loading NQE Queries:\n")

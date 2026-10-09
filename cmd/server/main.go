@@ -11,6 +11,7 @@ import (
 	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
 	"github.com/forward-mcp/internal/adapters/secondary/instancelock"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/adapters/secondary/semcache"
 	"github.com/forward-mcp/internal/adapters/secondary/stderrlog"
 	"github.com/forward-mcp/internal/ports"
@@ -186,8 +187,8 @@ func main() {
 func newDeps(cfg *ports.Config, log ports.Logger) service.Deps {
 	embedder := embeddings.New(cfg.Forward.SemanticCache.EmbeddingProvider, os.Getenv("OPENAI_API_KEY"), log)
 	return service.Deps{
-		API:      forwardapi.NewClient(&cfg.Forward, log),
-		Embedder: embedder,
-		Cache:    semcache.NewSemanticCache(embedder, log, service.InstanceID(cfg), &cfg.Forward.SemanticCache),
+		API:        forwardapi.NewClient(&cfg.Forward, log),
+		Cache:      semcache.NewSemanticCache(embedder, log, service.InstanceID(cfg), &cfg.Forward.SemanticCache),
+		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
 	}
 }

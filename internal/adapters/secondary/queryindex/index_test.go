@@ -1,10 +1,11 @@
-package service
+package queryindex
 
 import (
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"testing"
 
 	logger "github.com/forward-mcp/internal/adapters/secondary/stderrlog"
+	"github.com/forward-mcp/internal/ports"
 )
 
 func TestSearchQueries_MetadataFiltering(t *testing.T) {
@@ -33,7 +34,7 @@ func TestSearchQueries_MetadataFiltering(t *testing.T) {
 		embedding5[i] = float32(v) * 0.85 // Somewhat different
 	}
 
-	idx.queries = []*NQEQueryIndexEntry{
+	idx.queries = []*ports.NQEQueryIndexEntry{
 		{QueryID: "1", Intent: "Show all routes", Description: "Returns all routes in the routing table for each device.", Embedding: embedding1},
 		{QueryID: "2", Intent: "", Description: "", Embedding: embedding2},      // Should be ignored
 		{QueryID: "3", Intent: "Short", Description: "", Embedding: embedding3}, // Should be ignored
@@ -70,7 +71,7 @@ func TestSearchQueries_EmbeddingPreferred(t *testing.T) {
 		embedding1[i] = float32(v)
 	}
 
-	idx.queries = []*NQEQueryIndexEntry{
+	idx.queries = []*ports.NQEQueryIndexEntry{
 		{QueryID: "1", Intent: "Show all routes", Description: "Returns all routes in the routing table for each device.", Embedding: embedding1},
 		{QueryID: "2", Intent: "Show all routes", Description: "Returns all routes in the routing table for each device.", Embedding: nil}, // No embedding
 	}
@@ -92,7 +93,7 @@ func TestSearchQueries_KeywordFallback(t *testing.T) {
 	log := logger.New()
 
 	idx := NewNQEQueryIndex(mockEmbeddingService, log)
-	idx.queries = []*NQEQueryIndexEntry{
+	idx.queries = []*ports.NQEQueryIndexEntry{
 		{QueryID: "1", Intent: "Show all routes", Description: "Returns all routes in the routing table for each device.", Embedding: nil},
 		{QueryID: "2", Intent: "Count routes", Description: "Count the number of routes per device.", Embedding: nil},
 	}

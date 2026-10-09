@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"os"
 	"strings"
 
@@ -18,7 +19,7 @@ func main() {
 	embeddingService := embeddings.NewKeywordEmbeddingService()
 
 	// Initialize query index
-	queryIndex := service.NewNQEQueryIndex(embeddingService, logger)
+	queryIndex := queryindex.NewNQEQueryIndex(embeddingService, logger)
 
 	fmt.Println("🚀 Forward Networks MCP - Smart Query Discovery Demo")
 	fmt.Println("=====================================================")

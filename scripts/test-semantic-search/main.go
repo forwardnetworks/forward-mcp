@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/ports"
 	"os"
 
@@ -49,7 +50,7 @@ func main() {
 	defer database.Close()
 
 	// Initialize NQE query index
-	queryIndex := service.NewNQEQueryIndex(embeddingService, appLogger)
+	queryIndex := queryindex.NewNQEQueryIndex(embeddingService, appLogger)
 
 	fmt.Println("📊 Testing query index loading...")
 

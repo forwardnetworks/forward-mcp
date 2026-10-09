@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/adapters/secondary/semcache"
 	"reflect"
 	"strings"
@@ -530,7 +531,7 @@ func createTestService() *ForwardMCPService {
 	semanticCache := semcache.NewSemanticCache(embeddingService, logger, "test", nil)
 
 	// Initialize query index with mock embedding service
-	queryIndex := NewNQEQueryIndex(embeddingService, logger)
+	queryIndex := queryindex.NewNQEQueryIndex(embeddingService, logger)
 
 	// Initialize query index for tests with mock data instead of spec file
 	if err := queryIndex.LoadFromMockData(); err != nil {
@@ -1183,9 +1184,9 @@ func TestCacheMetricsAndMonitoring(t *testing.T) {
 	logger := logger.New()
 	embedder := embeddings.NewMockEmbeddingService()
 	service := NewForwardMCPService(cfg, logger, Deps{
-		API:      NewMockForwardClient(),
-		Embedder: embedder,
-		Cache:    semcache.NewSemanticCache(embedder, logger, "test", &cfg.Forward.SemanticCache),
+		API:        NewMockForwardClient(),
+		Cache:      semcache.NewSemanticCache(embedder, logger, "test", &cfg.Forward.SemanticCache),
+		QueryIndex: queryindex.NewNQEQueryIndex(embedder, logger),
 	})
 
 	t.Run("get_cache_stats", func(t *testing.T) {

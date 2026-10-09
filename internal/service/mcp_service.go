@@ -133,7 +133,7 @@ type ForwardMCPService struct {
 	defaults          *ServiceDefaults
 	workflowManager   *WorkflowManager
 	semanticCache     ports.ResultCache
-	queryIndex        *NQEQueryIndex
+	queryIndex        ports.QueryIndex
 	database          *NQEDatabase
 	memorySystem      *MemorySystem       // Knowledge graph memory system
 	apiTracker        *APIMemoryTracker   // API result tracking using memory system
@@ -154,9 +154,9 @@ type ServiceDefaults struct {
 // Deps are the outside capabilities the service is built from. The caller
 // chooses each adapter.
 type Deps struct {
-	API      ports.ForwardAPI
-	Embedder ports.EmbeddingService
-	Cache    ports.ResultCache
+	API        ports.ForwardAPI
+	Cache      ports.ResultCache
+	QueryIndex ports.QueryIndex
 }
 
 // NewForwardMCPService creates the service from its configuration and deps.
@@ -173,7 +173,6 @@ func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, deps Deps) *F
 	forwardClient := deps.API
 
 	semanticCache := deps.Cache
-	embeddingService := deps.Embedder
 
 	// Create database with instance partitioning
 	database, err := NewNQEDatabase(logger, instanceID)
@@ -183,8 +182,7 @@ func NewForwardMCPService(cfg *domain.Config, logger ports.Logger, deps Deps) *F
 		database = nil
 	}
 
-	// Create query index
-	queryIndex := NewNQEQueryIndex(embeddingService, logger)
+	queryIndex := deps.QueryIndex
 
 	// Create memory system
 	memorySystem, err := NewMemorySystem(logger, instanceID)
@@ -1904,7 +1902,7 @@ func (s *ForwardMCPService) listNQEQueries(ctx context.Context, args ListNQEQuer
 	// Use database-backed query index instead of direct API calls
 	filteredEntries := s.queryIndex.FilterQueriesByDirectory(args.Directory)
 
-	// Convert NQEQueryIndexEntry to domain.NQEQuery for compatibility
+	// Convert domain.NQEQueryIndexEntry to domain.NQEQuery for compatibility
 	var queries []domain.NQEQuery
 	for _, entry := range filteredEntries {
 		queries = append(queries, entry.ConvertToNQEQuery())
@@ -2905,7 +2903,7 @@ func (s *ForwardMCPService) searchNQEQueries(ctx context.Context, args SearchNQE
 	}
 
 	// Apply category/subcategory filters if specified
-	var filteredResults []*QuerySearchResult
+	var filteredResults []*domain.QuerySearchResult
 	categoryFilterApplied := args.Category != ""
 	subcategoryFilterApplied := args.Subcategory != ""
 
@@ -2977,7 +2975,7 @@ func (s *ForwardMCPService) initializeQueryIndex(ctx context.Context, args Initi
 		response += "📖 Loading from spec file as fallback...\n"
 
 		// Check if spec file exists using robust path resolution
-		specPath, err := findSpecFile("NQELibrary.json")
+		specPath, err := s.queryIndex.SpecPath()
 		if err != nil {
 			return newToolResponse(newTextContent(fmt.Sprintf("No database data available and NQE spec file not found. Error: %v\n\n💡 **Solutions:**\n• Run 'hydrate_database' to load queries from API\n• Ensure the spec file exists in the 'spec' directory\n• Check that the MCP server is running from the correct directory", err))), nil
 		}
@@ -3009,7 +3007,7 @@ func (s *ForwardMCPService) initializeQueryIndex(ctx context.Context, args Initi
 
 	// Generate embeddings if requested
 	if args.GenerateEmbeddings {
-		if ports.IsSynthetic(s.queryIndex.embeddingService) {
+		if s.queryIndex.UsesSyntheticEmbeddings() {
 			response += "Cannot generate embeddings: OpenAI API key not configured\n"
 			response += "Set OPENAI_API_KEY environment variable to enable embedding generation\n"
 			response += "Current functionality limited to keyword-based search\n\n"
@@ -3153,7 +3151,7 @@ func (s *ForwardMCPService) hydrateDatabase(ctx context.Context, args HydrateDat
 		}
 		if s.queryIndex != nil && args.RegenerateEmbeddings {
 			s.logger.Info("🧠 Regenerating AI embeddings after hydration...")
-			if ports.IsSynthetic(s.queryIndex.embeddingService) {
+			if s.queryIndex.UsesSyntheticEmbeddings() {
 				s.logger.Warn("⚠️  Cannot generate embeddings: OpenAI API key not configured")
 			} else {
 				if err := s.queryIndex.GenerateEmbeddings(); err != nil {

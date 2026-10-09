@@ -5,6 +5,7 @@ import (
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/envconfig"
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
+	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/adapters/secondary/semcache"
 	"os"
 	"path/filepath"
@@ -60,9 +61,9 @@ func setupIntegrationTest(t *testing.T) *ForwardMCPService {
 
 	embedder := embeddings.NewKeywordEmbeddingService()
 	return NewForwardMCPService(cfg, log, Deps{
-		API:      forwardapi.NewClient(&cfg.Forward, log),
-		Embedder: embedder,
-		Cache:    semcache.NewSemanticCache(embedder, log, InstanceID(cfg), &cfg.Forward.SemanticCache),
+		API:        forwardapi.NewClient(&cfg.Forward, log),
+		Cache:      semcache.NewSemanticCache(embedder, log, InstanceID(cfg), &cfg.Forward.SemanticCache),
+		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
 	})
 }
 

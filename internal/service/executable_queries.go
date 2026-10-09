@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"github.com/forward-mcp/internal/domain"
 	"strings"
 )
 
@@ -99,10 +100,10 @@ func GetExecutableQueries() []ExecutableQuery {
 
 // QueryMappingResult represents the result of mapping semantic search to executable queries
 type QueryMappingResult struct {
-	ExecutableQuery   *ExecutableQuery     `json:"executable_query"`   // The executable query that can be run
-	SemanticMatches   []*QuerySearchResult `json:"semantic_matches"`   // Related queries found via semantic search
-	MappingConfidence float64              `json:"mapping_confidence"` // How confident we are in this mapping
-	MappingReason     string               `json:"mapping_reason"`     // Why this mapping was chosen
+	ExecutableQuery   *ExecutableQuery            `json:"executable_query"`   // The executable query that can be run
+	SemanticMatches   []*domain.QuerySearchResult `json:"semantic_matches"`   // Related queries found via semantic search
+	MappingConfidence float64                     `json:"mapping_confidence"` // How confident we are in this mapping
+	MappingReason     string                      `json:"mapping_reason"`     // Why this mapping was chosen
 }
 
 // SearchExecutableQueries performs keyword-based search through executable queries only
@@ -169,14 +170,14 @@ func calculateExecutableQueryScore(query ExecutableQuery, searchTerms string) fl
 }
 
 // MapSemanticToExecutable uses semantic search results to find the best executable query
-func MapSemanticToExecutable(semanticResults []*QuerySearchResult) []QueryMappingResult {
+func MapSemanticToExecutable(semanticResults []*domain.QuerySearchResult) []QueryMappingResult {
 	executableQueries := GetExecutableQueries()
 	var mappings []QueryMappingResult
 
 	for _, execQuery := range executableQueries {
-		var relatedMatches []*QuerySearchResult
+		var relatedMatches []*domain.QuerySearchResult
 		var totalConfidence float64
-		var bestMatch *QuerySearchResult
+		var bestMatch *domain.QuerySearchResult
 
 		// Find semantic matches that relate to this executable query
 		for _, semanticResult := range semanticResults {
@@ -216,13 +217,13 @@ func MapSemanticToExecutable(semanticResults []*QuerySearchResult) []QueryMappin
 }
 
 // MapSemanticToAllExecutable maps semantic results to all available queries in the index
-func MapSemanticToAllExecutable(semanticResults []*QuerySearchResult, allQueries []*NQEQueryIndexEntry) []QueryMappingResult {
+func MapSemanticToAllExecutable(semanticResults []*domain.QuerySearchResult, allQueries []*domain.NQEQueryIndexEntry) []QueryMappingResult {
 	var mappings []QueryMappingResult
 
 	for _, query := range allQueries {
-		var relatedMatches []*QuerySearchResult
+		var relatedMatches []*domain.QuerySearchResult
 		var totalConfidence float64
-		var bestMatch *QuerySearchResult
+		var bestMatch *domain.QuerySearchResult
 
 		for _, semanticResult := range semanticResults {
 			confidence := 0.0
@@ -299,7 +300,7 @@ func MapSemanticToAllExecutable(semanticResults []*QuerySearchResult, allQueries
 }
 
 // calculateMappingConfidence determines how well a semantic result maps to an executable query
-func calculateMappingConfidence(execQuery ExecutableQuery, semanticResult *QuerySearchResult) float64 {
+func calculateMappingConfidence(execQuery ExecutableQuery, semanticResult *domain.QuerySearchResult) float64 {
 	confidence := 0.0
 
 	// Check direct keyword matches
@@ -336,7 +337,7 @@ func calculateMappingConfidence(execQuery ExecutableQuery, semanticResult *Query
 }
 
 // generateMappingReason creates a human-readable explanation for the mapping
-func generateMappingReason(execQuery ExecutableQuery, bestMatch *QuerySearchResult, matchCount int) string {
+func generateMappingReason(execQuery ExecutableQuery, bestMatch *domain.QuerySearchResult, matchCount int) string {
 	if bestMatch == nil {
 		return "No specific matches found"
 	}
