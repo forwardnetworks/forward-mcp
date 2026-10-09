@@ -35,6 +35,27 @@
         }
       ],
       "updated": "2026-10-09T17:45:16.575836+00:00"
+    },
+    "b5d1991e-03f1-4b13-a13f-a1eb6b14c176": {
+      "files": [
+        "internal/domain/config.go",
+        "internal/usecases/executable_queries.go",
+        "internal/usecases/paths.go",
+        "examples/test_mcp.go",
+        "docs/adrs/ADR-2610091555-mcp-tool-quality-standards.md",
+        "docs/tool-quality-audit.md",
+        "docs/tool-quality-phase1-complete.md",
+        "internal/usecases/tools.go",
+        "docs/tool-quality-phase2-complete.md",
+        "docs/format-hints-guide.md",
+        "internal/adapters/primary/mcpserver/server.go",
+        "docs/tool-quality-phase3-complete.md"
+      ],
+      "gate": "CGO_ENABLED=1 go build ./... && CGO_ENABLED=1 go test -count=1 -skip TestIntegration ./internal/... && hexa analyze . --grade A+",
+      "pid": 51545,
+      "pid_start": null,
+      "stage": "gate",
+      "updated": "2026-10-09T18:48:20.721771+00:00"
     }
   }
 }

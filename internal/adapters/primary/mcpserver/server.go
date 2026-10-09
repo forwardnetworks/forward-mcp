@@ -220,11 +220,11 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 
 	// Device Management Tools
 	addTool(server, "list_devices",
-		"List devices in a network. Requires network_id. Returns basic device inventory with names, types, and status. Supports pagination with limit and offset. Use for device discovery and inventory management.",
+		"Tool to list all devices in a network with names, types, and operational status. Use when building device inventory or discovering network devices. Requires network_id. Returns basic device information. Supports pagination with limit and offset.",
 		s.ListDevices)
 
 	addTool(server, "get_device_locations",
-		"Get device location mappings for a network. Requires network_id. Shows which devices are assigned to which physical locations. Use for topology planning and device organization.",
+		"Tool to retrieve device-to-location mappings showing which devices are assigned to physical locations. Use when planning topology or organizing devices by site. Requires network_id. Returns device location assignments.",
 		s.GetDeviceLocations)
 
 	// Snapshot Management Tools
@@ -233,58 +233,58 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 		s.ListSnapshots)
 
 	addTool(server, "get_latest_snapshot",
-		"Get the latest processed snapshot for a network. Requires network_id. Returns the most recent network state. Use to ensure queries run against current configuration.",
+		"Tool to get the most recent processed snapshot for a network. Use when you need the current network state ID for queries. Requires network_id. Returns latest snapshot with ID and timestamp.",
 		s.GetLatestSnapshot)
 
 	addTool(server, "delete_snapshot",
-		"Delete a network snapshot. Requires snapshot_id. WARNING: This permanently removes the snapshot and associated historical data. Use with caution for cleanup of old snapshots.",
+		"Tool to permanently delete a network snapshot and its associated historical data. Use when cleaning up old snapshots to free storage. Requires snapshot_id. WARNING: This action cannot be undone.",
 		s.DeleteSnapshot)
 
 	// Location Management Tools
 	addTool(server, "list_locations",
-		"List locations in a network. Requires network_id. Returns physical locations with names and coordinates. Use to view network topology and organize devices by location. Supports pagination (limit/offset) and memory storage for large datasets. Default limit is 25 to prevent token overflow.",
+		"Tool to list all physical locations in a network with names, coordinates, and site information. Use when viewing network topology or organizing devices by site. Requires network_id. Returns locations with lat/lng coordinates. Supports pagination and memory storage.",
 		s.ListLocations)
 
 	addTool(server, "create_location",
-		"Create a new location in a network. Requires network_id, location name, latitude, and longitude. Optional city, adminDivision, and country. Use to set up new sites or data centers for device organization.",
+		"Tool to create a new physical location for device organization. Use when setting up new sites or data centers. Requires network_id, name, latitude, and longitude. Optional: city, adminDivision, country. Returns created location with ID.",
 		s.CreateLocation)
 
 	addTool(server, "update_location",
-		"Update an existing location in a network. Requires network_id and location_id. Optional new name, description, latitude, and longitude. Use to modify location details.",
+		"Tool to modify an existing physical location's details. Use when correcting location information or updating coordinates. Requires network_id and location_id. Optional: name, latitude, longitude, city, adminDivision, country.",
 		s.UpdateLocation)
 
 	addTool(server, "delete_location",
-		"Delete a location from a network. Requires network_id and location_id. Use to remove locations that are no longer needed.",
+		"Tool to remove a physical location from a network. Use when decommissioning sites or cleaning up unused locations. Requires network_id and location_id. Devices assigned to this location will be unassigned.",
 		s.DeleteLocation)
 
 	addTool(server, "create_locations_bulk",
-		"Create or update multiple network locations in a single operation. Requires network_id and an array of locations. Uses PATCH /api/networks/{networkId}/locations. Locations with existing IDs will be updated, others will be created.",
+		"Tool to create or update multiple locations in a single operation for efficiency. Use when importing site data or bulk location setup. Requires network_id and array of locations. Locations with existing IDs are updated; new ones are created.",
 		s.CreateLocationsBulk)
 
 	addTool(server, "update_device_locations",
-		"Update device location assignments in bulk. Requires network_id and a map of device IDs to location IDs. Use to assign multiple devices to their physical locations efficiently. Note: Cloud devices (CSR1KV, PAN-FW, etc.) cannot be moved to physical locations.",
+		"Tool to assign multiple devices to physical locations in bulk. Use when organizing devices by site or importing topology data. Requires network_id and map of device IDs to location IDs. Note: Cloud devices (CSR1KV, PAN-FW) cannot be assigned to physical locations.",
 		s.UpdateDeviceLocations)
 
 	// Default Settings Management Tools
 	addTool(server, "get_default_settings",
-		"View current default settings for network operations. Shows the default network ID, snapshot ID, and query limits configured for this session.",
+		"Tool to view current default settings including default network ID, snapshot ID, and query limits. Use when checking session configuration or troubleshooting default behavior. Returns current defaults for this session.",
 		s.GetDefaultSettings)
 
 	addTool(server, "set_default_network",
-		"Set the default network for all operations. Accepts either a network ID or network name. This will be used when network_id is not specified in other tools.",
+		"Tool to set the default network for all subsequent operations. Use when working with a single network to avoid repeating network_id in every tool call. Accepts network ID or network name. Applies to all tools until changed.",
 		s.SetDefaultNetwork)
 
 	// Semantic Cache and AI Enhancement Tools
 	addTool(server, "get_cache_stats",
-		"View semantic cache performance statistics including hit rates, total queries, and cache efficiency metrics.",
+		"Tool to view semantic cache performance statistics including hit rates, total queries, and efficiency metrics. Use when monitoring cache performance or troubleshooting slow queries. Returns cache statistics and memory usage.",
 		s.GetCacheStats)
 
 	addTool(server, "suggest_similar_queries",
-		"Get suggestions for similar NQE queries based on semantic similarity to your query intent. Helps discover relevant existing queries.",
+		"Tool to find NQE queries similar to your query intent using semantic similarity. Use when discovering related queries or finding alternatives. Requires query intent description. Returns ranked query suggestions.",
 		s.SuggestSimilarQueries)
 
 	addTool(server, "clear_cache",
-		"Clear expired entries from the semantic cache to free up memory and improve performance.",
+		"Tool to remove expired entries from the semantic cache and free memory. Use when cache is full or performance degrades. Removes only expired entries; active cache remains. Returns cleanup statistics.",
 		s.ClearCache)
 
 	// AI-Powered Query Discovery Tools
@@ -315,103 +315,103 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 	})
 
 	addTool(server, "initialize_query_index",
-		"Initialize or rebuild the AI-powered NQE query index from the spec file. REQUIRED before using search_nqe_queries. Run this once at startup or when you get 'query index is empty' errors. Can generate embeddings for semantic search if OpenAI API key is available.",
+		"Tool to initialize or rebuild the AI-powered NQE query index from spec file. Use at startup or when receiving 'query index is empty' errors. Required before using search_nqe_queries. Can generate embeddings for semantic search if OpenAI API key available.",
 		s.InitializeQueryIndex)
 
 	// Database Hydration Tools
 	addTool(server, "hydrate_database",
-		"Hydrate the NQE database by loading queries from the Forward Networks API. Use this to refresh the database with latest query metadata and ensure optimal performance for search operations. Automatically refreshes the query index and optionally regenerates AI embeddings.",
+		"Tool to load NQE queries from Forward Networks API into local database. Use when refreshing query metadata or ensuring search performance. Automatically refreshes query index. Optionally regenerates AI embeddings. Run periodically to stay current with API changes.",
 		s.HydrateDatabase)
 
 	addTool(server, "refresh_query_index",
-		"Refresh the query index from the current database content. Use this after hydrating the database to ensure the search index reflects the latest data.",
+		"Tool to rebuild in-memory NQE query index from database. Use after hydrate_database or when index seems stale. Much faster than full initialization. Returns index statistics and query count.",
 		s.RefreshQueryIndex)
 
 	addTool(server, "get_database_status",
-		"Get the current status of the database and query index including query counts, last update times, and performance metrics.",
+		"Tool to check NQE database health including query counts, last update timestamp, metadata coverage, and performance metrics. Use when troubleshooting search issues or verifying database freshness. Returns detailed status information.",
 		s.GetDatabaseStatus)
 
 	// Memory Management Tools
 	addTool(server, "create_entity",
-		"Create a new entity in the knowledge graph memory system. Entities represent people, networks, devices, projects, or any other important concept to remember.",
+		"Tool to create a new entity (person, network, device, project, or concept) in the knowledge graph. Use when storing information for later retrieval. Requires name and type. Returns created entity with ID.",
 		s.CreateEntity)
 
 	addTool(server, "create_relation",
-		"Create a relation between two entities in the knowledge graph. Relations represent how entities are connected (e.g., 'owns', 'manages', 'depends_on').",
+		"Tool to create a relationship between two entities expressing how they connect (e.g., 'owns', 'manages', 'depends_on'). Use when building knowledge connections. Requires from_entity, to_entity, and relation_type.",
 		s.CreateRelation)
 
 	addTool(server, "add_observation",
-		"Add an observation to an entity. Observations are additional facts, notes, preferences, or behaviors associated with an entity.",
+		"Tool to add a timestamped fact, note, preference, or behavior to an entity. Use when recording discoveries or important information. Requires entity name and observation text. Returns observation with timestamp.",
 		s.AddObservation)
 
 	addTool(server, "search_entities",
-		"Search for entities in the knowledge graph by name, type, or observation content. Use this to find information you've stored about people, networks, or concepts.",
+		"Tool to search for entities in the knowledge graph by name, type, or observation content using full-text search. Use when finding stored information. Returns matching entities.",
 		s.SearchEntities)
 
 	addTool(server, "get_entity",
-		"Retrieve a specific entity by ID or name. Use this to get detailed information about a specific person, network, device, or concept.",
+		"Tool to retrieve a specific entity by ID or name with all its details. Use when looking up stored information about a person, network, device, or concept. Returns entity with metadata.",
 		s.GetEntity)
 
 	addTool(server, "get_relations",
-		"Get all relations for a specific entity. Use this to understand how an entity is connected to others in the knowledge graph.",
+		"Tool to retrieve all relationships for a specific entity showing its connections. Use when exploring knowledge network. Requires entity name. Returns list of relations.",
 		s.GetRelations)
 
 	addTool(server, "get_observations",
-		"Get all observations for a specific entity. Use this to retrieve all stored facts, notes, and preferences about an entity.",
+		"Tool to retrieve all timestamped facts, notes, and preferences for a specific entity. Use when reviewing stored information. Requires entity name. Returns list of observations.",
 		s.GetObservations)
 
 	addTool(server, "delete_entity",
-		"Delete an entity and all its relations and observations. Use with caution as this permanently removes all stored information about the entity.",
+		"Tool to permanently remove an entity and all its relations and observations from the knowledge graph. Use when cleaning up. Requires entity name. WARNING: Cannot be undone.",
 		s.DeleteEntity)
 
 	addTool(server, "delete_relation",
-		"Delete a specific relation between entities. Use this to remove connections that are no longer relevant.",
+		"Tool to remove a specific relationship between entities. Use when connections are no longer relevant. Requires from_entity, to_entity, and relation_type.",
 		s.DeleteRelation)
 
 	addTool(server, "delete_observation",
-		"Delete a specific observation from an entity. Use this to remove outdated or incorrect information.",
+		"Tool to remove a specific observation from an entity. Use when removing outdated or incorrect information. Requires entity name and observation ID.",
 		s.DeleteObservation)
 
 	addTool(server, "get_memory_stats",
-		"Get statistics about the memory system including counts of entities, relations, and observations by type.",
+		"Tool to view memory system statistics including counts of entities, relations, and observations by type. Use when monitoring knowledge graph usage. Returns detailed statistics.",
 		s.GetMemoryStats)
 
 	// API Analytics Tools
 	addTool(server, "get_query_analytics",
-		"Get analytics about query patterns and performance for a specific network. Shows query counts, execution times, result patterns, and usage trends from the memory system.",
+		"Tool to view query analytics for a network including query counts, execution times, result patterns, and usage trends. Use when analyzing query performance or optimizing queries. Requires network_id. Returns analytics from memory system.",
 		s.GetQueryAnalytics)
 
 	// Instance Management Tools
 	addTool(server, "list_instance_ids",
-		"List all available Forward Networks instance IDs in the database. Shows instance IDs with query counts and sync dates. Use this to find the correct instance ID to configure in FORWARD_INSTANCE_ID environment variable.",
+		"Tool to list all Forward Networks instance IDs in the database with query counts and sync dates. Use when finding the correct instance ID for FORWARD_INSTANCE_ID environment variable. Returns instance IDs and metadata.",
 		s.ListInstanceIDs)
 
 	// Tool handler for get_nqe_result_chunks
 	addTool(server, "get_nqe_result_chunks",
-		"Retrieve chunked NQE query results from the memory system. Provide either entity_id or (query_id, network_id, snapshot_id). Optionally, specify chunk_index to fetch a single chunk.",
+		"Tool to retrieve chunked NQE query results from memory system. Use when accessing large stored query results. Provide entity_id or (query_id, network_id, snapshot_id). Optional chunk_index for single chunk. Returns result chunks.",
 		s.GetNQEResultChunks)
 
 	// Add get_nqe_result_summary tool handler
 	addTool(server, "get_nqe_result_summary",
-		"Get a summary of a stored NQE result (row count, columns, preview rows) by entity_id or (query_id, network_id, snapshot_id).",
+		"Tool to get a summary of stored NQE result including row count, columns, and preview rows. Use when checking result size before loading full dataset. Provide entity_id or (query_id, network_id, snapshot_id). Returns summary information.",
 		s.GetNQEResultSummary)
 
 	// Add analyze_nqe_result_sql tool handler
 	addTool(server, "analyze_nqe_result_sql",
-		"Run a SQL query on a stored NQE result (by entity_id). Example: SELECT COUNT(*) FROM nqe_result;",
+		"Tool to run SQL queries on stored NQE results for advanced analysis. Use when performing aggregations, filtering, or joins on stored data. Requires entity_id and SQL query. Example: SELECT COUNT(*) FROM nqe_result. Returns query results.",
 		s.AnalyzeNQEResultSQL)
 
 	// Add bloom search tool handlers
 	addTool(server, "build_bloom_filter",
-		"Build a bloom filter from NQE query results for efficient large dataset searching",
+		"Tool to create a bloom filter index from NQE query results for ultra-fast searching of large datasets. Use when you need instant membership testing on results with >100 items. Creates persistent index. Returns filter statistics.",
 		s.BuildBloomFilter)
 
 	addTool(server, "search_bloom_filter",
-		"Search a bloom filter for matching items with sub-millisecond performance",
+		"Tool to perform sub-millisecond searches in bloom filter indexes. Use when checking if items exist in large datasets. Requires filter_type and search_terms. Returns matching items.",
 		s.SearchBloomFilter)
 
 	addTool(server, "get_bloom_filter_stats",
-		"Get statistics and performance metrics for all bloom filters",
+		"Tool to view statistics and performance metrics for all bloom filter indexes. Use when monitoring filter performance. Returns filter metrics including size, item count, and false positive rate.",
 		s.GetBloomFilterStats)
 
 	return nil
