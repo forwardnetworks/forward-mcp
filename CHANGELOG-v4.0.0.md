@@ -388,7 +388,7 @@ None. All tests pass.
 
 - **ADR-2610091315:** Hexagonal Architecture
 - **ADR-2610091555:** Tool Quality Standards
-- **Hexa:** https://github.com/dreambigou/hexa
+- **Hexa:** https://github.com/gaberger/hexa
 - **Composio Guide:** https://composio.dev/blog/how-to-build-tools-for-ai-agents-a-field-guide
 - **MCP Protocol:** https://modelcontextprotocol.io/
 - **Forward API:** https://docs.fwd.app/latest/api/
