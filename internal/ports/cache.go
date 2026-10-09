@@ -23,6 +23,9 @@ func IsSynthetic(svc EmbeddingService) bool {
 // query that produced them, not only by its exact text.
 type ResultCache interface {
 	Get(query, networkID, snapshotID string) (*NQERunResult, bool)
+	// GetExact matches only the exact same query text. Use it for keys built
+	// from IDs and parameters, where "similar" means a different result.
+	GetExact(query, networkID, snapshotID string) (*NQERunResult, bool)
 	Put(query, networkID, snapshotID string, result *NQERunResult) error
 	FindSimilarQueries(query string, limit int) ([]*CacheEntry, error)
 	GetStats() map[string]interface{}

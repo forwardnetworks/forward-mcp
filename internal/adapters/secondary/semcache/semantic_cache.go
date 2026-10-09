@@ -241,6 +241,16 @@ func (sc *SemanticCache) cosineSimilarity(a, b []float64) float64 {
 
 // Get attempts to retrieve a cached result using semantic similarity
 func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*ports.NQERunResult, bool) {
+	return sc.get(query, networkID, snapshotID, true)
+}
+
+// GetExact returns a cached result only for the exact same query text.
+// Use it when the query is an identifier, not natural language.
+func (sc *SemanticCache) GetExact(query, networkID, snapshotID string) (*ports.NQERunResult, bool) {
+	return sc.get(query, networkID, snapshotID, false)
+}
+
+func (sc *SemanticCache) get(query, networkID, snapshotID string, semantic bool) (*ports.NQERunResult, bool) {
 	start := time.Now()
 	defer func() {
 		if sc.metricsEnabled {
@@ -279,7 +289,7 @@ func (sc *SemanticCache) Get(query, networkID, snapshotID string) (*ports.NQERun
 	}
 
 	// Generate embedding for semantic search if embedding service available
-	if sc.embeddingService != nil {
+	if semantic && sc.embeddingService != nil {
 		embedding, err := sc.embeddingService.GenerateEmbedding(query)
 		if err != nil {
 			sc.logger.Debug("Failed to generate embedding for semantic search: %v", err)

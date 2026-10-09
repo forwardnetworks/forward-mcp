@@ -183,9 +183,10 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 	// Create cache key from query parameters
 	cacheKey := fmt.Sprintf("query_id:%s|params:%v", args.QueryID, args.Parameters)
 
-	// Try to get result from cache first
+	// Try to get result from cache first. Exact match only: the key is an ID
+	// plus parameters, and a "similar" key is a different query or device.
 	if s.config.Forward.SemanticCache.Enabled && s.semanticCache != nil {
-		if cachedResult, found := s.semanticCache.Get(cacheKey, networkID, snapshotID); found {
+		if cachedResult, found := s.semanticCache.GetExact(cacheKey, networkID, snapshotID); found {
 			s.logger.Debug("Cache hit for NQE query %s", args.QueryID)
 			return textResult(MarshalCompactJSONString(cachedResult)), nil
 		}
