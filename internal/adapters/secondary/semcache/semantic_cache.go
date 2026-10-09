@@ -254,7 +254,10 @@ func (sc *SemanticCache) get(query, networkID, snapshotID string, semantic bool)
 	start := time.Now()
 	defer func() {
 		if sc.metricsEnabled {
-			sc.metrics.AvgResponseTimeMs = (sc.metrics.AvgResponseTimeMs + float64(time.Since(start).Nanoseconds())/1e6) / 2
+			elapsedMs := float64(time.Since(start).Nanoseconds()) / 1e6
+			sc.mutex.Lock()
+			sc.metrics.AvgResponseTimeMs = (sc.metrics.AvgResponseTimeMs + elapsedMs) / 2
+			sc.mutex.Unlock()
 		}
 	}()
 
@@ -295,8 +298,10 @@ func (sc *SemanticCache) get(query, networkID, snapshotID string, semantic bool)
 			sc.logger.Debug("Failed to generate embedding for semantic search: %v", err)
 		} else {
 			// Search for semantically similar queries
-			bestMatch := sc.findBestMatch(embedding, networkID, snapshotID)
-			if bestMatch != nil && bestMatch.SimilarityScore >= sc.similarityThreshold {
+			sc.mutex.RLock()
+			bestMatch, bestSimilarity := sc.findBestMatch(embedding, networkID, snapshotID)
+			sc.mutex.RUnlock()
+			if bestMatch != nil && bestSimilarity >= sc.similarityThreshold {
 				result, err := sc.getResultFromEntry(bestMatch)
 				if err != nil {
 					sc.logger.Error("Failed to retrieve result from best match: %v", err)
@@ -313,7 +318,7 @@ func (sc *SemanticCache) get(query, networkID, snapshotID string, semantic bool)
 				atomic.AddInt64(&sc.metrics.HitCount, 1)
 
 				sc.logger.Debug("CACHE HIT: Semantic match (%.3f similarity) for query: %s",
-					bestMatch.SimilarityScore, truncateString(query, 50))
+					bestSimilarity, truncateString(query, 50))
 				return result, true
 			}
 		}
@@ -427,8 +432,9 @@ func (sc *SemanticCache) Put(query, networkID, snapshotID string, result *ports.
 	return nil
 }
 
-// findBestMatch finds the most similar cached query
-func (sc *SemanticCache) findBestMatch(embedding []float64, networkID, snapshotID string) *ports.CacheEntry {
+// findBestMatch finds the most similar cached query. Callers hold sc.mutex.
+// It returns the similarity instead of writing it onto the shared entry.
+func (sc *SemanticCache) findBestMatch(embedding []float64, networkID, snapshotID string) (*ports.CacheEntry, float64) {
 	var bestMatch *ports.CacheEntry
 	var bestSimilarity float64
 
@@ -447,11 +453,7 @@ func (sc *SemanticCache) findBestMatch(embedding []float64, networkID, snapshotI
 		}
 	}
 
-	if bestMatch != nil {
-		bestMatch.SimilarityScore = bestSimilarity
-	}
-
-	return bestMatch
+	return bestMatch, bestSimilarity
 }
 
 // isExpired checks if a cache entry has expired
@@ -648,8 +650,9 @@ func (sc *SemanticCache) evictLargest() {
 
 // GetStats returns cache performance statistics
 func (sc *SemanticCache) GetStats() map[string]interface{} {
-	sc.mutex.RLock()
-	defer sc.mutex.RUnlock()
+	// Write lock: this updates the cached metric fields.
+	sc.mutex.Lock()
+	defer sc.mutex.Unlock()
 
 	// SECURITY FIX: Use atomic operations to read metrics safely
 	totalQueries := atomic.LoadInt64(&sc.metrics.TotalQueries)
