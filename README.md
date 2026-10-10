@@ -1,6 +1,6 @@
 # Forward MCP
 
-**Version 4.2.0** • [![Architecture Grade](https://img.shields.io/badge/hexa-A%2B%20100%2F100-brightgreen)](https://github.com/gaberger/hexa)
+**Version 4.3.0** • [![Architecture Grade](https://img.shields.io/badge/hexa-A%2B%20100%2F100-brightgreen)](https://github.com/gaberger/hexa)
 
 Forward MCP is an open-source server that provides a set of tools and APIs for interacting with Forward Networks' platform. It enables automation, analysis, and integration with network data using the Model Context Protocol (MCP).
 
@@ -19,6 +19,20 @@ Built with hexagonal architecture for clean separation of concerns and easy exte
 - **Security Hardened**: TLS 1.3+ enforcement, SHA-256 hashing, path traversal protection, race-condition free
 - **Remote Server Mode (preview)**: Streamable HTTP transport (plus legacy SSE) with API-key or JWT (JWKS) authentication, per-user rate limits, and health endpoints
 - **BM25 Query Search**: ranks the NQE query library by term rarity and field weight, fused with embedding similarity when embeddings exist
+
+## What's New in 4.3.0
+
+### Automatic Query Database Hydration
+The server now automatically loads queries from the Forward Networks API on first startup. No manual initialization required.
+
+- Runs in the background during server startup (non-blocking)
+- Checks database; if fewer than 100 queries exist, fetches from API automatically
+- Loads ~1800+ queries with full metadata including descriptions (not in the spec file)
+- Uses `GetNQEAllQueriesEnhanced` for both org queries (your custom queries) and fwd queries (Forward's official library)
+- 90-second timeout with graceful error handling
+- After first load, subsequent startups use the cached database
+
+**First-run experience**: Just start the server. It handles the rest.
 
 ## What's New in 4.2.0
 

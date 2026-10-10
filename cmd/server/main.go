@@ -260,7 +260,7 @@ func newDeps(cfg *ports.Config, log ports.Logger) usecases.Deps {
 		memory = m
 	}
 
-	return usecases.Deps{
+	deps := usecases.Deps{
 		API:        forwardapi.NewClient(&cfg.Forward, log),
 		Cache:      semcache.NewSemanticCache(embedder, log, instanceID, &cfg.Forward.SemanticCache),
 		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
@@ -268,5 +268,53 @@ func newDeps(cfg *ports.Config, log ports.Logger) usecases.Deps {
 		Memory:     memory,
 		Bloom:      bloom.NewBloomSearchManager(log, instanceID),
 		Rows:       sqlite.RowQuerier{},
+	}
+
+	// Auto-hydrate database on first run (background, non-blocking)
+	if queryStore != nil {
+		go autoHydrateDatabase(queryStore, deps.API, log)
+	}
+
+	return deps
+}
+
+// autoHydrateDatabase checks if the query database is sparse and loads from the API if needed.
+// Runs in the background without blocking server startup.
+func autoHydrateDatabase(queryStore ports.QueryStore, api ports.ForwardAPI, log ports.Logger) {
+	if queryStore == nil {
+		return
+	}
+
+	// Create background context with timeout for the hydration operation
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	// Check current database state
+	queries, err := queryStore.LoadQueries()
+	queryCount := 0
+	if err == nil {
+		queryCount = len(queries)
+	}
+
+	// Hydrate if database is sparse (< 100 queries)
+	if err != nil || queryCount < 100 {
+		log.Info("Auto-hydrating query database: found %d queries, fetching from API...", queryCount)
+
+		// Fetch fresh queries from API (both org and fwd queries)
+		freshQueries, err := api.GetNQEAllQueriesEnhanced(ctx, nil)
+		if err != nil {
+			log.Error("Auto-hydration failed: %v", err)
+			return
+		}
+
+		// Save to database
+		if err := queryStore.SaveQueries(freshQueries); err != nil {
+			log.Error("Auto-hydration: failed to save queries: %v", err)
+			return
+		}
+
+		log.Info("Auto-hydration complete: loaded and saved %d queries", len(freshQueries))
+	} else {
+		log.Debug("Database has %d queries, skipping auto-hydration", queryCount)
 	}
 }

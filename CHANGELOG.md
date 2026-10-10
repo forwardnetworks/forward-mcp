@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.3.0] - 2026-10-10 - Auto-Hydration on First Startup
+
+### Added
+- **Automatic query database hydration** — server now auto-loads queries from the Forward Networks API on first startup.
+  - Runs in background without blocking server startup.
+  - Checks database on startup; if fewer than 100 queries exist, fetches from API automatically.
+  - Uses `GetNQEAllQueriesEnhanced` to load both org queries (custom) and fwd queries (official library) with full metadata.
+  - Eliminates need for manual database initialization step.
+  - 90-second timeout with graceful error handling.
+
+### Changed
+- First-run experience: users no longer need to manually initialize the query database.
+- Database loads ~1800+ queries automatically from API, including descriptions missing from spec file.
+
 ## [4.2.0] - 2026-10-09 - Snapshot Comparison and Enhanced Path Analysis
 
 ### Added
