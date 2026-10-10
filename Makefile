@@ -79,18 +79,18 @@ test-coverage-all:
 benchmark-auto-hydration:
 	@echo "Running auto-hydration benchmarks..."
 	@echo "💡 Benchmarks: database hydration, embedding generation, smart caching"
-	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/usecases -benchmem | grep -E "^Benchmark|^goos|^goarch|^pkg|^cpu"
+	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/usecases -benchmem 2>&1 | grep -v "\[INFO\]" | grep -v "\[DEBUG\]" | grep -E "^Benchmark|^goos|^goarch|^pkg|^cpu"
 
 # Run benchmarks for query index operations
 benchmark-query-index:
 	@echo "Running query index benchmarks..."
 	@echo "💡 Benchmarks: embedding generation, search (BM25 + hybrid)"
-	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/adapters/secondary/queryindex -benchmem | grep -E "^Benchmark|^goos|^goarch|^pkg|^cpu"
+	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/adapters/secondary/queryindex -benchmem 2>&1 | grep -v "\[INFO\]" | grep -v "\[DEBUG\]" | grep -E "^Benchmark|^goos|^goarch|^pkg|^cpu"
 
 # Run all benchmarks with basic output
 benchmark-all:
 	@echo "Running all benchmarks..."
-	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/... -benchmem
+	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/... -benchmem 2>&1 | grep -v "\[INFO\]" | grep -v "\[DEBUG\]"
 
 # Run benchmarks with formatted report
 benchmark-report:

@@ -35,8 +35,11 @@ echo ""
 RAW_OUTPUT="$OUTPUT_DIR/raw-$TIMESTAMP.txt"
 FORMATTED_OUTPUT="$OUTPUT_DIR/report-$TIMESTAMP.txt"
 
-# Run benchmarks and save raw output
-CGO_ENABLED=1 go test -bench=. -run=^$ -benchtime="$BENCHTIME" -benchmem ./internal/... 2>&1 | tee "$RAW_OUTPUT"
+# Run benchmarks and save raw output (filter out INFO/DEBUG logs)
+CGO_ENABLED=1 go test -bench=. -run=^$ -benchtime="$BENCHTIME" -benchmem ./internal/... 2>&1 | \
+    grep -v "\[INFO\]" | \
+    grep -v "\[DEBUG\]" | \
+    tee "$RAW_OUTPUT"
 
 echo ""
 echo -e "${GREEN}✓ Raw results saved to: ${NC}$RAW_OUTPUT"
