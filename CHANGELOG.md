@@ -1,5 +1,33 @@
 # Changelog
 
+## [4.3.2] - 2026-10-10 - Performance Benchmarking Infrastructure
+
+### Added
+- **Comprehensive benchmark suite** — performance tests for auto-hydration and query search operations.
+  - 10 benchmarks covering database operations, embedding generation, and search performance.
+  - `BenchmarkDatabaseHydration`, `BenchmarkIncrementalUpdate`, `BenchmarkQueryStoreOperations` (auto-hydration).
+  - `BenchmarkGenerateEmbeddings`, `BenchmarkSearchQueries_BM25`, `BenchmarkSearchQueries_Hybrid` (query index).
+  - Measures time/operation, memory usage, and allocation counts.
+- **Formatted benchmark reporting** — `scripts/benchmark-report.sh` generates clean, readable reports.
+  - Color-coded output with aligned tables.
+  - Automatic unit conversion (ns/µs/ms, B/KB/MB).
+  - Key insights extracted (search performance comparisons, speedup ratios).
+  - Results saved to `benchmark-results/` with timestamps.
+- **Makefile targets** — convenient commands for running benchmarks.
+  - `make benchmark-report` — full report (1s benchtime).
+  - `make benchmark-report-quick` — quick report (100ms benchtime).
+  - `make benchmark-auto-hydration`, `make benchmark-query-index`, `make benchmark-all`.
+
+### Changed
+- Benchmarks use keyword embedder (production config) instead of mock service.
+- Benchmark output filtered to remove INFO/DEBUG logs for clean results.
+- README updated with benchmark section showing typical performance metrics.
+
+### Performance Metrics (Apple M3 Pro)
+- Query search: BM25 ~639µs, Hybrid ~4.06ms (6.3x slower, more accurate).
+- Database operations: LoadQueries ~8.5µs, SaveQueries ~64µs.
+- Memory usage: BM25 ~543KB, Hybrid ~650KB per search.
+
 ## [4.3.1] - 2026-10-10 - Automatic Embedding Generation
 
 ### Added
