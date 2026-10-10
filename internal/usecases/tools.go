@@ -454,3 +454,15 @@ type ConnectivityAnalysisResult struct {
 	AggregationLevel string   `json:"aggregation_level"`
 	Details          []string `json:"details,omitempty"`
 }
+
+// Skills Extension Tool Arguments
+
+// SkillsListArgs contains parameters for listing skills.
+type SkillsListArgs struct {
+	// No parameters - returns all available skills
+}
+
+// SkillsGetArgs contains parameters for getting a specific skill.
+type SkillsGetArgs struct {
+	URI string `json:"uri" jsonschema:"Skill URI. Required. Format: skill://<skill-name>/SKILL.md"`
+}

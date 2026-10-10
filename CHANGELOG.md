@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.4.0] - 2026-10-10 - MCP Skills Extension
+
+### Added
+- **MCP Skills extension** (`io.modelcontextprotocol/skills`) — the `forward-mcp-guide` skill now ships inside the binary and is served to every client.
+  - `skills_list` and `skills_get` tools return each skill's frontmatter and a manifest of its files with SHA-256 digests and sizes. The go-sdk has no hook for the extension's `skills/list` and `skills/get` methods yet, so they are tools for now.
+  - Every skill file is a resource under its `skill://<name>/<file>` URI.
+  - Skill URIs are checked against the skill name rule and `fs.ValidPath`, so a URI cannot read outside its skill.
+  - Only user-facing skills are embedded (`skills.go`); the `hexa-*` development skills stay out of the binary.
+
+### Fixed
+- `.gitignore` now ignores the root `forward-mcp` binary, and the joined `nqe_queries.db.claude-flow/` line is split into its two rules.
+
 ## [4.3.2] - 2026-10-10 - Performance Benchmarking Infrastructure
 
 ### Added

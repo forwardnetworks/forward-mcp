@@ -1,24 +1,45 @@
 # Forward MCP
 
-**Version 4.3.2** • [![Architecture Grade](https://img.shields.io/badge/hexa-A%2B%20100%2F100-brightgreen)](https://github.com/gaberger/hexa)
+**Version 4.4.0** • [![Architecture Grade](https://img.shields.io/badge/hexa-A%2B%20100%2F100-brightgreen)](https://github.com/gaberger/hexa)
 
 Forward MCP is an open-source server that provides a set of tools and APIs for interacting with Forward Networks' platform. It enables automation, analysis, and integration with network data using the Model Context Protocol (MCP).
 
 Built with hexagonal architecture for clean separation of concerns and easy extensibility. Runs locally over stdio, or as a remote server over Streamable HTTP.
 
 ## Features
-- **54 High-Quality MCP Tools**: All tools follow Composio-inspired design standards with consistent descriptions, clear parameters, and proper format hints
+- **57 High-Quality MCP Tools**: All tools follow Composio-inspired design standards with consistent descriptions, clear parameters, and proper format hints
 - **Hexagonal Architecture**: Clean separation between business logic (use cases), I/O (adapters), and interfaces (ports). Architecture grade: A+ 100/100
 - **Official MCP Go SDK v1.7.0**: Protocol revision 2026-07-28, negotiates down to 2024-11-05 for compatibility
 - **Agent-Friendly Design**: LLM-optimized tool descriptions, explicit required/optional parameters, actionable error messages
 - **Tool Behavior Annotations**: `readOnlyHint`, `destructiveHint`, `idempotentHint` help clients distinguish safe from destructive operations
 - **Comprehensive Documentation**: Forward-MCP guide skill (439 lines) with workflows, patterns, troubleshooting
+- **MCP Skills Extension**: the guide skill ships inside the binary and is served to every client over `io.modelcontextprotocol/skills`
 - **Semantic Cache**: AI-powered query result caching with embedding-based similarity matching
 - **Knowledge Graph Memory**: Entity-Relation-Observation model for storing network discoveries
 - **Bloom Filter Search**: Automatic optimization for large datasets (>100 items) with 80%+ memory reduction
 - **Security Hardened**: TLS 1.3+ enforcement, SHA-256 hashing, path traversal protection, race-condition free
 - **Remote Server Mode (preview)**: Streamable HTTP transport (plus legacy SSE) with API-key or JWT (JWKS) authentication, per-user rate limits, and health endpoints
 - **BM25 Query Search**: ranks the NQE query library by term rarity and field weight, fused with embedding similarity when embeddings exist
+
+## What's New in 4.4.0
+
+### MCP Skills Extension
+Forward-MCP now serves its guide skill to every MCP client, following the [MCP Skills extension](https://github.com/modelcontextprotocol/ext-skills) (`io.modelcontextprotocol/skills`). An agent connected to the server can find and load the instructions for using its tools, without a copy of this repository.
+
+- `skills_list` returns each skill with its frontmatter and a manifest of its files (`skill://` URI, SHA-256 digest, size).
+- `skills_get` returns one skill by URI, for example `skill://forward-mcp-guide/SKILL.md`.
+- Every skill file is an MCP resource under its `skill://` URI; read it with `resources/read`.
+
+The skill is embedded in the binary, so it works wherever the server starts. The go-sdk cannot add the extension's `skills/list` and `skills/get` protocol methods yet, so they are served as tools until it can.
+
+To try it, run the MCP Inspector against a build:
+
+```bash
+make build
+FORWARD_LOCK_DIR=$(mktemp -d) npx @modelcontextprotocol/inspector ./forward-mcp
+```
+
+`FORWARD_LOCK_DIR` lets the Inspector's server run beside one you already have open.
 
 ## What's New in 4.3.1
 
@@ -162,7 +183,7 @@ Forward-MCP follows **hexagonal architecture** (ports & adapters) for clean sepa
 ┌────────────────▼────────────────────────────┐
 │          Use Cases Layer                    │
 │        internal/usecases/                   │
-│  • 54 MCP tool implementations              │
+│  • 57 MCP tool implementations              │
 │  • Business logic orchestration             │
 │  • No direct I/O                            │
 └──┬───────────────────────────────────────┬──┘

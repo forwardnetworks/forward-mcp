@@ -154,7 +154,7 @@ return nil, fmt.Errorf("invalid input")  // no action
 7. ✅ Test with real agent queries
 8. ✅ Add to appropriate category in registerTools()
 
-**Current status:** 54/54 active tools follow standards (100%)
+**Current status:** 57/57 active tools follow standards (100%)
 
 ### References
 

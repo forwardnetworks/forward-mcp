@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	forwardmcp "github.com/forward-mcp"
 	"github.com/forward-mcp/internal/adapters/primary/httpserver"
 	"github.com/forward-mcp/internal/adapters/primary/mcpserver"
 	"github.com/forward-mcp/internal/adapters/secondary/bloom"
@@ -268,6 +269,7 @@ func newDeps(cfg *ports.Config, log ports.Logger) usecases.Deps {
 		Memory:     memory,
 		Bloom:      bloom.NewBloomSearchManager(log, instanceID),
 		Rows:       sqlite.RowQuerier{},
+		Skills:     forwardmcp.Skills(),
 	}
 
 	// Auto-hydrate database and embeddings on first run (background, non-blocking)

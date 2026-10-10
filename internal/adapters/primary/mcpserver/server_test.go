@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	forwardmcp "github.com/forward-mcp"
 	"github.com/forward-mcp/internal/adapters/secondary/embeddings"
 	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/adapters/secondary/semcache"
@@ -36,6 +37,7 @@ func connect(t *testing.T) *mcp.ClientSession {
 		API:        fakeAPI{},
 		Cache:      semcache.NewSemanticCache(embedder, log, "test", &cfg.Forward.SemanticCache),
 		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
+		Skills:     forwardmcp.Skills(),
 	})
 	t.Cleanup(func() { _ = svc.Shutdown(5 * time.Second) })
 
@@ -64,8 +66,8 @@ func TestRegisterServesEverything(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if len(tools.Tools) != 55 {
-		t.Errorf("tools: got %d, want 55", len(tools.Tools))
+	if len(tools.Tools) != 57 {
+		t.Errorf("tools: got %d, want 57", len(tools.Tools))
 	}
 	for _, tool := range tools.Tools {
 		if toolAnnotations[tool.Name] == nil {
@@ -83,8 +85,32 @@ func TestRegisterServesEverything(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resources/list: %v", err)
 	}
-	if len(resources.Resources) != 1 {
-		t.Errorf("resources: got %d, want 1", len(resources.Resources))
+	// One server resource plus the one file of the embedded forward-mcp-guide skill.
+	if len(resources.Resources) != 2 {
+		t.Errorf("resources: got %d, want 2", len(resources.Resources))
+	}
+}
+
+// The embedded skill is listed by skills_list and readable as a resource.
+func TestSkillsServed(t *testing.T) {
+	cs := connect(t)
+	ctx := context.Background()
+	const uri = "skill://forward-mcp-guide/SKILL.md"
+
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "skills_list", Arguments: map[string]any{}})
+	if err != nil || res.IsError {
+		t.Fatalf("skills_list: err=%v result=%+v", err, res)
+	}
+	if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, uri) || !strings.Contains(text, "sha256:") {
+		t.Errorf("skills_list does not list %s with a digest: %s", uri, text)
+	}
+
+	read, err := cs.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
+	if err != nil {
+		t.Fatalf("resources/read %s: %v", uri, err)
+	}
+	if got := read.Contents[0]; got.MIMEType != "text/markdown" || !strings.HasPrefix(got.Text, "---\nname: forward-mcp-guide") {
+		t.Errorf("unexpected skill content: %s %.40q", got.MIMEType, got.Text)
 	}
 }
 

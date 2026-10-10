@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"sync"
 	"time"
 
@@ -121,6 +122,7 @@ type Service struct {
 	apiTracker      *APIMemoryTracker  // API result tracking using memory system
 	bloomManager    ports.BloomFilters // Bloom filters for efficient large result filtering
 	rowQuerier      ports.RowQuerier
+	skills          fs.FS // files of the MCP Skills extension; nil serves none
 	// Context cancellation for graceful shutdown
 	ctx        context.Context
 	cancelFunc context.CancelFunc
@@ -145,6 +147,9 @@ type Deps struct {
 	Memory     ports.MemoryStore
 	Bloom      ports.BloomFilters
 	Rows       ports.RowQuerier
+	// Skills holds the files served over the MCP Skills extension: one
+	// directory per skill, each with a SKILL.md. Nil serves no skills.
+	Skills fs.FS
 }
 
 // New creates the service from its configuration and deps.
@@ -198,6 +203,7 @@ func New(cfg *domain.Config, logger ports.Logger, deps Deps) *Service {
 		apiTracker:      apiTracker,
 		bloomManager:    bloomManager,
 		rowQuerier:      deps.Rows,
+		skills:          deps.Skills,
 		ctx:             ctx,
 		cancelFunc:      cancelFunc,
 	}

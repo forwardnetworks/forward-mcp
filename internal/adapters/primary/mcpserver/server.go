@@ -77,6 +77,8 @@ var (
 var toolAnnotations = map[string]*mcp.ToolAnnotations{
 	// Read-only discovery, query, and analysis tools.
 	"list_networks":            annReadOnly,
+	"skills_list":              annReadOnly,
+	"skills_get":               annReadOnly,
 	"search_paths":             annReadOnly,
 	"search_paths_bulk":        annReadOnly,
 	"analyze_network_prefixes": annReadOnly,
@@ -151,6 +153,9 @@ func Register(server *mcp.Server, svc *usecases.Service, log ports.Logger) error
 	}
 	if err := registerResources(server, svc, log); err != nil {
 		return fmt.Errorf("register resources: %w", err)
+	}
+	if err := registerSkills(server, svc, log); err != nil {
+		return fmt.Errorf("register skills: %w", err)
 	}
 	return nil
 }

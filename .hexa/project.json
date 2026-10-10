@@ -9,7 +9,8 @@
       "internal/adapters/secondary": "adapters/secondary",
       "cmd/server/main.go": "composition-root",
       "examples/test_mcp.go": "composition-root",
-      "cmd/test-client/main.go": "composition-root"
+      "cmd/test-client/main.go": "composition-root",
+      "skills.go": "composition-root"
     }
   },
   "createdAt": "2026-10-09T17:07:09.063501+00:00",
