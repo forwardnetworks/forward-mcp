@@ -114,11 +114,12 @@ func TestSearchQueries_KeywordFallback(t *testing.T) {
 
 // BenchmarkGenerateEmbeddings measures keyword embedding generation performance
 func BenchmarkGenerateEmbeddings(b *testing.B) {
-	mockEmbeddingService := embeddings.NewMockEmbeddingService()
+	// Use keyword embedder (what auto-hydration actually uses)
+	embedder := embeddings.New("keyword", "", logger.New())
 	log := logger.New()
 
 	// Create index with queries without embeddings
-	idx := NewNQEQueryIndex(mockEmbeddingService, log)
+	idx := NewNQEQueryIndex(embedder, log)
 	idx.queries = make([]*ports.NQEQueryIndexEntry, 100)
 	for i := 0; i < 100; i++ {
 		idx.queries[i] = &ports.NQEQueryIndexEntry{
@@ -139,11 +140,12 @@ func BenchmarkGenerateEmbeddings(b *testing.B) {
 
 // BenchmarkGenerateEmbeddings_Large measures embedding generation for a large query set (~1800 queries)
 func BenchmarkGenerateEmbeddings_Large(b *testing.B) {
-	mockEmbeddingService := embeddings.NewMockEmbeddingService()
+	// Use keyword embedder (what auto-hydration actually uses)
+	embedder := embeddings.New("keyword", "", logger.New())
 	log := logger.New()
 
 	// Create index with realistic number of queries
-	idx := NewNQEQueryIndex(mockEmbeddingService, log)
+	idx := NewNQEQueryIndex(embedder, log)
 	idx.queries = make([]*ports.NQEQueryIndexEntry, 1800)
 	for i := 0; i < 1800; i++ {
 		idx.queries[i] = &ports.NQEQueryIndexEntry{

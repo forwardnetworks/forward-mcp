@@ -173,7 +173,8 @@ func BenchmarkCompleteAutoHydration(b *testing.B) {
 	mockClient := NewMockForwardClient()
 	instanceID := "benchmark-auto-hydrate"
 
-	embedder := embeddings.NewMockEmbeddingService()
+	// Use keyword embedder (what auto-hydration actually uses)
+	embedder := embeddings.New("keyword", "", log)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
