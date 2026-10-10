@@ -75,6 +75,23 @@ test-coverage-all:
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
+# Run benchmarks for auto-hydration functionality
+benchmark-auto-hydration:
+	@echo "Running auto-hydration benchmarks..."
+	@echo "💡 Benchmarks: database hydration, embedding generation, smart caching"
+	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/usecases -benchmem | grep -E "^Benchmark|^goos|^goarch|^pkg|^cpu"
+
+# Run benchmarks for query index operations
+benchmark-query-index:
+	@echo "Running query index benchmarks..."
+	@echo "💡 Benchmarks: embedding generation, search (BM25 + hybrid)"
+	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/adapters/secondary/queryindex -benchmem | grep -E "^Benchmark|^goos|^goarch|^pkg|^cpu"
+
+# Run all benchmarks
+benchmark-all:
+	@echo "Running all benchmarks..."
+	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/... -benchmem
+
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."

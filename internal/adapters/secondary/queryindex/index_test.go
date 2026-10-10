@@ -111,3 +111,141 @@ func TestSearchQueries_KeywordFallback(t *testing.T) {
 		t.Errorf("expected 2 results from keyword fallback, got %d", len(results))
 	}
 }
+
+// BenchmarkGenerateEmbeddings measures keyword embedding generation performance
+func BenchmarkGenerateEmbeddings(b *testing.B) {
+	mockEmbeddingService := embeddings.NewMockEmbeddingService()
+	log := logger.New()
+
+	// Create index with queries without embeddings
+	idx := NewNQEQueryIndex(mockEmbeddingService, log)
+	idx.queries = make([]*ports.NQEQueryIndexEntry, 100)
+	for i := 0; i < 100; i++ {
+		idx.queries[i] = &ports.NQEQueryIndexEntry{
+			QueryID:     string(rune('A' + i)),
+			Intent:      "Test query intent for benchmarking",
+			Description: "Test query description for benchmarking performance of embedding generation",
+			Embedding:   nil, // No embedding yet
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := idx.GenerateEmbeddings(); err != nil {
+			b.Fatalf("Failed to generate embeddings: %v", err)
+		}
+	}
+}
+
+// BenchmarkGenerateEmbeddings_Large measures embedding generation for a large query set (~1800 queries)
+func BenchmarkGenerateEmbeddings_Large(b *testing.B) {
+	mockEmbeddingService := embeddings.NewMockEmbeddingService()
+	log := logger.New()
+
+	// Create index with realistic number of queries
+	idx := NewNQEQueryIndex(mockEmbeddingService, log)
+	idx.queries = make([]*ports.NQEQueryIndexEntry, 1800)
+	for i := 0; i < 1800; i++ {
+		idx.queries[i] = &ports.NQEQueryIndexEntry{
+			QueryID:     string(rune(i)),
+			Intent:      "Network query intent for device configuration analysis",
+			Description: "Detailed description of network query for benchmarking embedding generation performance with realistic data",
+			Embedding:   nil,
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := idx.GenerateEmbeddings(); err != nil {
+			b.Fatalf("Failed to generate embeddings: %v", err)
+		}
+	}
+}
+
+// BenchmarkLoadFromQueries measures the time to load queries into the index
+func BenchmarkLoadFromQueries(b *testing.B) {
+	mockEmbeddingService := embeddings.NewMockEmbeddingService()
+	log := logger.New()
+
+	// Create test queries
+	queries := make([]ports.NQEQueryDetail, 1800)
+	for i := 0; i < 1800; i++ {
+		queries[i] = ports.NQEQueryDetail{
+			QueryID: string(rune(i)),
+			Path:    "/Test/Query/Path",
+			Intent:  "Network query intent",
+			LastCommit: ports.NQECommitInfo{
+				ID: "abc123",
+			},
+		}
+	}
+
+	idx := NewNQEQueryIndex(mockEmbeddingService, log)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := idx.LoadFromQueries(queries); err != nil {
+			b.Fatalf("Failed to load queries: %v", err)
+		}
+	}
+}
+
+// BenchmarkSearchQueries_BM25 measures BM25 search performance
+func BenchmarkSearchQueries_BM25(b *testing.B) {
+	mockEmbeddingService := embeddings.NewMockEmbeddingService()
+	log := logger.New()
+
+	idx := NewNQEQueryIndex(mockEmbeddingService, log)
+
+	// Create realistic query set without embeddings (BM25 only)
+	idx.queries = make([]*ports.NQEQueryIndexEntry, 1800)
+	for i := 0; i < 1800; i++ {
+		idx.queries[i] = &ports.NQEQueryIndexEntry{
+			QueryID:     string(rune(i)),
+			Intent:      "Show BGP routing information for network devices",
+			Description: "Returns detailed BGP routing table information including routes, neighbors, and peer status",
+			Embedding:   nil,
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := idx.SearchQueries("BGP routing", 10)
+		if err != nil {
+			b.Fatalf("Search failed: %v", err)
+		}
+	}
+}
+
+// BenchmarkSearchQueries_Hybrid measures hybrid (BM25 + embedding) search performance
+func BenchmarkSearchQueries_Hybrid(b *testing.B) {
+	mockEmbeddingService := embeddings.NewMockEmbeddingService()
+	log := logger.New()
+
+	idx := NewNQEQueryIndex(mockEmbeddingService, log)
+
+	// Create realistic query set with embeddings
+	idx.queries = make([]*ports.NQEQueryIndexEntry, 1800)
+	for i := 0; i < 1800; i++ {
+		embedding, _ := mockEmbeddingService.GenerateEmbedding("BGP routing information")
+		embeddingFloat32 := make([]float32, len(embedding))
+		for j, v := range embedding {
+			embeddingFloat32[j] = float32(v)
+		}
+
+		idx.queries[i] = &ports.NQEQueryIndexEntry{
+			QueryID:     string(rune(i)),
+			Intent:      "Show BGP routing information for network devices",
+			Description: "Returns detailed BGP routing table information including routes, neighbors, and peer status",
+			Embedding:   embeddingFloat32,
+		}
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := idx.SearchQueries("BGP routing", 10)
+		if err != nil {
+			b.Fatalf("Search failed: %v", err)
+		}
+	}
+}

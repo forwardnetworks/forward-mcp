@@ -47,6 +47,39 @@ make test-coverage
 - Can hang/fail if API is slow or credentials are invalid
 - Tests use `-skip 'TestIntegration'` pattern to exclude them from unit test runs
 
+## Benchmark Commands
+
+```bash
+# Benchmark auto-hydration functionality
+make benchmark-auto-hydration
+
+# Benchmark query index operations
+make benchmark-query-index
+
+# Run all benchmarks
+make benchmark-all
+```
+
+**Auto-hydration benchmarks** measure:
+- Database hydration (loading ~1800 queries from API)
+- Incremental updates (background refresh with commit IDs)
+- QueryStore operations (LoadQueries, SaveQueries)
+- Smart caching strategy (empty vs populated database)
+- Complete auto-hydration flow (database + embeddings)
+
+**Query index benchmarks** measure:
+- Keyword embedding generation (100 and 1800 queries)
+- LoadFromQueries performance
+- BM25 search (text-only ranking)
+- Hybrid search (BM25 + embedding fusion)
+
+**Example output:**
+```
+BenchmarkDatabaseHydration-12           	     100	  12345678 ns/op	  1234567 B/op	    1234 allocs/op
+BenchmarkGenerateEmbeddings_Large-12    	      50	  23456789 ns/op	  2345678 B/op	    2345 allocs/op
+BenchmarkSearchQueries_Hybrid-12        	     328	   3743744 ns/op	   563406 B/op	    1942 allocs/op
+```
+
 ## Tool Design Standards (ADR-2610091555)
 
 All MCP tools follow Composio-inspired design standards for optimal agent experience:
