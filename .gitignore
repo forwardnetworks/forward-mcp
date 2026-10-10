@@ -31,6 +31,9 @@ go.work
 coverage.out
 coverage.html
 
+# Benchmark results
+benchmark-results/
+
 # Dependency directories
 vendor/ 
 

@@ -391,6 +391,34 @@ make test-all          # Unit + integration tests
 make test-coverage     # Coverage report
 ```
 
+## Benchmarks
+
+Performance benchmarks for auto-hydration and query search:
+
+```sh
+make benchmark-report        # Formatted benchmark report (1s benchtime)
+make benchmark-report-quick  # Quick report (100ms benchtime)
+make benchmark-all           # Raw Go benchmark output
+```
+
+**Typical performance** (Apple M3 Pro, 1800 queries):
+- **First-run auto-hydration**: ~720µs (database + keyword embeddings)
+- **Query database operations**:
+  - LoadQueries: ~9µs per load
+  - SaveQueries: ~75µs per save
+- **Query search**:
+  - BM25 text-only: ~674µs per search
+  - Hybrid (BM25 + embeddings): ~4.3ms per search (6.4x slower, more accurate)
+- **Memory usage**:
+  - BM25 search: ~538KB, 1,912 allocs
+  - Hybrid search: ~563KB, 1,946 allocs
+
+The benchmark report script generates formatted output with:
+- Auto-hydration metrics (database load, incremental updates, complete flow)
+- Query index metrics (embedding generation, BM25 vs hybrid search)
+- Key insights (performance comparisons, memory usage)
+- Results saved to `benchmark-results/` with timestamps
+
 ## Documentation
 
 **Architecture & Design:**

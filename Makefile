@@ -87,10 +87,18 @@ benchmark-query-index:
 	@echo "💡 Benchmarks: embedding generation, search (BM25 + hybrid)"
 	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/adapters/secondary/queryindex -benchmem | grep -E "^Benchmark|^goos|^goarch|^pkg|^cpu"
 
-# Run all benchmarks
+# Run all benchmarks with basic output
 benchmark-all:
 	@echo "Running all benchmarks..."
 	$(GOTEST) -bench=. -run=^$$ -benchtime=1s ./internal/... -benchmem
+
+# Run benchmarks with formatted report
+benchmark-report:
+	@./scripts/benchmark-report.sh
+
+# Run quick benchmark report (100ms benchtime)
+benchmark-report-quick:
+	@BENCHTIME=100ms ./scripts/benchmark-report.sh
 
 # Clean build artifacts
 clean:
