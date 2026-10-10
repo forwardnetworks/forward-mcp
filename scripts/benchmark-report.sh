@@ -2,21 +2,20 @@
 # benchmark-report.sh - Generate formatted benchmark reports
 set -euo pipefail
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Configuration
 BENCHTIME="${BENCHTIME:-1s}"
 OUTPUT_DIR="${BENCHMARK_OUTPUT_DIR:-./benchmark-results}"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
-# Create output directory
 mkdir -p "$OUTPUT_DIR"
 
 echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -27,15 +26,13 @@ echo -e "${BLUE}Date:${NC}      $(date '+%Y-%m-%d %H:%M:%S')"
 echo -e "${BLUE}Platform:${NC}  $(uname -s) $(uname -m)"
 echo -e "${BLUE}Go:${NC}        $(go version | awk '{print $3}')"
 echo ""
-
-# Run benchmarks and capture output
 echo -e "${YELLOW}Running benchmarks...${NC}"
 echo ""
 
 RAW_OUTPUT="$OUTPUT_DIR/raw-$TIMESTAMP.txt"
 FORMATTED_OUTPUT="$OUTPUT_DIR/report-$TIMESTAMP.txt"
 
-# Run benchmarks and save raw output (filter out INFO/DEBUG logs)
+# Run benchmarks (filter out logs)
 CGO_ENABLED=1 go test -bench=. -run=^$ -benchtime="$BENCHTIME" -benchmem ./internal/... 2>&1 | \
     grep -v "\[INFO\]" | \
     grep -v "\[DEBUG\]" | \
@@ -45,112 +42,132 @@ echo ""
 echo -e "${GREEN}✓ Raw results saved to: ${NC}$RAW_OUTPUT"
 echo ""
 
-# Parse and format results
-echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BOLD}${CYAN}  Benchmark Summary${NC}"
-echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-
-# Function to format time
-format_time() {
-    local ns=$1
-    if (( ns < 1000 )); then
-        echo "${ns} ns"
-    elif (( ns < 1000000 )); then
-        echo "$(awk "BEGIN {printf \"%.2f\", $ns/1000}") µs"
-    elif (( ns < 1000000000 )); then
-        echo "$(awk "BEGIN {printf \"%.2f\", $ns/1000000}") ms"
-    else
-        echo "$(awk "BEGIN {printf \"%.2f\", $ns/1000000000}") s"
-    fi
-}
-
-# Function to format bytes
-format_bytes() {
-    local bytes=$1
-    if (( bytes < 1024 )); then
-        echo "${bytes} B"
-    elif (( bytes < 1048576 )); then
-        echo "$(awk "BEGIN {printf \"%.2f\", $bytes/1024}") KB"
-    else
-        echo "$(awk "BEGIN {printf \"%.2f\", $bytes/1048576}") MB"
-    fi
-}
-
-# Parse benchmark results
+# Generate formatted report
 {
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "AUTO-HYDRATION BENCHMARKS"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "AUTO-HYDRATION BENCHMARKS"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    printf "%-45s %10s  %15s  %12s  %10s\n" "Benchmark" "Iterations" "Time/op" "Memory/op" "Allocs/op"
+    echo "────────────────────────────────────────────────────────────────────────────────────────────"
 
     grep "^Benchmark" "$RAW_OUTPUT" | grep -E "DatabaseHydration|IncrementalUpdate|QueryStore|SmartCaching|CompleteAutoHydration" | while read -r line; do
         name=$(echo "$line" | awk '{print $1}' | sed 's/Benchmark//; s/-[0-9]*$//')
         iterations=$(echo "$line" | awk '{print $2}')
-        ns_per_op=$(echo "$line" | awk '{print $3}')
-        bytes_per_op=$(echo "$line" | awk '{print $5}')
-        allocs_per_op=$(echo "$line" | awk '{print $7}')
+        ns_per_op=$(echo "$line" | awk '{print $3}' | sed 's/ ns\/op//')
+        bytes_per_op=$(echo "$line" | awk '{print $5}' | sed 's/ B\/op//')
+        allocs_per_op=$(echo "$line" | awk '{print $7}' | sed 's/ allocs\/op//')
 
-        printf "%-40s %10s ops   %12s/op   %12s   %6s allocs\n" \
-            "$name" \
-            "$iterations" \
-            "$(format_time ${ns_per_op%.*})" \
-            "$(format_bytes ${bytes_per_op%.*})" \
-            "$allocs_per_op"
+        # Simple formatting without awk
+        if [ "$ns_per_op" -gt 1000000 ]; then
+            time_str=$(echo "scale=2; $ns_per_op / 1000000" | bc)" ms"
+        elif [ "$ns_per_op" -gt 1000 ]; then
+            time_str=$(echo "scale=2; $ns_per_op / 1000" | bc)" µs"
+        else
+            time_str="$ns_per_op ns"
+        fi
+
+        if [ "$bytes_per_op" -gt 1048576 ]; then
+            mem_str=$(echo "scale=2; $bytes_per_op / 1048576" | bc)" MB"
+        elif [ "$bytes_per_op" -gt 1024 ]; then
+            mem_str=$(echo "scale=2; $bytes_per_op / 1024" | bc)" KB"
+        else
+            mem_str="$bytes_per_op B"
+        fi
+
+        printf "%-45s %10s  %15s  %12s  %10s\n" "$name" "$iterations" "$time_str" "$mem_str" "$allocs_per_op"
     done
 
     echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "QUERY INDEX BENCHMARKS"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
+    printf "%-45s %10s  %15s  %12s  %10s\n" "Benchmark" "Iterations" "Time/op" "Memory/op" "Allocs/op"
+    echo "────────────────────────────────────────────────────────────────────────────────────────────"
 
     grep "^Benchmark" "$RAW_OUTPUT" | grep -E "GenerateEmbeddings|LoadFromQueries|SearchQueries" | while read -r line; do
         name=$(echo "$line" | awk '{print $1}' | sed 's/Benchmark//; s/-[0-9]*$//')
         iterations=$(echo "$line" | awk '{print $2}')
-        ns_per_op=$(echo "$line" | awk '{print $3}')
-        bytes_per_op=$(echo "$line" | awk '{print $5}')
-        allocs_per_op=$(echo "$line" | awk '{print $7}')
+        ns_per_op=$(echo "$line" | awk '{print $3}' | sed 's/ ns\/op//')
+        bytes_per_op=$(echo "$line" | awk '{print $5}' | sed 's/ B\/op//')
+        allocs_per_op=$(echo "$line" | awk '{print $7}' | sed 's/ allocs\/op//')
 
-        printf "%-40s %10s ops   %12s/op   %12s   %6s allocs\n" \
-            "$name" \
-            "$iterations" \
-            "$(format_time ${ns_per_op%.*})" \
-            "$(format_bytes ${bytes_per_op%.*})" \
-            "$allocs_per_op"
+        if [ "$ns_per_op" -gt 1000000 ]; then
+            time_str=$(echo "scale=2; $ns_per_op / 1000000" | bc)" ms"
+        elif [ "$ns_per_op" -gt 1000 ]; then
+            time_str=$(echo "scale=2; $ns_per_op / 1000" | bc)" µs"
+        else
+            time_str="$ns_per_op ns"
+        fi
+
+        if [ "$bytes_per_op" -gt 1048576 ]; then
+            mem_str=$(echo "scale=2; $bytes_per_op / 1048576" | bc)" MB"
+        elif [ "$bytes_per_op" -gt 1024 ]; then
+            mem_str=$(echo "scale=2; $bytes_per_op / 1024" | bc)" KB"
+        else
+            mem_str="$bytes_per_op B"
+        fi
+
+        printf "%-45s %10s  %15s  %12s  %10s\n" "$name" "$iterations" "$time_str" "$mem_str" "$allocs_per_op"
     done
 
     echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
 } | tee "$FORMATTED_OUTPUT"
 
-# Print key insights
+# Extract key metrics
 echo -e "${BOLD}${CYAN}Key Insights:${NC}"
 echo ""
 
-# Extract specific metrics
-db_hydration=$(grep "BenchmarkDatabaseHydration-" "$RAW_OUTPUT" | awk '{print $3}' | sed 's/ ns\/op//')
-complete_hydration=$(grep "BenchmarkCompleteAutoHydration-" "$RAW_OUTPUT" | awk '{print $3}' | sed 's/ ns\/op//')
-bm25_search=$(grep "BenchmarkSearchQueries_BM25-" "$RAW_OUTPUT" | awk '{print $3}' | sed 's/ ns\/op//')
-hybrid_search=$(grep "BenchmarkSearchQueries_Hybrid-" "$RAW_OUTPUT" | awk '{print $3}' | sed 's/ ns\/op//')
+bm25_line=$(grep "BenchmarkSearchQueries_BM25-" "$RAW_OUTPUT" | head -1)
+hybrid_line=$(grep "BenchmarkSearchQueries_Hybrid-" "$RAW_OUTPUT" | head -1)
 
-if [ -n "$complete_hydration" ]; then
-    echo -e "  ${BLUE}•${NC} First-run auto-hydration: $(format_time ${complete_hydration%.*})"
+if [ -n "$bm25_line" ] && [ -n "$hybrid_line" ]; then
+    bm25_ns=$(echo "$bm25_line" | awk '{print $3}' | sed 's/ ns\/op//')
+    hybrid_ns=$(echo "$hybrid_line" | awk '{print $3}' | sed 's/ ns\/op//')
+
+    if [ "$bm25_ns" -gt 1000 ]; then
+        bm25_display=$(echo "scale=2; $bm25_ns / 1000" | bc)" µs"
+    else
+        bm25_display="$bm25_ns ns"
+    fi
+
+    if [ "$hybrid_ns" -gt 1000000 ]; then
+        hybrid_display=$(echo "scale=2; $hybrid_ns / 1000000" | bc)" ms"
+    elif [ "$hybrid_ns" -gt 1000 ]; then
+        hybrid_display=$(echo "scale=2; $hybrid_ns / 1000" | bc)" µs"
+    else
+        hybrid_display="$hybrid_ns ns"
+    fi
+
+    speedup=$(echo "scale=1; $hybrid_ns / $bm25_ns" | bc)
+
+    echo -e "  ${BLUE}•${NC} BM25 search (text-only):     $bm25_display per search"
+    echo -e "  ${BLUE}•${NC} Hybrid search (BM25+embed):  $hybrid_display per search (${speedup}x slower, more accurate)"
 fi
 
-if [ -n "$bm25_search" ] && [ -n "$hybrid_search" ]; then
-    speedup=$(awk "BEGIN {printf \"%.1f\", $hybrid_search/$bm25_search}")
-    echo -e "  ${BLUE}•${NC} BM25 search:  $(format_time ${bm25_search%.*}) (text-only)"
-    echo -e "  ${BLUE}•${NC} Hybrid search: $(format_time ${hybrid_search%.*}) (${speedup}x slower, but more accurate)"
+save_line=$(grep "SaveQueries-" "$RAW_OUTPUT" | head -1)
+load_line=$(grep "LoadQueries-" "$RAW_OUTPUT" | head -1)
+
+if [ -n "$save_line" ] && [ -n "$load_line" ]; then
+    save_ns=$(echo "$save_line" | awk '{print $3}' | sed 's/ ns\/op//')
+    load_ns=$(echo "$load_line" | awk '{print $3}' | sed 's/ ns\/op//')
+
+    save_display=$(echo "scale=2; $save_ns / 1000" | bc)" µs"
+    load_display=$(echo "scale=2; $load_ns / 1000" | bc)" µs"
+
+    echo -e "  ${BLUE}•${NC} Database save: $save_display per operation"
+    echo -e "  ${BLUE}•${NC} Database load: $load_display per operation"
 fi
 
 echo ""
 echo -e "${GREEN}✓ Formatted report saved to: ${NC}$FORMATTED_OUTPUT"
 echo -e "${GREEN}✓ Latest report symlinked to: ${NC}$OUTPUT_DIR/latest-report.txt"
 
-# Create symlink to latest report
 ln -sf "$(basename "$FORMATTED_OUTPUT")" "$OUTPUT_DIR/latest-report.txt"
 
 echo ""
