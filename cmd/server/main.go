@@ -270,17 +270,18 @@ func newDeps(cfg *ports.Config, log ports.Logger) usecases.Deps {
 		Rows:       sqlite.RowQuerier{},
 	}
 
-	// Auto-hydrate database on first run (background, non-blocking)
+	// Auto-hydrate database and embeddings on first run (background, non-blocking)
 	if queryStore != nil {
-		go autoHydrateDatabase(queryStore, deps.API, log)
+		go autoHydrateDatabase(queryStore, deps.API, deps.QueryIndex, log)
 	}
 
 	return deps
 }
 
 // autoHydrateDatabase checks if the query database is sparse and loads from the API if needed.
+// Also auto-generates keyword embeddings if they don't exist.
 // Runs in the background without blocking server startup.
-func autoHydrateDatabase(queryStore ports.QueryStore, api ports.ForwardAPI, log ports.Logger) {
+func autoHydrateDatabase(queryStore ports.QueryStore, api ports.ForwardAPI, queryIndex ports.QueryIndex, log ports.Logger) {
 	if queryStore == nil {
 		return
 	}
@@ -314,7 +315,29 @@ func autoHydrateDatabase(queryStore ports.QueryStore, api ports.ForwardAPI, log 
 		}
 
 		log.Info("Auto-hydration complete: loaded and saved %d queries", len(freshQueries))
+		queries = freshQueries
 	} else {
 		log.Debug("Database has %d queries, skipping auto-hydration", queryCount)
+	}
+
+	// Auto-generate embeddings if they don't exist
+	if queryIndex != nil && len(queries) > 0 {
+		log.Info("Initializing query index with %d queries...", len(queries))
+
+		// Load queries into the index
+		if err := queryIndex.LoadFromQueries(queries); err != nil {
+			log.Error("Failed to load queries into index: %v", err)
+			return
+		}
+
+		// Generate embeddings for queries that don't have them
+		// (uses keyword provider by default - free, fast, no API key needed)
+		log.Info("Generating keyword embeddings for queries without embeddings...")
+		if err := queryIndex.GenerateEmbeddings(); err != nil {
+			log.Error("Failed to generate embeddings: %v", err)
+			return
+		}
+
+		log.Info("Query index initialized successfully")
 	}
 }

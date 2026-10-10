@@ -1,5 +1,19 @@
 # Changelog
 
+## [4.3.1] - 2026-10-10 - Automatic Embedding Generation
+
+### Added
+- **Automatic keyword embedding generation** — generates embeddings on first startup if they don't exist.
+  - Uses free, fast keyword-based embeddings (no API key required).
+  - Enables semantic query search immediately without manual setup.
+  - Binary users (no source/make commands) get full functionality automatically.
+  - Runs after database hydration completes, loads queries into index automatically.
+
+### Changed
+- First-run experience: truly zero configuration. Database hydration + embedding generation happen automatically.
+- Query search works immediately with full semantic + BM25 ranking, no manual steps.
+- Solves discoverability problem: users don't need to know embeddings exist or how to generate them.
+
 ## [4.3.0] - 2026-10-10 - Auto-Hydration on First Startup
 
 ### Added
@@ -7,12 +21,16 @@
   - Runs in background without blocking server startup.
   - Checks database on startup; if fewer than 100 queries exist, fetches from API automatically.
   - Uses `GetNQEAllQueriesEnhanced` to load both org queries (custom) and fwd queries (official library) with full metadata.
-  - Eliminates need for manual database initialization step.
+  - Loads ~1800+ queries including descriptions (not available in static spec file).
   - 90-second timeout with graceful error handling.
+- **Continuous query library updates** — existing smart caching system keeps queries current.
+  - Background refresh on every startup checks for changed queries.
+  - Uses incremental API updates (only fetches queries with new commit IDs).
+  - Adapts automatically when Forward Networks releases new queries.
 
 ### Changed
-- First-run experience: users no longer need to manually initialize the query database.
-- Database loads ~1800+ queries automatically from API, including descriptions missing from spec file.
+- First-run experience: no manual database initialization required.
+- System stays synchronized with the dynamic NQE library automatically.
 
 ## [4.2.0] - 2026-10-09 - Snapshot Comparison and Enhanced Path Analysis
 

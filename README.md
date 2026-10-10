@@ -1,6 +1,6 @@
 # Forward MCP
 
-**Version 4.3.0** • [![Architecture Grade](https://img.shields.io/badge/hexa-A%2B%20100%2F100-brightgreen)](https://github.com/gaberger/hexa)
+**Version 4.3.1** • [![Architecture Grade](https://img.shields.io/badge/hexa-A%2B%20100%2F100-brightgreen)](https://github.com/gaberger/hexa)
 
 Forward MCP is an open-source server that provides a set of tools and APIs for interacting with Forward Networks' platform. It enables automation, analysis, and integration with network data using the Model Context Protocol (MCP).
 
@@ -20,19 +20,28 @@ Built with hexagonal architecture for clean separation of concerns and easy exte
 - **Remote Server Mode (preview)**: Streamable HTTP transport (plus legacy SSE) with API-key or JWT (JWKS) authentication, per-user rate limits, and health endpoints
 - **BM25 Query Search**: ranks the NQE query library by term rarity and field weight, fused with embedding similarity when embeddings exist
 
-## What's New in 4.3.0
+## What's New in 4.3.1
 
-### Automatic Query Database Hydration
-The server now automatically loads queries from the Forward Networks API on first startup. No manual initialization required.
+### Zero-Configuration First Run
+The server now sets itself up automatically on first startup. No manual steps required.
 
-- Runs in the background during server startup (non-blocking)
-- Checks database; if fewer than 100 queries exist, fetches from API automatically
-- Loads ~1800+ queries with full metadata including descriptions (not in the spec file)
-- Uses `GetNQEAllQueriesEnhanced` for both org queries (your custom queries) and fwd queries (Forward's official library)
-- 90-second timeout with graceful error handling
-- After first load, subsequent startups use the cached database
+**What happens automatically:**
+1. **Query database hydration** — loads ~1800+ queries from the Forward Networks API
+   - Both org queries (your custom queries) and fwd queries (Forward's official library)
+   - Full metadata including descriptions (not available in static spec files)
+   - Runs in background during startup (non-blocking)
+2. **Keyword embedding generation** — creates semantic search embeddings
+   - Free, fast, keyword-based (no API key needed)
+   - Enables semantic query search immediately
+   - Works for binary installs (no source/make commands needed)
+3. **Continuous synchronization** — background refresh on every startup
+   - Checks for new or changed queries using incremental API updates
+   - Adapts automatically when Forward Networks releases library updates
+   - Only fetches queries with new commit IDs (efficient)
 
-**First-run experience**: Just start the server. It handles the rest.
+**First-run experience**: Start the server. It handles the rest.
+
+**Why this matters**: The NQE library changes frequently. The system now stays current automatically without manual intervention.
 
 ## What's New in 4.2.0
 
