@@ -7,7 +7,7 @@ Forward MCP is an open-source server that provides a set of tools and APIs for i
 Built with hexagonal architecture for clean separation of concerns and easy extensibility. Runs locally over stdio, or as a remote server over Streamable HTTP.
 
 ## Features
-- **58 High-Quality MCP Tools**: All tools follow Composio-inspired design standards with consistent descriptions, clear parameters, and proper format hints
+- **59 High-Quality MCP Tools**: All tools follow Composio-inspired design standards with consistent descriptions, clear parameters, and proper format hints
 - **Hexagonal Architecture**: Clean separation between business logic (use cases), I/O (adapters), and interfaces (ports). Architecture grade: A+ 100/100
 - **Official MCP Go SDK v1.7.0**: Protocol revision 2026-07-28, negotiates down to 2024-11-05 for compatibility
 - **Agent-Friendly Design**: LLM-optimized tool descriptions, explicit required/optional parameters, actionable error messages
@@ -183,7 +183,7 @@ Forward-MCP follows **hexagonal architecture** (ports & adapters) for clean sepa
 ┌────────────────▼────────────────────────────┐
 │          Use Cases Layer                    │
 │        internal/usecases/                   │
-│  • 58 MCP tool implementations              │
+│  • 59 MCP tool implementations              │
 │  • Business logic orchestration             │
 │  • No direct I/O                            │
 └──┬───────────────────────────────────────┬──┘

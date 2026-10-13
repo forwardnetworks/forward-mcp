@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"sync"
 	"context"
 	"fmt"
 	"github.com/forward-mcp/internal/adapters/secondary/bloom"
@@ -27,6 +28,7 @@ func contains(s, substr string) bool {
 
 // MockForwardClient implements ports.ForwardAPI for testing
 type MockForwardClient struct {
+	mu             sync.Mutex
 	lastQueryText string
 	lastByIDParams *domain.NQEQueryParams
 	networks        []domain.Network
@@ -2001,7 +2003,9 @@ func (m *MockForwardClient) RunNQEQueryByString(ctx context.Context, params *dom
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
+	m.mu.Lock()
 	m.lastQueryText = params.Query
+	m.mu.Unlock()
 	if m.nqeResult != nil {
 		return m.nqeResult, nil
 	}

@@ -66,8 +66,8 @@ func TestRegisterServesEverything(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if len(tools.Tools) != 58 {
-		t.Errorf("tools: got %d, want 58", len(tools.Tools))
+	if len(tools.Tools) != 59 {
+		t.Errorf("tools: got %d, want 59", len(tools.Tools))
 	}
 	for _, tool := range tools.Tools {
 		if toolAnnotations[tool.Name] == nil {

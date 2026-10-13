@@ -27,6 +27,17 @@ func getTestNetworkID(networks []domain.Network) string {
 	return networks[0].ID
 }
 
+// skipIfNoAccess skips the test when the chosen network cannot be read with
+// the configured credentials (HTTP 403 or 404). A wrong FORWARD_DEFAULT_NETWORK_ID
+// or FORWARD_API_BASE_URL in the shell then reads as a bad environment, not as a
+// broken build.
+func skipIfNoAccess(t *testing.T, networkID string, err error) {
+	t.Helper()
+	if err != nil && (strings.Contains(err.Error(), "HTTP 403") || strings.Contains(err.Error(), "HTTP 404")) {
+		t.Skipf("network %q is not accessible with these credentials (check FORWARD_DEFAULT_NETWORK_ID and FORWARD_API_BASE_URL): %v", networkID, err)
+	}
+}
+
 // getProjectRoot returns the absolute path to the project root.
 func getProjectRoot() string {
 	wd, _ := os.Getwd()
@@ -340,6 +351,7 @@ func TestIntegrationPathSearchResponseStructure(t *testing.T) {
 	// Test that the response has the expected structure even if no paths are found
 	response, err := service.searchPathsBulk(context.Background(), args)
 	if err != nil {
+		skipIfNoAccess(t, networkID, err)
 		t.Logf("Path search failed: %v", err)
 		// Test that errors are properly formatted
 		if !strings.Contains(err.Error(), "failed to search paths") {
@@ -669,6 +681,7 @@ func TestIntegrationListDevices(t *testing.T) {
 
 	response, err := service.ListDevices(context.Background(), args)
 	if err != nil {
+		skipIfNoAccess(t, networkID, err)
 		t.Fatalf("Failed to list devices: %v", err)
 	}
 
@@ -703,6 +716,7 @@ func TestIntegrationListSnapshots(t *testing.T) {
 
 	response, err := service.ListSnapshots(context.Background(), args)
 	if err != nil {
+		skipIfNoAccess(t, networkID, err)
 		t.Fatalf("Failed to list snapshots: %v", err)
 	}
 

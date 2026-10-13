@@ -167,6 +167,11 @@ func (m *MockEmbeddingService) GenerateEmbedding(text string) ([]float64, error)
 // KeywordEmbeddingService provides keyword-based similarity without external APIs
 type KeywordEmbeddingService struct{}
 
+// NonSemantic marks the keyword vectors as word-level only. On 15 library
+// questions with known answers, ranking by them found the right query first 5
+// times, against 9 for BM25 alone, and fusing the two did worse than BM25.
+func (k *KeywordEmbeddingService) NonSemantic() bool { return true }
+
 // NewKeywordEmbeddingService creates a new keyword-based embedding service
 func NewKeywordEmbeddingService() *KeywordEmbeddingService {
 	return &KeywordEmbeddingService{}

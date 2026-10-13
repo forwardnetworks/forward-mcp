@@ -13,6 +13,20 @@ type SyntheticEmbeddings interface {
 	Synthetic() bool
 }
 
+// NonSemanticEmbeddings is implemented by an EmbeddingService whose vectors
+// match words, not meaning, such as the offline keyword service. Ranking by
+// them adds noise to a keyword ranking, so search leaves them out. Unlike
+// SyntheticEmbeddings, these vectors may still be saved.
+type NonSemanticEmbeddings interface {
+	NonSemantic() bool
+}
+
+// IsNonSemantic reports whether svc produces vectors that do not capture meaning.
+func IsNonSemantic(svc EmbeddingService) bool {
+	s, ok := svc.(NonSemanticEmbeddings)
+	return ok && s.NonSemantic()
+}
+
 // IsSynthetic reports whether svc produces meaningless vectors.
 func IsSynthetic(svc EmbeddingService) bool {
 	s, ok := svc.(SyntheticEmbeddings)

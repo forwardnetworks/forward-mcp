@@ -53,6 +53,69 @@ func (s *Service) convertNQEQueryOptions(options *NQEQueryOptions) *domain.NQEQu
 }
 
 // NQE Tool Implementations
+// nqeCacheKey names one exact request. It covers everything that changes the
+// rows returned: the query, its parameters, the page, the sort, the column
+// filters, the commit and the data-file choice. A key with only the query and
+// parameters returned the rows of an earlier, different request.
+func nqeCacheKey(args RunNQEQueryByIDArgs) string {
+	params, _ := json.Marshal(args.Parameters) // map keys are sorted, so this is stable
+	options, _ := json.Marshal(args.Options)
+	return fmt.Sprintf("query_id:%s|params:%s|options:%s|commit:%s|latest:%t",
+		args.QueryID, params, options, args.CommitID, args.UseLatestDataFiles)
+}
+
+const (
+	// defaultFirstPageLimit is the rows returned when a caller gives no limit.
+	defaultFirstPageLimit = 100
+	// maxPageLimit is the largest page a single call returns.
+	maxPageLimit = 1000
+)
+
+// projectResult applies the caller's column choice to a result. It returns the
+// result itself when the caller made no choice.
+func projectResult(result *domain.NQERunResult, args RunNQEQueryByIDArgs) *domain.NQERunResult {
+	if result == nil || (len(args.Columns) == 0 && !args.dropEmpty) {
+		return result
+	}
+	return &domain.NQERunResult{
+		SnapshotID:    result.SnapshotID,
+		TotalNumItems: result.TotalNumItems,
+		Items:         projectItems(result.Items, args.Columns, args.dropEmpty),
+	}
+}
+
+// projectItems keeps only the named columns of each row, and with dropEmpty
+// also leaves out null and empty values. It copies the rows, so a cached
+// result is not changed.
+func projectItems(items []map[string]interface{}, columns []string, dropEmpty bool) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		row := map[string]interface{}{}
+		if len(columns) > 0 {
+			for _, c := range columns {
+				if v, ok := item[c]; ok {
+					row[c] = v
+				}
+			}
+		} else {
+			for k, v := range item {
+				row[k] = v
+			}
+		}
+		if dropEmpty {
+			for k, v := range row {
+				if v == nil {
+					delete(row, k)
+				} else if l, ok := v.([]interface{}); ok && len(l) == 0 {
+					delete(row, k)
+				}
+			}
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
 func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs) (*Result, error) {
 	s.logToolCall("run_nqe_query_by_id", args, nil)
 
@@ -68,12 +131,22 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 	}
 	snapshotID := s.getSnapshotID(args.SnapshotID)
 
-	// Proactive warning for potentially large queries
-	if (args.Options == nil || args.Options.Limit == 0 || args.Options.Limit > 1000) && !args.AllResults {
-		warnMsg := "⚠️ This query may return a large result set. To avoid hitting API size limits, consider setting 'all_results: true' to fetch results in batches for local analysis, or limit the output with a smaller 'limit' value.\n"
-		warnMsg += "Would you like to proceed as is, or update your request?\n"
-		warnMsg += "Example: { \"all_results\": true } or { \"options\": { \"limit\": 100 } }\n"
-		return textResult(warnMsg), nil
+	// Return a first page instead of stopping to ask. A caller who wants more
+	// pages with offset, or sets all_results.
+	var clampNote string
+	if !args.AllResults {
+		opts := NQEQueryOptions{}
+		if args.Options != nil {
+			opts = *args.Options
+		}
+		switch {
+		case opts.Limit == 0:
+			opts.Limit = defaultFirstPageLimit
+		case opts.Limit > maxPageLimit:
+			clampNote = fmt.Sprintf("Limit %d is above the page maximum, so %d rows were requested. Use offset to page, or all_results: true for everything.\n", opts.Limit, maxPageLimit)
+			opts.Limit = maxPageLimit
+		}
+		args.Options = &opts
 	}
 
 	if args.AllResults {
@@ -183,14 +256,14 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 	}
 
 	// Create cache key from query parameters
-	cacheKey := fmt.Sprintf("query_id:%s|params:%v", args.QueryID, args.Parameters)
+	cacheKey := nqeCacheKey(args)
 
 	// Try to get result from cache first. Exact match only: the key is an ID
 	// plus parameters, and a "similar" key is a different query or device.
 	if s.config.Forward.SemanticCache.Enabled && s.semanticCache != nil {
 		if cachedResult, found := s.semanticCache.GetExact(cacheKey, networkID, snapshotID); found {
 			s.logger.Debug("Cache hit for NQE query %s", args.QueryID)
-			return textResult(MarshalCompactJSONString(cachedResult)), nil
+			return textResult(MarshalCompactJSONString(projectResult(cachedResult, args))), nil
 		}
 	}
 
@@ -297,10 +370,10 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 		}
 	}
 
-	resultJSON := MarshalCompactJSONString(result)
+	resultJSON := MarshalCompactJSONString(projectResult(result, args))
 	s.logger.Debug("NQE query completed with %d items", len(result.Items))
 
-	response := fmt.Sprintf("NQE query completed. Found %d items:\n%s\n\n", len(result.Items), resultJSON)
+	response := clampNote + fmt.Sprintf("NQE query completed. Found %d items:\n%s\n", len(result.Items), resultJSON)
 
 	// Pagination warning if results may be truncated
 	if params.Options != nil && len(result.Items) == params.Options.Limit {
@@ -308,12 +381,6 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 		response += fmt.Sprintf("Example: set 'offset' to %d to get the next page.\n", params.Options.Offset+params.Options.Limit)
 		response += "Or set 'all_results: true' in your request to fetch all results in batches.\n"
 	}
-
-	// Add helpful suggestions for predefined queries
-	response += "Would you like to:\n" +
-		"1. Run a different predefined query?\n" +
-		"2. Create a custom query?\n" +
-		"3. Export these results?"
 
 	return textResult(response), nil
 }

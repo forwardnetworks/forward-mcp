@@ -122,6 +122,9 @@ type semanticHit struct {
 // semanticRanking ranks embedded queries by cosine similarity. It returns nil
 // when no query has an embedding or the search text cannot be embedded.
 func (idx *NQEQueryIndex) semanticRanking(searchText string) []semanticHit {
+	if ports.IsNonSemantic(idx.embeddingService) {
+		return nil // word-level vectors only add noise to the BM25 ranking
+	}
 	embedded := false
 	for _, q := range idx.queries {
 		if len(q.Embedding) > 0 {

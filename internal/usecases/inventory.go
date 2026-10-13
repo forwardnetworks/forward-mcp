@@ -639,6 +639,10 @@ func (s *Service) GetDeviceBasicInfo(ctx context.Context, args GetDeviceBasicInf
 		QueryID:    "FQ_ac651cb2901b067fe7dbfb511613ab44776d8029", // Device Basic Info
 		Options:    args.Options,
 	}
+	if args.Compact {
+		queryArgs.Columns = []string{"Device", "Type", "Vendor", "OS", "OS Version"}
+		queryArgs.dropEmpty = true
+	}
 
 	return s.RunNQEQueryByID(ctx, queryArgs)
 }
@@ -715,7 +719,11 @@ func (s *Service) SearchConfigs(ctx context.Context, args SearchConfigsArgs) (*R
 		AllResults: args.AllResults,
 	}
 
-	return s.RunNQEQueryByID(ctx, queryArgs)
+	res, err := s.RunNQEQueryByID(ctx, queryArgs)
+	if err == nil && res != nil && len(deviceNames) > 0 && strings.Contains(res.Text, "Found 0 items") {
+		res.Text += "\nNo rows matched. device_filter takes case-sensitive glob patterns such as sjc-* (regular expressions do not work). Check the case, or remove device_filter to search all devices."
+	}
+	return res, err
 }
 
 func (s *Service) GetConfigDiff(ctx context.Context, args GetConfigDiffArgs) (*Result, error) {

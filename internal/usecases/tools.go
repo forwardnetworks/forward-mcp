@@ -32,6 +32,9 @@ type RunNQEQueryByIDArgs struct {
 	Parameters         map[string]interface{} `json:"parameters,omitempty" jsonschema:"Query parameters for dynamic queries. Optional; depends on query definition."`
 	Options            *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for sorting, filtering, pagination. Optional."`
 	AllResults         bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results with automatic pagination. Optional; default false."`
+	Columns            []string               `json:"columns,omitempty" jsonschema:"Return only these columns. Optional. Cuts output size."`
+
+	dropEmpty bool // internal: leave out null and empty values from each row
 }
 
 // RunNQEQueryTextArgs represents arguments for running NQE source text.
@@ -165,6 +168,7 @@ type GetDeviceBasicInfoArgs struct {
 	NetworkID  string           `json:"network_id" jsonschema:"Network ID. Required."`
 	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
 	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
+	Compact    bool             `json:"compact,omitempty" jsonschema:"If true, return only Device, Type, Vendor, OS and OS Version, and leave out empty values. Cuts output size several times. Optional; default false."`
 }
 
 type GetDeviceHardwareArgs struct {

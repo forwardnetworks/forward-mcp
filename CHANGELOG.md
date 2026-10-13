@@ -3,9 +3,16 @@
 ## [Unreleased]
 
 ### Added
+- `get_network_summary` tool: device, interface, device-to-device link, VRF instance and ACL counts, plus devices by vendor and OS, in one read-only call. The six counts run at the same time. The note in the result states each definition; the counts can differ from totals in the Forward UI.
+- `compact` option on `get_device_basic_info` (and a `columns` option on `run_nqe_query_by_id`) returns only the columns you name and leaves out empty values. For 124 devices the output fell from about 8,800 to about 3,500 tokens.
 - `run_nqe_query` tool runs NQE source text the caller writes. It is read-only. The result states the total row count and, for a partial page, the `offset` of the next page. This covers questions no stored query answers, such as listing every interface with its admin status.
 
 ### Fixed
+- **Wrong rows from the result cache.** The cache key held only the query ID and parameters, so a call with a different filter or limit returned the rows of an earlier call. Asking for VLAN 104 after VLAN 10 returned VLAN 10. The key now covers the page, sort, filters, commit and data-file choice.
+- `search_nqe_queries` ranked worse than plain keyword search when no OpenAI key is set. The offline keyword vectors scored 0.97 to 0.99 for every query and were fused with BM25 by rank, which pushed good hits down. On 15 questions with known answers the right query was in the top three 11 times with BM25 alone and 7 times fused. Search now uses BM25 alone with the offline vectors; with real embeddings the fusion is unchanged. Scores are no longer all "100%".
+- `run_nqe_query_by_id` and `search_configs` returned a "proceed?" warning with no data when no `limit` was set. They now return a first page of 100 rows; a limit above 1,000 is cut to 1,000 with a note. The "Would you like to" menu is gone from results.
+- `search_configs` with a `device_filter` that matches nothing now says the filter takes case-sensitive glob patterns.
+- Integration tests skip, with a reason, when the network is not reachable with the configured credentials (HTTP 403 or 404), instead of failing.
 - `search_configs` failed on every call with HTTP 400. The Config Search query needs the parameters `Config_Pattern`, `Operating_Systems` and `Device_Name_Patterns`, and the tool sent `searchPattern`. It now sends all three.
 - `search_configs` ignored `device_filter` and `all_results`. `device_filter` now takes comma-separated glob patterns (case-sensitive; `*` is a wildcard).
 - `search_configs` accepted an empty `search_term`. It now returns `search_term is required and cannot be empty`.
