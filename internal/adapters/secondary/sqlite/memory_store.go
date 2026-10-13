@@ -28,7 +28,8 @@ func openSQLiteWithForeignKeys(dbPath string) (*sql.DB, error) {
 			},
 		})
 	})
-	return sql.Open(driverName, dbPath)
+	// WAL and a busy timeout let several stdio server processes share one database file.
+	return sql.Open(driverName, "file:"+dbPath+"?_busy_timeout=5000&_journal_mode=WAL")
 }
 
 // MemorySystem manages the knowledge graph memory using SQLite

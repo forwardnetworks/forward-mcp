@@ -89,7 +89,8 @@ func NewNQEDatabase(logger ports.Logger, instanceID string) (*NQEDatabase, error
 	}
 
 	dbPath := filepath.Join(dataDir, "nqe_queries.db")
-	db, err := sql.Open("sqlite3", dbPath)
+	// WAL and a busy timeout let several stdio server processes share one database file.
+	db, err := sql.Open("sqlite3", "file:"+dbPath+"?_busy_timeout=5000&_journal_mode=WAL")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
