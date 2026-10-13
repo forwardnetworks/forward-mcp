@@ -34,6 +34,14 @@ type RunNQEQueryByIDArgs struct {
 	AllResults         bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results with automatic pagination. Optional; default false."`
 }
 
+// RunNQEQueryTextArgs represents arguments for running NQE source text.
+type RunNQEQueryTextArgs struct {
+	NetworkID  string           `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
+	Query      string           `json:"query" jsonschema:"NQE source text to run. Required. Example: foreach d in network.devices select {name: d.name}"`
+	SnapshotID string           `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
+	Options    *NQEQueryOptions `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional. Use limit and offset to page; the result states the total row count."`
+}
+
 type CompareNQEResultsArgs struct {
 	BeforeSnapshotID string                 `json:"before_snapshot_id" jsonschema:"Base snapshot ID to compare from. Required."`
 	AfterSnapshotID  string                 `json:"after_snapshot_id" jsonschema:"Target snapshot ID to compare to. Required."`
@@ -182,7 +190,7 @@ type SearchConfigsArgs struct {
 	NetworkID    string                 `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
 	SnapshotID   string                 `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
 	SearchTerm   string                 `json:"search_term" jsonschema:"Text pattern to search for in configurations. Required. Supports hierarchical format with indentation."`
-	DeviceFilter string                 `json:"device_filter,omitempty" jsonschema:"Device name pattern to filter results. Optional; searches all devices if omitted."`
+	DeviceFilter string                 `json:"device_filter,omitempty" jsonschema:"Device name glob patterns, comma-separated, such as sjc-* or ar01,ar02. Case-sensitive; * is a wildcard and regular expressions do not work. Optional; searches all devices if omitted."`
 	Parameters   map[string]interface{} `json:"parameters,omitempty" jsonschema:"Additional query parameters. Optional."`
 	Options      *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
 	AllResults   bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results with automatic pagination and store in memory. Optional; default false."`

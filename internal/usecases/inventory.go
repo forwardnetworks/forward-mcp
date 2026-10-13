@@ -685,14 +685,34 @@ func (s *Service) GetOSSupport(ctx context.Context, args GetOSSupportArgs) (*Res
 func (s *Service) SearchConfigs(ctx context.Context, args SearchConfigsArgs) (*Result, error) {
 	s.logToolCall("search_configs", args, nil)
 
+	if err := s.validateNonEmpty("search_term", strings.TrimSpace(args.SearchTerm)); err != nil {
+		return nil, fmt.Errorf("%w. Give the text to find in device configurations, for example \"ntp server\"", err)
+	}
+
+	// The Config Search query takes three required parameters. An empty list
+	// for Operating_Systems or Device_Name_Patterns means "all".
+	deviceNames := []string{}
+	for _, p := range strings.Split(args.DeviceFilter, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			deviceNames = append(deviceNames, p)
+		}
+	}
+	params := map[string]interface{}{
+		"Config_Pattern":       args.SearchTerm,
+		"Operating_Systems":    []string{},
+		"Device_Name_Patterns": deviceNames,
+	}
+	for k, v := range args.Parameters { // caller-supplied parameters win
+		params[k] = v
+	}
+
 	queryArgs := RunNQEQueryByIDArgs{
 		NetworkID:  args.NetworkID,
 		SnapshotID: args.SnapshotID,
 		QueryID:    "FQ_e636c47826ad7144f09eaf6bc14dfb0b560e7cc9", // Config Search
-		Parameters: map[string]interface{}{
-			"searchPattern": args.SearchTerm,
-		},
-		Options: args.Options,
+		Parameters: params,
+		Options:    args.Options,
+		AllResults: args.AllResults,
 	}
 
 	return s.RunNQEQueryByID(ctx, queryArgs)

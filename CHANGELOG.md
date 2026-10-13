@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `run_nqe_query` tool runs NQE source text the caller writes. It is read-only. The result states the total row count and, for a partial page, the `offset` of the next page. This covers questions no stored query answers, such as listing every interface with its admin status.
+
+### Fixed
+- `search_configs` failed on every call with HTTP 400. The Config Search query needs the parameters `Config_Pattern`, `Operating_Systems` and `Device_Name_Patterns`, and the tool sent `searchPattern`. It now sends all three.
+- `search_configs` ignored `device_filter` and `all_results`. `device_filter` now takes comma-separated glob patterns (case-sensitive; `*` is a wildcard).
+- `search_configs` accepted an empty `search_term`. It now returns `search_term is required and cannot be empty`.
+- HTTP 400 errors now include the reason Forward gives, such as `Expected parameter, 'Config_Pattern', was not provided.`, in place of one fixed sentence.
+- HTTP 404 errors now name `list_networks` and `list_snapshots` as the next step.
+
 ## [4.4.0] - 2026-10-10 - MCP Skills Extension
 
 ### Added

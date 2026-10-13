@@ -947,3 +947,47 @@ func (s *Service) CompareNQEResults(ctx context.Context, args CompareNQEResultsA
 
 	return textResult(string(jsonBytes)), nil
 }
+
+// RunNQEQueryText runs NQE source text the caller wrote. It is read-only: NQE
+// cannot change the network. The result states the total row count, so a caller
+// who gets a partial page knows to page with offset.
+func (s *Service) RunNQEQueryText(ctx context.Context, args RunNQEQueryTextArgs) (*Result, error) {
+	s.logToolCall("run_nqe_query", args, nil)
+
+	if err := s.validateNonEmpty("query", strings.TrimSpace(args.Query)); err != nil {
+		return nil, fmt.Errorf("%w. Write NQE source text, or use search_nqe_queries to find a stored query", err)
+	}
+	networkID := s.getNetworkID(ctx, args.NetworkID)
+	if err := s.validateNetworkID(networkID); err != nil {
+		return nil, err
+	}
+
+	params := &domain.NQEQueryParams{
+		NetworkID:  networkID,
+		SnapshotID: s.getSnapshotID(args.SnapshotID),
+		Query:      args.Query,
+		Options:    s.convertNQEQueryOptions(args.Options),
+	}
+	if params.Options == nil {
+		params.Options = &domain.NQEQueryOptions{Limit: s.getQueryLimit(0)}
+	}
+
+	result, err := s.forwardClient.RunNQEQueryByString(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run NQE query: %w", err)
+	}
+
+	out := map[string]interface{}{
+		"snapshotId":   result.SnapshotID,
+		"items":        result.Items,
+		"rowsReturned": len(result.Items),
+	}
+	if result.TotalNumItems > 0 {
+		out["totalNumItems"] = result.TotalNumItems
+		if int64(len(result.Items))+int64(params.Options.Offset) < result.TotalNumItems {
+			out["note"] = fmt.Sprintf("Partial result: %d of %d rows. Set options.offset to %d to get the next page.",
+				len(result.Items), result.TotalNumItems, params.Options.Offset+len(result.Items))
+		}
+	}
+	return textResult(MarshalCompactJSONString(out)), nil
+}

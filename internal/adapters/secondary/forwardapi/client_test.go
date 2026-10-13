@@ -112,3 +112,19 @@ func TestClient_CancelStopsRequest(t *testing.T) {
 		t.Fatal("GetNetworks kept running after its context was cancelled")
 	}
 }
+
+func TestDescribeBadRequest(t *testing.T) {
+	cases := []struct{ name, body, want string }{
+		{"nqe error", `{"message":"Error encountered while executing the NQE query","reason":"NQE_RUNTIME_ERROR","errors":[{"message":"Expected parameter, 'Config_Pattern', was not provided."}]}`,
+			"Error encountered while executing the NQE query: Expected parameter, 'Config_Pattern', was not provided."},
+		{"message only", `{"message":"bad"}`, "bad"},
+		{"not json", `<html>oops</html>`, ""},
+		{"empty", ``, ""},
+		{"neither field", `{"apiUrl":"/x"}`, ""},
+	}
+	for _, c := range cases {
+		if got := describeBadRequest([]byte(c.body)); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}

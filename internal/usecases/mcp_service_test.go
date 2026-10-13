@@ -27,6 +27,8 @@ func contains(s, substr string) bool {
 
 // MockForwardClient implements ports.ForwardAPI for testing
 type MockForwardClient struct {
+	lastQueryText string
+	lastByIDParams *domain.NQEQueryParams
 	networks        []domain.Network
 	devices         []domain.Device
 	snapshots       []domain.Snapshot
@@ -1187,6 +1189,7 @@ func TestToolHandlersComprehensive(t *testing.T) {
 
 // Add or fix these methods for MockForwardClient:
 func (m *MockForwardClient) RunNQEQueryByID(ctx context.Context, params *domain.NQEQueryParams) (*domain.NQERunResult, error) {
+	m.lastByIDParams = params
 	if m.shouldError {
 		return nil, &MockError{m.errorMessage}
 	}
@@ -1992,3 +1995,15 @@ func TestCompareNQEResults(t *testing.T) {
 	}
 }
 
+
+// RunNQEQueryByString records the query text and returns the canned result.
+func (m *MockForwardClient) RunNQEQueryByString(ctx context.Context, params *domain.NQEQueryParams) (*domain.NQERunResult, error) {
+	if m.shouldError {
+		return nil, &MockError{m.errorMessage}
+	}
+	m.lastQueryText = params.Query
+	if m.nqeResult != nil {
+		return m.nqeResult, nil
+	}
+	return &domain.NQERunResult{SnapshotID: "snap-1"}, nil
+}

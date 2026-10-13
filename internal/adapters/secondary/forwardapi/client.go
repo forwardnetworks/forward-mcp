@@ -150,7 +150,7 @@ func (c *Client) makeRequest(ctx context.Context, method, endpoint string, body 
 		case 403:
 			return nil, fmt.Errorf("access forbidden (HTTP 403): your API credentials are valid but lack permission to access this resource. Please check your Forward Networks account permissions")
 		case 404:
-			return nil, fmt.Errorf("resource not found (HTTP 404): the requested endpoint %s does not exist. Please verify the network ID, snapshot ID, or resource ID is correct", endpoint)
+			return nil, fmt.Errorf("resource not found (HTTP 404): the requested endpoint %s does not exist. Please verify the network ID, snapshot ID, or resource ID is correct. Use list_networks to find valid network IDs and list_snapshots for the snapshot IDs of a network", endpoint)
 		case 429:
 			return nil, fmt.Errorf("rate limit exceeded (HTTP 429): too many requests to Forward Networks API. Please wait before retrying")
 		case 500, 502, 503, 504:
@@ -174,6 +174,9 @@ func (c *Client) makeRequest(ctx context.Context, method, endpoint string, body 
 			debugLogger := c.log
 			debugLogger.Debug("400 Bad Request - URL: %s%s, Method: %s, Body Size: %d bytes",
 				c.config.APIBaseURL, endpoint, method, len(reqBody))
+			if detail := describeBadRequest(errorBody); detail != "" {
+				return nil, fmt.Errorf("bad request (HTTP 400): %s", detail)
+			}
 			return nil, fmt.Errorf("bad request (HTTP 400): the API rejected the request parameters. Please verify all required fields are provided and have valid values")
 		}
 
@@ -1236,3 +1239,33 @@ func (c *Client) DeleteLocation(ctx context.Context, networkID string, locationI
 
 // Client implements the ForwardAPI port.
 var _ ports.ForwardAPI = (*Client)(nil)
+
+// describeBadRequest pulls the explanation out of a Forward 400 body: the
+// top-level message and each entry of errors[].message, for example
+// "Expected parameter, 'Config_Pattern', was not provided." It returns "" when
+// the body has neither. Nothing else from the body is passed on.
+func describeBadRequest(body []byte) string {
+	var e struct {
+		Message string `json:"message"`
+		Errors  []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &e); err != nil {
+		return ""
+	}
+	var parts []string
+	if e.Message != "" {
+		parts = append(parts, e.Message)
+	}
+	for _, d := range e.Errors {
+		if d.Message != "" {
+			parts = append(parts, d.Message)
+		}
+	}
+	detail := strings.Join(parts, ": ")
+	if len(detail) > 500 {
+		detail = detail[:500] + "..."
+	}
+	return detail
+}

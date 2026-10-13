@@ -83,6 +83,7 @@ var toolAnnotations = map[string]*mcp.ToolAnnotations{
 	"search_paths_bulk":        annReadOnly,
 	"analyze_network_prefixes": annReadOnly,
 	"run_nqe_query_by_id":      annReadOnly,
+	"run_nqe_query":            annReadOnly,
 	"list_nqe_queries":         annReadOnly,
 	"compare_nqe_results":      annReadOnly,
 	"get_device_basic_info":    annReadOnly,
@@ -197,6 +198,10 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 	addTool(server, "run_nqe_query_by_id",
 		"Tool to execute a Network Query Engine (NQE) query using a predefined query ID from the Forward library. Use when running standard network analysis, compliance checks, or inventory reports. Requires query_id; network_id optional if default set. Set all_results=true to fetch complete datasets with automatic pagination. Large results are cached and chunked automatically.",
 		s.RunNQEQueryByID)
+
+	addTool(server, "run_nqe_query",
+		"Tool to run NQE source text that you write. Use when no stored query answers the question, for example listing all interfaces with admin status. Requires query (NQE text); network_id optional if default set. Read-only. Returns rows and the total row count; page with options.limit and options.offset. For stored queries use run_nqe_query_by_id.",
+		s.RunNQEQueryText)
 
 	addTool(server, "list_nqe_queries",
 		"Tool to list available NQE queries from the Forward Networks query library. Use when browsing queries by directory path or discovering predefined queries for reports. Filter by directory (e.g., '/L3/Basic/', '/L3/Security/'). Returns query IDs for use with run_nqe_query_by_id. For semantic search use search_nqe_queries.",
