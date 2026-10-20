@@ -251,7 +251,13 @@ Note: TLS 1.3 is enforced for all API connections; certificate verification cann
 
 Self-signed and internal-CA certificates are supported. You trust the specific certificate; checks are never switched off, so nobody on the network can read your API keys.
 
-**Forward server with a self-signed certificate.** Save its certificate and point `FORWARD_CA_CERT_PATH` at it:
+**Forward server with a self-signed certificate.** Run the `trust` command once, with `FORWARD_API_BASE_URL` set:
+```sh
+./bin/forward-mcp-server trust
+```
+It connects with certificate checks on, shows the certificate the server presents (subject, issuer, expiry, SHA-256 fingerprint) and asks before saving it. Check the fingerprint with your Forward administrator before you answer `y`. It saves the issuing CA when the server sends one, so trust survives a renewal of the server certificate; for a plain self-signed server it saves that certificate. The file is `~/.forward-mcp/ca.pem`, which the server reads whenever `FORWARD_CA_CERT_PATH` is not set, so no further configuration is needed. Running it for another Forward server adds that certificate to the same file. In scripts, pass `--fingerprint <sha256>` to accept only that certificate without a prompt.
+
+To manage the file yourself instead, save the certificate and point `FORWARD_CA_CERT_PATH` at it:
 ```sh
 openssl s_client -connect forward.example.com:443 -showcerts </dev/null \
   | openssl x509 -outform PEM > forward.pem
@@ -264,7 +270,7 @@ Check the fingerprint (`openssl x509 -in forward.pem -noout -fingerprint -sha256
 **This server with a self-signed certificate (remote mode).** Pass it as `FORWARD_HTTP_TLS_CERT` / `FORWARD_HTTP_TLS_KEY`; any valid certificate works. Clients must trust it. For Claude Code, set `NODE_EXTRA_CA_CERTS=/path/to/cert.pem` before starting it.
 
 Common errors, and what they mean:
-- *"not trusted"*: set `FORWARD_CA_CERT_PATH` as above.
+- *"not trusted"*: run `forward-mcp-server trust`, or set `FORWARD_CA_CERT_PATH`, as above.
 - *"does not match its host name"*: use the host name the certificate was issued for. Certificates that set only the Common Name, with no Subject Alternative Name, are rejected. Reissue them with a SAN.
 - *"does not support TLS 1.3"*: the Forward server, or a proxy in front of it, only offers TLS 1.2.
 

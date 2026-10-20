@@ -35,6 +35,10 @@ const serverInstructions = "MCP server for Forward Networks: network discovery, 
 	"Prefer search_paths_bulk for path analysis."
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "trust" {
+		os.Exit(runTrust(os.Args[2:], os.Stdin, os.Stdout))
+	}
+
 	// Initialize logger
 	logger := stderrlog.New()
 
