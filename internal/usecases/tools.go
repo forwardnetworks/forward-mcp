@@ -202,13 +202,11 @@ type SearchConfigsArgs struct {
 
 // GetConfigDiffArgs represents arguments for configuration comparison
 type GetConfigDiffArgs struct {
-	NetworkID      string                 `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
-	BeforeSnapshot string                 `json:"before_snapshot" jsonschema:"Earlier snapshot UUID for comparison. Required."`
-	AfterSnapshot  string                 `json:"after_snapshot" jsonschema:"Later snapshot UUID for comparison. Required."`
-	DeviceFilter   string                 `json:"device_filter,omitempty" jsonschema:"Device name pattern to filter results. Optional; compares all devices if omitted."`
-	Parameters     map[string]interface{} `json:"parameters,omitempty" jsonschema:"Additional query parameters. Optional."`
-	Options        *NQEQueryOptions       `json:"options,omitempty" jsonschema:"Query options for pagination, sorting, filtering. Optional."`
-	AllResults     bool                   `json:"all_results,omitempty" jsonschema:"If true, fetch all results with automatic pagination and store in memory. Optional; default false."`
+	NetworkID      string `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
+	BeforeSnapshot string `json:"before_snapshot" jsonschema:"Earlier snapshot ID. Required. Use list_snapshots to find snapshot IDs."`
+	AfterSnapshot  string `json:"after_snapshot" jsonschema:"Later snapshot ID. Required."`
+	DeviceFilter   string `json:"device_filter,omitempty" jsonschema:"Device name glob patterns, comma-separated, such as sjc-* or ar01,ar02. Case-sensitive; * is a wildcard. Optional; compares all devices if omitted."`
+	MaxLines       int    `json:"max_lines,omitempty" jsonschema:"Maximum changed lines to return across all devices. Optional; default 300, max 2000. Counts are always complete."`
 }
 
 // Prompt Workflow Arguments
@@ -374,16 +372,16 @@ type LargeNQEResultsWorkflowArgs struct {
 
 // Path Search Arguments
 type SearchPathsArgs struct {
-	NetworkID               string `json:"network_id" jsonschema:"Network ID. Required."`
-	SnapshotID              string `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
-	From                    string `json:"from,omitempty" jsonschema:"Source device name. Optional; can use src_ip instead. At least one of 'from' or 'src_ip' recommended."`
-	SrcIP                   string `json:"src_ip,omitempty" jsonschema:"Source IP address or CIDR subnet. Optional; can use 'from' instead.;format=ipv4"`
-	DstIP                   string `json:"dst_ip" jsonschema:"Destination IP address or CIDR. Required. Must be valid IP, not device name.;format=ipv4"`
-	IPProto                 *int   `json:"ip_proto,omitempty" jsonschema:"IP protocol number (6=TCP, 17=UDP). Optional."`
-	SrcPort                 string `json:"src_port,omitempty" jsonschema:"Source port for L4 analysis. Optional."`
-	DstPort                 string `json:"dst_port,omitempty" jsonschema:"Destination port for L4 analysis. Optional."`
-	ICMPType                *int   `json:"icmp_type,omitempty" jsonschema:"ICMP type. Optional."`
-	Intent                  string `json:"intent,omitempty" jsonschema:"Path selection intent. Options: PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY. Default: PREFER_DELIVERED."`
+	NetworkID  string `json:"network_id" jsonschema:"Network ID. Required."`
+	SnapshotID string `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
+	From       string `json:"from,omitempty" jsonschema:"Source device name. Optional; can use src_ip instead. At least one of 'from' or 'src_ip' recommended."`
+	SrcIP      string `json:"src_ip,omitempty" jsonschema:"Source IP address or CIDR subnet. Optional; can use 'from' instead.;format=ipv4"`
+	DstIP      string `json:"dst_ip" jsonschema:"Destination IP address or CIDR. Required. Must be valid IP, not device name.;format=ipv4"`
+	IPProto    *int   `json:"ip_proto,omitempty" jsonschema:"IP protocol number (6=TCP, 17=UDP). Optional."`
+	SrcPort    string `json:"src_port,omitempty" jsonschema:"Source port for L4 analysis. Optional."`
+	DstPort    string `json:"dst_port,omitempty" jsonschema:"Destination port for L4 analysis. Optional."`
+	ICMPType   *int   `json:"icmp_type,omitempty" jsonschema:"ICMP type. Optional."`
+	Intent     string `json:"intent,omitempty" jsonschema:"Path selection intent. Options: PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY. Default: PREFER_DELIVERED."`
 	// TCP Flags (0 or 1)
 	FIN *int `json:"fin,omitempty" jsonschema:"TCP FIN bit (0 or 1). Optional."`
 	SYN *int `json:"syn,omitempty" jsonschema:"TCP SYN bit (0 or 1). Optional."`
@@ -440,31 +438,11 @@ type NetworkPrefixDiscoveryArgs struct {
 type NetworkPrefixAnalysisArgs struct {
 	NetworkID    string   `json:"network_id,omitempty" jsonschema:"Network ID. Optional if default network is set."`
 	SnapshotID   string   `json:"snapshot_id,omitempty" jsonschema:"Snapshot ID. Optional; defaults to latest."`
-	PrefixLevels []string `json:"prefix_levels,omitempty" jsonschema:"Aggregation levels to analyze. Example: ['/8', '/16', '/24']. Optional; defaults to common levels."`
-	FromDevices  []string `json:"from_devices,omitempty" jsonschema:"Source device names for connectivity analysis. Optional; analyzes all devices if omitted."`
-	ToDevices    []string `json:"to_devices,omitempty" jsonschema:"Destination device names for connectivity analysis. Optional; analyzes all devices if omitted."`
+	PrefixLevels []string `json:"prefix_levels,omitempty" jsonschema:"IPv4 aggregation levels to analyze, /1 to /32. Example: ['/8', '/16', '/24']. Optional; defaults to /8, /16 and /24."`
+	FromDevices  []string `json:"from_devices,omitempty" jsonschema:"Exact device names to trace from. Optional; any device if omitted. Each must have an IPv4 interface address."`
+	ToDevices    []string `json:"to_devices,omitempty" jsonschema:"Exact device names to trace to. Optional; any device if omitted. Each must have an IPv4 interface address."`
 	Intent       string   `json:"intent,omitempty" jsonschema:"Path selection intent. Options: PREFER_DELIVERED, PREFER_VIOLATIONS, VIOLATIONS_ONLY. Default: PREFER_DELIVERED."`
-	MaxResults   int      `json:"max_results,omitempty" jsonschema:"Maximum number of connectivity results to return. Optional."`
-}
-
-type NetworkPrefixInfo struct {
-	Prefix     string   `json:"prefix"`
-	Device     string   `json:"device"`
-	NetworkID  string   `json:"network_id"`
-	Location   string   `json:"location,omitempty"`
-	Aggregated bool     `json:"aggregated"`
-	Subnets    []string `json:"subnets,omitempty"`
-}
-
-type ConnectivityAnalysisResult struct {
-	FromPrefix       string   `json:"from_prefix"`
-	ToPrefix         string   `json:"to_prefix"`
-	FromDevice       string   `json:"from_device"`
-	ToDevice         string   `json:"to_device"`
-	Connectivity     string   `json:"connectivity"` // "CONNECTED", "PARTIAL", "DISCONNECTED"
-	PathCount        int      `json:"path_count"`
-	AggregationLevel string   `json:"aggregation_level"`
-	Details          []string `json:"details,omitempty"`
+	MaxResults   int      `json:"max_results,omitempty" jsonschema:"Maximum prefix pairs to trace. Optional; default 50, max 200."`
 }
 
 // Skills Extension Tool Arguments

@@ -39,6 +39,7 @@ type MockForwardClient struct {
 	deviceLocations map[string]string
 	pathResponse    *domain.PathSearchResponse
 	nqeResult       *domain.NQERunResult
+	nqeTextResults  map[string]*domain.NQERunResult // by snapshot ID; RunNQEQueryByString prefers these
 	shouldError     bool
 	errorMessage    string
 }
@@ -937,7 +938,7 @@ func TestToolHandlersComprehensive(t *testing.T) {
 			return err
 		}},
 		{"get_config_diff", func() error {
-			_, err := service.GetConfigDiff(context.Background(), GetConfigDiffArgs{NetworkID: "162112", BeforeSnapshot: "snapshot-123", AfterSnapshot: "snapshot-456", Options: &NQEQueryOptions{Limit: 50}})
+			_, err := service.GetConfigDiff(context.Background(), GetConfigDiffArgs{NetworkID: "162112", BeforeSnapshot: "snapshot-123", AfterSnapshot: "snapshot-456"})
 			return err
 		}},
 		// Default Settings Management Tools
@@ -2006,6 +2007,9 @@ func (m *MockForwardClient) RunNQEQueryByString(ctx context.Context, params *dom
 	m.mu.Lock()
 	m.lastQueryText = params.Query
 	m.mu.Unlock()
+	if r, ok := m.nqeTextResults[params.SnapshotID]; ok {
+		return r, nil
+	}
 	if m.nqeResult != nil {
 		return m.nqeResult, nil
 	}

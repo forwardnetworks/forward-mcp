@@ -1063,7 +1063,8 @@ func (c *Client) GetDevices(ctx context.Context, networkID string, params *Devic
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// Wrap in our response structure for consistency
+	// Wrap in our response structure for consistency. The API gives no total,
+	// so TotalCount is only the size of this page.
 	deviceResp := &DeviceResponse{
 		Devices:    devices,
 		TotalCount: len(devices),

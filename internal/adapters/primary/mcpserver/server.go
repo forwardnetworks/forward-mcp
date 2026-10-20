@@ -192,7 +192,7 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 
 	// Register network prefix analysis tool
 	addTool(server, "analyze_network_prefixes",
-		"Tool to discover network prefixes at different aggregation levels and analyze site-to-site connectivity. Use when validating network segmentation, verifying route aggregation, or planning multi-site connectivity. Specify prefix_levels (e.g., /8, /16, /24) and optional device filters. Returns prefix mappings and connectivity matrices.",
+		"Tool to group the network's IPv4 interface addresses into aggregate prefixes and trace paths between them. Use when validating network segmentation or checking reachability between address blocks. Optional prefix_levels (default /8, /16, /24), from_devices and to_devices (exact names), and max_results (prefix pairs to trace, default 50, max 200). Each test traces one representative address per prefix, so it samples reachability rather than proving it. IPv4 only. Returns prefixes per level and, per pair, the path search status (DELIVERED, DENIED, NOT_DELIVERED, NO_PATH, TIMED_OUT) with a link to the path in Forward.",
 		s.AnalyzeNetworkPrefixes)
 
 	// NQE Tools
@@ -238,7 +238,7 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 		s.SearchConfigs)
 
 	addTool(server, "get_config_diff",
-		"Tool to compare network configurations between two snapshots and identify changes. Use when tracking configuration changes, troubleshooting drift, or auditing modifications. Returns detailed diff of configuration changes between specified snapshots.",
+		"Tool to compare device configurations between two snapshots line by line. Use when tracking configuration changes, troubleshooting drift, or auditing modifications. Requires before_snapshot and after_snapshot (use list_snapshots); device_filter takes comma-separated globs such as sjc-*. Compares lines up to three levels deep; a nested line reads 'parent > child'. Returns, per changed device, the added and removed lines with complete counts, plus devices whose configuration exists in only one snapshot.",
 		s.GetConfigDiff)
 
 	// Device Management Tools
