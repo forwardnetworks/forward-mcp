@@ -168,6 +168,7 @@ func (idx *NQEQueryIndex) LoadFromSpec() error {
 		return fmt.Errorf("spec file %s had %d queries but none were usable", specPath, len(nqeLibrary.Queries))
 	}
 	idx.queries = filtered
+	idx.isReady = true
 	idx.logger.Info("Loaded %d NQE queries into search index from spec file", len(filtered))
 
 	// Try to load pre-generated embeddings
