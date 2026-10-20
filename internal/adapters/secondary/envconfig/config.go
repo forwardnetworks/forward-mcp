@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -102,10 +103,32 @@ func Load(log ports.Logger) (*Config, error) {
 		log.Debug("Could not load JSON config file: %v", err)
 	}
 
+	// A certificate saved by `forward-mcp-server trust` is used when no CA
+	// file is named, so trusting a self-signed server needs no configuration.
+	if config.Forward.CACertPath == "" {
+		if p := DefaultCACertPath(); p != "" {
+			if _, err := os.Stat(p); err == nil {
+				config.Forward.CACertPath = p
+				log.Debug("Trusting the certificates in %s, saved by forward-mcp-server trust", p)
+			}
+		}
+	}
+
 	if err := validate(config, log); err != nil {
 		return nil, err
 	}
 	return config, nil
+}
+
+// DefaultCACertPath is the file `forward-mcp-server trust` saves certificates
+// to, and the CA file the server reads when FORWARD_CA_CERT_PATH is not set.
+// It is "" when the home directory is unknown.
+func DefaultCACertPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".forward-mcp", "ca.pem")
 }
 
 // loadEnvFile loads environment variables from .env file

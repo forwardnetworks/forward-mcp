@@ -3,7 +3,7 @@ PROJECT_NAME=forward-mcp
 BINARY_NAME=forward-mcp-server
 TEST_CLIENT=forward-mcp-test-client
 BUILD_DIR=bin
-MAIN_FILE=cmd/server/main.go
+MAIN_PKG=./cmd/server
 TEST_CLIENT_FILE=cmd/test-client/main.go
 
 # Go parameters
@@ -26,7 +26,7 @@ all: test build
 build:
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=$(CGO_ENABLED) $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_FILE)
+	CGO_ENABLED=$(CGO_ENABLED) $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PKG)
 
 # Build the test client
 build-test-client:
@@ -120,7 +120,7 @@ run-test-client: build build-test-client
 # Development server
 dev:
 	@echo "Starting development server..."
-	$(GOCMD) run $(MAIN_FILE)
+	$(GOCMD) run $(MAIN_PKG)
 
 # Install dependencies
 deps:
@@ -133,14 +133,14 @@ build-linux:
 	@echo "Building for Linux..."
 	@echo "⚠️  Note: Cross-compilation with SQLite requires appropriate CGO setup"
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)_linux $(MAIN_FILE)
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)_linux $(MAIN_PKG)
 
 # Build for Windows
 build-windows:
 	@echo "Building for Windows..."
 	@echo "⚠️  Note: Cross-compilation with SQLite requires appropriate CGO setup"
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME).exe $(MAIN_FILE)
+	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME).exe $(MAIN_PKG)
 
 # Docker build
 docker-build:

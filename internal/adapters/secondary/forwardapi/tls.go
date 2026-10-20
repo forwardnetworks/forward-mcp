@@ -47,7 +47,8 @@ func describeTLSError(err error, baseURL string) string {
 		return fmt.Sprintf("the TLS certificate of %s is not valid (%v). Check its validity dates and that it has a Subject Alternative Name", baseURL, invalid)
 	case errors.As(err, &unknown), errors.As(err, &verify):
 		return fmt.Sprintf("the TLS certificate of %s is not trusted, which is expected for a self-signed or internal-CA certificate. "+
-			"Save the server certificate (or the CA that issued it) as a PEM file and set FORWARD_CA_CERT_PATH to that file", baseURL)
+			"Run 'forward-mcp-server trust' to review and save it, or save the server certificate (or the CA that issued it) "+
+			"as a PEM file and set FORWARD_CA_CERT_PATH to that file", baseURL)
 	}
 	return ""
 }

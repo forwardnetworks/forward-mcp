@@ -8,6 +8,7 @@
       "internal/adapters/primary": "adapters/primary",
       "internal/adapters/secondary": "adapters/secondary",
       "cmd/server/main.go": "composition-root",
+      "cmd/server/trust.go": "composition-root",
       "examples/test_mcp.go": "composition-root",
       "cmd/test-client/main.go": "composition-root",
       "skills.go": "composition-root"
