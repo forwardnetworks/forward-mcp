@@ -38,8 +38,15 @@ func (s *Service) ListDevices(ctx context.Context, args ListDevicesArgs) (*Resul
 		}
 	}
 
-	result := MarshalCompactJSONString(response)
-	return textResult(fmt.Sprintf("Found %d devices (total: %d):\n%s", len(response.Devices), response.TotalCount, result)), nil
+	// The devices endpoint returns a bare page with no total, so say whether
+	// another page may follow instead of reporting a total.
+	n := len(response.Devices)
+	paging := "This is the last page."
+	if n == limit {
+		paging = fmt.Sprintf("More devices may exist: set offset to %d for the next page.", args.Offset+n)
+	}
+	result := MarshalCompactJSONString(map[string]interface{}{"devices": response.Devices})
+	return textResult(fmt.Sprintf("Returned %d devices starting at offset %d. %s\n%s", n, args.Offset, paging, result)), nil
 }
 
 func (s *Service) GetDeviceLocations(ctx context.Context, args GetDeviceLocationsArgs) (*Result, error) {
@@ -724,25 +731,6 @@ func (s *Service) SearchConfigs(ctx context.Context, args SearchConfigsArgs) (*R
 		res.Text += "\nNo rows matched. device_filter takes case-sensitive glob patterns such as sjc-* (regular expressions do not work). Check the case, or remove device_filter to search all devices."
 	}
 	return res, err
-}
-
-func (s *Service) GetConfigDiff(ctx context.Context, args GetConfigDiffArgs) (*Result, error) {
-	s.logToolCall("get_config_diff", args, nil)
-
-	params := map[string]interface{}{}
-	if args.AfterSnapshot != "" {
-		params["compareSnapshotId"] = args.AfterSnapshot
-	}
-
-	queryArgs := RunNQEQueryByIDArgs{
-		NetworkID:  args.NetworkID,
-		SnapshotID: args.BeforeSnapshot,
-		QueryID:    "FQ_51f090cbea069b4049eb283716ab3bbb3f578aea", // Config Diff
-		Parameters: params,
-		Options:    args.Options,
-	}
-
-	return s.RunNQEQueryByID(ctx, queryArgs)
 }
 
 // Default Settings Management Tool Implementations

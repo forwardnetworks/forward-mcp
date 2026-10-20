@@ -251,3 +251,24 @@ func BenchmarkSearchQueries_Hybrid(b *testing.B) {
 		}
 	}
 }
+
+// The server falls back to the bundled spec when the API is unreachable, so
+// an index loaded only from the spec must report ready and answer searches.
+func TestLoadFromSpec_MarksIndexReady(t *testing.T) {
+	idx := NewNQEQueryIndex(embeddings.NewMockEmbeddingService(), logger.New())
+
+	if err := idx.LoadFromSpec(); err != nil {
+		t.Fatalf("LoadFromSpec failed: %v", err)
+	}
+	if !idx.IsReady() {
+		t.Fatal("index loaded from spec should be ready")
+	}
+
+	results, err := idx.SearchQueries("bgp neighbors", 5)
+	if err != nil {
+		t.Fatalf("SearchQueries failed: %v", err)
+	}
+	if len(results) == 0 {
+		t.Error("expected spec-loaded index to return results for 'bgp neighbors'")
+	}
+}

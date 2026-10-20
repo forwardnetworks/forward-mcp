@@ -9,6 +9,9 @@ import (
 	"github.com/forward-mcp/internal/domain"
 )
 
+// maxBloomRows bounds the rows one filter build reads.
+const maxBloomRows = 500000
+
 // BuildBloomFilter builds a bloom filter from NQE query results
 func (s *Service) BuildBloomFilter(ctx context.Context, args BuildBloomFilterArgs) (*Result, error) {
 	s.logToolCall("build_bloom_filter", args, nil)
@@ -24,24 +27,20 @@ func (s *Service) BuildBloomFilter(ctx context.Context, args BuildBloomFilterArg
 		chunkSize = 200 // Default chunk size
 	}
 
-	// Run the NQE query to get data for building the filter
-	params := &domain.NQEQueryParams{
+	// Index every row: a filter built from the first page misses the rest.
+	rows, snapshotID, err := s.fetchAllNQERows(ctx, &domain.NQEQueryParams{
 		NetworkID:  networkID,
 		QueryID:    args.QueryID,
 		SnapshotID: s.getSnapshotID(""),
-		Options: &domain.NQEQueryOptions{
-			Limit: 1000, // Reasonable limit for filter building
-		},
-	}
-
-	result, err := s.forwardClient.RunNQEQueryByID(ctx, params)
+	}, maxBloomRows)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run NQE query for filter building: %w", err)
 	}
 
-	if len(result.Items) == 0 {
+	if len(rows) == 0 {
 		return nil, fmt.Errorf("no data found for building bloom filter")
 	}
+	result := &domain.NQERunResult{SnapshotID: snapshotID, Items: rows, TotalNumItems: int64(len(rows))}
 
 	// Build the bloom filter
 	err = s.bloomManager.BuildFilterFromNQEResult(networkID, args.FilterType, result, chunkSize)

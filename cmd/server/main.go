@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -264,10 +265,19 @@ func newDeps(cfg *ports.Config, log ports.Logger) usecases.Deps {
 		memory = m
 	}
 
+	// Generated embeddings go beside the databases, not into spec/, which is
+	// part of the checkout or install and ships empty.
+	queryIndex := queryindex.NewNQEQueryIndex(embedder, log)
+	if dir, err := sqlite.DataDirectory(); err != nil {
+		log.Warn("No writable data directory for the embeddings cache: %v", err)
+	} else {
+		queryIndex.UseEmbeddingsCache(filepath.Join(dir, "nqe-embeddings.json"))
+	}
+
 	deps := usecases.Deps{
 		API:        forwardapi.NewClient(&cfg.Forward, log),
 		Cache:      semcache.NewSemanticCache(embedder, log, instanceID, &cfg.Forward.SemanticCache),
-		QueryIndex: queryindex.NewNQEQueryIndex(embedder, log),
+		QueryIndex: queryIndex,
 		QueryStore: queryStore,
 		Memory:     memory,
 		Bloom:      bloom.NewBloomSearchManager(log, instanceID),

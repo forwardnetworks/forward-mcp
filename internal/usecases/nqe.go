@@ -69,7 +69,46 @@ const (
 	defaultFirstPageLimit = 100
 	// maxPageLimit is the largest page a single call returns.
 	maxPageLimit = 1000
+	// fetchPageSize is the page size fetchAllNQERows asks the API for.
+	fetchPageSize = 10000
 )
+
+// fetchAllNQERows runs a query page by page and returns every row, with the
+// snapshot ID the API reports. params names the query by QueryID or by Query
+// text; its Options are replaced. It stops with an error past maxRows, so a
+// caller never holds an unbounded result.
+func (s *Service) fetchAllNQERows(ctx context.Context, params *domain.NQEQueryParams, maxRows int) ([]map[string]interface{}, string, error) {
+	var (
+		rows       []map[string]interface{}
+		snapshotID string
+	)
+	for offset := 0; ; offset += fetchPageSize {
+		p := *params
+		p.Options = &domain.NQEQueryOptions{Limit: fetchPageSize, Offset: offset}
+		var (
+			res *domain.NQERunResult
+			err error
+		)
+		if p.QueryID != "" {
+			res, err = s.forwardClient.RunNQEQueryByID(ctx, &p)
+		} else {
+			res, err = s.forwardClient.RunNQEQueryByString(ctx, &p)
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to run NQE query (page at offset %d): %w", offset, err)
+		}
+		if snapshotID == "" {
+			snapshotID = res.SnapshotID
+		}
+		rows = append(rows, res.Items...)
+		if len(rows) > maxRows {
+			return nil, "", fmt.Errorf("the query returned more than %d rows. Narrow it, for example with a device filter", maxRows)
+		}
+		if len(res.Items) < fetchPageSize || (res.TotalNumItems > 0 && int64(len(rows)) >= res.TotalNumItems) {
+			return rows, snapshotID, nil
+		}
+	}
+}
 
 // projectResult applies the caller's column choice to a result. It returns the
 // result itself when the caller made no choice.

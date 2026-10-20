@@ -24,6 +24,7 @@ type NQEQueryIndex struct {
 	mutex               sync.RWMutex
 	indexPath           string
 	embeddingsCachePath string // Path to save/load embeddings
+	embeddingsSeedPath  string // Read-only cache read when embeddingsCachePath does not exist yet; see UseEmbeddingsCache
 	offlineMode         bool   // Whether to work with cached embeddings only
 	isLoading           bool   // Whether the index is currently loading
 	isReady             bool   // Whether the index is ready for use
@@ -84,6 +85,19 @@ func NewNQEQueryIndex(embeddingService ports.EmbeddingService, logger ports.Logg
 		isLoading:           false,
 		isReady:             false,
 	}
+}
+
+// UseEmbeddingsCache saves generated embeddings to path instead of beside the
+// spec file, which ships in the repository and the install directory and must
+// not change at run time. The spec's cache still seeds the index until path
+// exists.
+func (idx *NQEQueryIndex) UseEmbeddingsCache(path string) {
+	idx.mutex.Lock()
+	defer idx.mutex.Unlock()
+	if idx.embeddingsSeedPath == "" {
+		idx.embeddingsSeedPath = idx.embeddingsCachePath
+	}
+	idx.embeddingsCachePath = path
 }
 
 // LoadFromSpec parses the JSON spec file and extracts query information
@@ -154,6 +168,7 @@ func (idx *NQEQueryIndex) LoadFromSpec() error {
 		return fmt.Errorf("spec file %s had %d queries but none were usable", specPath, len(nqeLibrary.Queries))
 	}
 	idx.queries = filtered
+	idx.isReady = true
 	idx.logger.Info("Loaded %d NQE queries into search index from spec file", len(filtered))
 
 	// Try to load pre-generated embeddings
@@ -293,6 +308,9 @@ func (idx *NQEQueryIndex) LoadFromMockData() error {
 // loadEmbeddingsFromCache loads pre-generated embeddings from disk
 func (idx *NQEQueryIndex) loadEmbeddingsFromCache() error {
 	data, err := os.ReadFile(idx.embeddingsCachePath)
+	if os.IsNotExist(err) && idx.embeddingsSeedPath != "" {
+		data, err = os.ReadFile(idx.embeddingsSeedPath)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to read embeddings cache: %w", err)
 	}

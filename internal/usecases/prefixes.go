@@ -3,9 +3,10 @@ package usecases
 import (
 	"context"
 	"fmt"
-	"net"
+	"net/netip"
+	"sort"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/forward-mcp/internal/domain"
 )
@@ -198,9 +199,10 @@ func (s *Service) guideNetworkPrefixAnalysis(sessionID string) (*Result, error) 
 		"}\n" +
 		"```\n\n" +
 		"**Step 3: Interpret Results**\n" +
-		"- **CONNECTED**: Full connectivity at this aggregation level\n" +
-		"- **PARTIAL**: Some paths exist but not all\n" +
-		"- **DISCONNECTED**: No connectivity at this level\n\n" +
+		"- **DELIVERED**: The traced path reaches the destination and is permitted\n" +
+		"- **DENIED**: The path reaches the destination but a security policy drops it\n" +
+		"- **NOT_DELIVERED**: The path ends elsewhere (for example BLACKHOLE or DROPPED)\n" +
+		"- **NO_PATH** / **TIMED_OUT**: The search found no path, or ran out of time\n\n" +
 		"**Step 4: Generate Insights**\n" +
 		"- Network segmentation analysis\n" +
 		"- Connectivity gap identification\n" +
@@ -218,543 +220,360 @@ func (s *Service) guideNetworkPrefixAnalysis(sessionID string) (*Result, error) 
 	return textResult(content), nil
 }
 
+// prefixAddressesQuery lists every IPv4 interface address with its prefix length.
+const prefixAddressesQuery = `foreach d in network.devices
+foreach i in d.interfaces
+foreach s in i.subinterfaces
+foreach a in s.ipv4.addresses
+select {device: d.name, ip: a.ip, prefixLength: a.prefixLength}`
+
+const (
+	// defaultPrefixTests and maxPrefixTests bound the path searches one call runs.
+	defaultPrefixTests = 50
+	maxPrefixTests     = 200
+	// prefixBatchSize is the path searches sent in one bulk request.
+	prefixBatchSize = 25
+	// maxPrefixAddressRows bounds the interface addresses read.
+	maxPrefixAddressRows = 200000
+	// maxPrefixesListed bounds the prefixes listed per level; counts stay complete.
+	maxPrefixesListed = 50
+)
+
+var validPrefixIntents = map[string]bool{"PREFER_DELIVERED": true, "PREFER_VIOLATIONS": true, "VIOLATIONS_ONLY": true}
+
+// prefixMember is one interface address inside an aggregate prefix.
+type prefixMember struct {
+	device string
+	ip     netip.Addr
+}
+
+// prefixGroup is the interface addresses that fall inside one aggregate prefix.
+type prefixGroup struct {
+	Prefix    string `json:"prefix"`
+	Devices   int    `json:"devices"`
+	Addresses int    `json:"addresses"`
+	members   []prefixMember
+}
+
+// prefixTest is one path search between two aggregate prefixes and its outcome.
+type prefixTest struct {
+	Level             string `json:"level"`
+	FromPrefix        string `json:"fromPrefix"`
+	ToPrefix          string `json:"toPrefix"`
+	FromDevice        string `json:"fromDevice"`
+	SrcIP             string `json:"srcIp"`
+	DstIP             string `json:"dstIp"`
+	Status            string `json:"status"` // DELIVERED, DENIED, NOT_DELIVERED, NO_PATH, TIMED_OUT
+	ForwardingOutcome string `json:"forwardingOutcome,omitempty"`
+	SecurityOutcome   string `json:"securityOutcome,omitempty"`
+	QueryURL          string `json:"queryUrl,omitempty"`
+}
+
+// AnalyzeNetworkPrefixes groups the network's IPv4 interface addresses into
+// aggregate prefixes at each requested level, then traces a path between a
+// representative address of each pair of prefixes and reports the outcome the
+// path search returns.
 func (s *Service) AnalyzeNetworkPrefixes(ctx context.Context, args NetworkPrefixAnalysisArgs) (*Result, error) {
 	s.logToolCall("analyze_network_prefixes", args, nil)
 
-	// Use defaults if not specified
 	networkID := s.getNetworkID(ctx, args.NetworkID)
-	snapshotID := s.getSnapshotID(args.SnapshotID)
-	maxResults := s.getQueryLimit(args.MaxResults)
-
-	// Default prefix levels if not specified
-	prefixLevels := args.PrefixLevels
-	if len(prefixLevels) == 0 {
-		prefixLevels = []string{"/8", "/16", "/24"}
+	if err := s.validateNetworkID(networkID); err != nil {
+		return nil, err
 	}
-
-	// Default intent if not specified
+	levels, err := parsePrefixLevels(args.PrefixLevels)
+	if err != nil {
+		return nil, err
+	}
 	intent := args.Intent
 	if intent == "" {
 		intent = "PREFER_DELIVERED"
 	}
+	if !validPrefixIntents[intent] {
+		return nil, fmt.Errorf("intent %q is not valid. Use PREFER_DELIVERED, PREFER_VIOLATIONS or VIOLATIONS_ONLY", intent)
+	}
+	maxTests := args.MaxResults
+	if maxTests <= 0 {
+		maxTests = defaultPrefixTests
+	} else if maxTests > maxPrefixTests {
+		maxTests = maxPrefixTests
+	}
 
-	s.logger.Info("Starting network prefix analysis: networkID=%s, prefixLevels=%v, maxResults=%d",
-		networkID, prefixLevels, maxResults)
-
-	// Step 1: Discover network prefixes and device mappings
-	prefixInfo, err := s.discoverNetworkPrefixes(ctx, networkID, snapshotID)
+	rows, snapshotID, err := s.fetchAllNQERows(ctx, &domain.NQEQueryParams{
+		NetworkID:  networkID,
+		SnapshotID: s.getSnapshotID(args.SnapshotID),
+		Query:      prefixAddressesQuery,
+	}, maxPrefixAddressRows)
 	if err != nil {
-		s.logger.Error("Failed to discover network prefixes: %v", err)
-		return nil, fmt.Errorf("failed to discover network prefixes: %w", err)
+		return nil, fmt.Errorf("failed to read interface addresses: %w", err)
+	}
+	if snapshotID == "" {
+		snapshotID = s.getSnapshotID(args.SnapshotID)
+	}
+	members := prefixMembers(rows)
+	if len(members) == 0 {
+		return textResult(MarshalCompactJSONString(map[string]interface{}{
+			"snapshotId":       snapshotID,
+			"addressesScanned": 0,
+			"note":             "No IPv4 interface addresses were found, so there is nothing to group or trace. Check that the snapshot is processed with list_snapshots.",
+		})), nil
 	}
 
-	// Step 2: Analyze connectivity between prefixes
-	connectivityResults, err := s.analyzePrefixConnectivity(ctx, networkID, prefixInfo, prefixLevels, args.FromDevices, args.ToDevices, intent, maxResults)
-	if err != nil {
-		s.logger.Error("Failed to analyze prefix connectivity: %v", err)
-		return nil, fmt.Errorf("failed to analyze prefix connectivity: %w", err)
+	fromSet, toSet := stringSet(args.FromDevices), stringSet(args.ToDevices)
+	if err := requireDevicesPresent("from_devices", fromSet, members); err != nil {
+		return nil, err
+	}
+	if err := requireDevicesPresent("to_devices", toSet, members); err != nil {
+		return nil, err
 	}
 
-	// Step 3: Generate comprehensive report
-	report := s.generateConnectivityReport(prefixInfo, connectivityResults, prefixLevels)
-
-	// Track analysis in memory system (placeholder for future implementation)
-	if s.apiTracker != nil {
-		s.logger.Debug("Network analysis completed - would track in memory system")
-	}
-
-	return textResult(report), nil
-}
-
-func (s *Service) discoverNetworkPrefixes(ctx context.Context, networkID, snapshotID string) ([]NetworkPrefixInfo, error) {
-	// Use device inventory to discover all interface IPs and aggregate to prefixes
-	params := &domain.DeviceQueryParams{}
-	if snapshotID != "" {
-		params.SnapshotID = snapshotID
-	}
-	devicesResp, err := s.forwardClient.GetDevices(ctx, networkID, params)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get device inventory: %w", err)
-	}
-
-	// Group devices by location to identify location-based network scopes
-	locationDevices := make(map[string][]string)
-	deviceIPs := make(map[string][]string)                   // device -> IPs
-	locationPrefixes := make(map[string]map[string][]string) // location -> prefix -> devices
-
-	for _, device := range devicesResp.Devices {
-		location := device.LocationID
-		if location == "" {
-			location = "unknown"
+	// Group the addresses at each level and choose the pairs to trace.
+	levelOut := []map[string]interface{}{}
+	var tests []prefixTest
+	candidates := 0
+	for _, level := range levels {
+		groups := groupByPrefix(members, level)
+		listed := groups
+		if len(listed) > maxPrefixesListed {
+			listed = listed[:maxPrefixesListed]
 		}
-
-		locationDevices[location] = append(locationDevices[location], device.Name)
-
-		var deviceIPList []string
-		for _, iface := range device.Interfaces {
-			if iface.IPAddress == "" {
+		levelOut = append(levelOut, map[string]interface{}{
+			"level":       fmt.Sprintf("/%d", level),
+			"prefixCount": len(groups),
+			"prefixes":    listed,
+		})
+		for _, from := range groups {
+			src, ok := pickMember(from.members, fromSet, "")
+			if !ok {
 				continue
 			}
-
-			// Parse the IP address
-			ip, _, err := net.ParseCIDR(iface.IPAddress)
-			if err != nil {
-				// Try to parse as plain IP and synthesize /32
-				ip = net.ParseIP(iface.IPAddress)
-				if ip == nil {
-					s.logger.Warn("Could not parse interface IP: %s on device %s", iface.IPAddress, device.Name)
+			for _, to := range groups {
+				if to.Prefix == from.Prefix {
 					continue
 				}
-			}
-
-			deviceIPList = append(deviceIPList, iface.IPAddress)
-
-			// Create different aggregation levels for this IP
-			aggregationLevels := []int{8, 16, 24} // /8, /16, /24 for IPv4
-			if ip.To4() == nil {
-				aggregationLevels = []int{32, 48, 64} // /32, /48, /64 for IPv6
-			}
-
-			for _, level := range aggregationLevels {
-				var mask net.IPMask
-				if ip.To4() != nil {
-					mask = net.CIDRMask(level, 32)
-				} else {
-					mask = net.CIDRMask(level, 128)
+				dst, ok := pickMember(to.members, toSet, src.device)
+				if !ok {
+					continue
 				}
-
-				aggNet := &net.IPNet{IP: ip.Mask(mask), Mask: mask}
-				prefix := aggNet.String()
-
-				if locationPrefixes[location] == nil {
-					locationPrefixes[location] = make(map[string][]string)
-				}
-
-				// Add device to this prefix in this location
-				found := false
-				for _, dev := range locationPrefixes[location][prefix] {
-					if dev == device.Name {
-						found = true
-						break
-					}
-				}
-				if !found {
-					locationPrefixes[location][prefix] = append(locationPrefixes[location][prefix], device.Name)
+				candidates++
+				if len(tests) < maxTests {
+					tests = append(tests, prefixTest{
+						Level:      fmt.Sprintf("/%d", level),
+						FromPrefix: from.Prefix,
+						ToPrefix:   to.Prefix,
+						FromDevice: src.device,
+						SrcIP:      src.ip.String(),
+						DstIP:      dst.ip.String(),
+					})
 				}
 			}
 		}
-		deviceIPs[device.Name] = deviceIPList
 	}
 
-	// Create NetworkPrefixInfo for each location-prefix combination
-	var prefixInfo []NetworkPrefixInfo
+	if err := s.tracePrefixTests(ctx, networkID, snapshotID, intent, tests); err != nil {
+		return nil, err
+	}
 
-	for location, prefixMap := range locationPrefixes {
-		for prefix, devices := range prefixMap {
-			// Only include prefixes that have multiple devices or are significant
-			if len(devices) > 1 || strings.HasSuffix(prefix, "/8") || strings.HasSuffix(prefix, "/16") {
-				info := NetworkPrefixInfo{
-					Prefix:     prefix,
-					Device:     devices[0], // Representative device
-					NetworkID:  networkID,
-					Location:   location,
-					Aggregated: len(devices) > 1,
-					Subnets:    devices,
-				}
-				prefixInfo = append(prefixInfo, info)
-			}
+	summary := map[string]int{"tested": len(tests)}
+	for _, t := range tests {
+		summary[strings.ToLower(t.Status)]++
+	}
+	out := map[string]interface{}{
+		"snapshotId":       snapshotID,
+		"addressesScanned": len(members),
+		"levels":           levelOut,
+		"tests":            tests,
+		"summary":          summary,
+		"candidatePairs":   candidates,
+	}
+	notes := []string{"Each test traces from one representative address in fromPrefix to one in toPrefix; it does not prove every address in the prefixes can reach each other. IPv6 is not analyzed."}
+	if candidates > len(tests) {
+		notes = append(notes, fmt.Sprintf("Traced %d of %d prefix pairs (max_results). Narrow with from_devices, to_devices or fewer prefix_levels to cover the rest.", len(tests), candidates))
+	}
+	for _, l := range levelOut {
+		if l["prefixCount"].(int) > maxPrefixesListed {
+			notes = append(notes, fmt.Sprintf("Prefix lists show the first %d per level; prefixCount is complete.", maxPrefixesListed))
+			break
 		}
 	}
-
-	s.logger.Info("Discovered %d network prefixes across %d locations", len(prefixInfo), len(locationDevices))
-	for location, devices := range locationDevices {
-		s.logger.Debug("Location %s: %d devices", location, len(devices))
-	}
-
-	return prefixInfo, nil
+	out["note"] = strings.Join(notes, " ")
+	return textResult(MarshalCompactJSONString(out)), nil
 }
 
-func (s *Service) analyzePrefixConnectivity(ctx context.Context, networkID string, prefixInfo []NetworkPrefixInfo, prefixLevels []string, fromDevices, toDevices []string, intent string, maxResults int) ([]ConnectivityAnalysisResult, error) {
-	var results []ConnectivityAnalysisResult
-
-	// Create connectivity test queries
-	queries := s.createConnectivityQueries(prefixInfo, prefixLevels, fromDevices, toDevices)
-
-	if len(queries) == 0 {
-		s.logger.Info("No connectivity queries generated")
-		return results, nil
-	}
-
-	s.logger.Info("Executing %d connectivity queries between network prefixes", len(queries))
-
-	// Execute actual bulk path search
-	bulkArgs := SearchPathsBulkArgs{
-		NetworkID:  networkID,
-		Queries:    queries,
-		Intent:     intent,
-		MaxResults: maxResults,
-	}
-
-	// Get latest snapshot if needed
-	snapshotID := s.getSnapshotID("")
-	bulkArgs.SnapshotID = snapshotID
-
-	// Execute the bulk path search
-	_, err := s.searchPathsBulk(ctx, bulkArgs)
-	if err != nil {
-		s.logger.Warn("Bulk path search failed, creating placeholder results: %v", err)
-		// Create placeholder results for analysis
-		for _, query := range queries {
-			result := ConnectivityAnalysisResult{
-				FromPrefix:       query.SrcIP,
-				ToPrefix:         query.DstIP,
-				FromDevice:       query.From,
-				ToDevice:         s.findRepresentativeDevice(query.DstIP, toDevices),
-				Connectivity:     "ANALYSIS_FAILED",
-				PathCount:        0,
-				AggregationLevel: s.determineAggregationLevel(query.SrcIP),
-			}
-			results = append(results, result)
+// tracePrefixTests runs the path searches for tests in batches and records
+// each outcome in place.
+func (s *Service) tracePrefixTests(ctx context.Context, networkID, snapshotID, intent string, tests []prefixTest) error {
+	for start := 0; start < len(tests); start += prefixBatchSize {
+		end := start + prefixBatchSize
+		if end > len(tests) {
+			end = len(tests)
 		}
-		return results, nil
-	}
-
-	// Parse the response to extract connectivity information
-	// The response contains the actual path search results
-	s.logger.Info("Successfully executed bulk path search, analyzing results")
-
-	// For now, create results based on the queries
-	// In a full implementation, we would parse the actual path search responses
-	for _, query := range queries {
-		result := ConnectivityAnalysisResult{
-			FromPrefix:       query.SrcIP,
-			ToPrefix:         query.DstIP,
-			FromDevice:       query.From,
-			ToDevice:         s.findRepresentativeDevice(query.DstIP, toDevices),
-			Connectivity:     "CONNECTED", // Placeholder - would be determined from actual response
-			PathCount:        1,           // Placeholder - would be determined from actual response
-			AggregationLevel: s.determineAggregationLevel(query.SrcIP),
+		batch := tests[start:end]
+		req := &domain.PathSearchBulkRequest{Intent: intent, MaxResults: 1}
+		for _, t := range batch {
+			req.Queries = append(req.Queries, domain.PathSearchParams{From: t.FromDevice, SrcIP: t.SrcIP, DstIP: t.DstIP})
 		}
-		results = append(results, result)
+		responses, err := s.forwardClient.SearchPathsBulk(ctx, networkID, req, snapshotID)
+		if err != nil {
+			return fmt.Errorf("failed to trace paths between prefixes: %w", err)
+		}
+		if len(responses) != len(batch) {
+			return fmt.Errorf("path search returned %d results for %d queries. Retry, or lower max_results", len(responses), len(batch))
+		}
+		for i := range batch {
+			classifyPrefixTest(&batch[i], responses[i])
+		}
 	}
-
-	// Note: In a full implementation, we would:
-	// 1. Call the actual bulk path search API
-	// 2. Parse the responses to determine connectivity
-	// 3. Update the results with actual connectivity status
-
-	return results, nil
+	return nil
 }
 
-func (s *Service) createConnectivityQueries(prefixInfo []NetworkPrefixInfo, prefixLevels []string, fromDevices, toDevices []string) []PathSearchQueryArgs {
-	var queries []PathSearchQueryArgs
-
-	// Create queries for each prefix level
-	for _, level := range prefixLevels {
-		// Get aggregated prefixes for this level
-		aggregatedPrefixes := s.aggregatePrefixes(prefixInfo, level)
-
-		// Create connectivity tests between prefixes
-		for i, fromPrefix := range aggregatedPrefixes {
-			for j, toPrefix := range aggregatedPrefixes {
-				if i != j { // Don't test connectivity to self
-					// Find representative devices for each prefix
-					fromDevice := s.findRepresentativeDevice(fromPrefix, fromDevices)
-					// toDevice := s.findRepresentativeDevice(toPrefix, toDevices) // Not used in current implementation
-
-					if fromDevice != "" {
-						queries = append(queries, PathSearchQueryArgs{
-							From:  fromDevice,
-							DstIP: toPrefix,
-						})
-					}
-				}
-			}
+// classifyPrefixTest sets a test's status from its path search response. A
+// delivered path wins over any other path returned.
+func classifyPrefixTest(t *prefixTest, resp domain.PathSearchBulkResponse) {
+	t.QueryURL = resp.QueryUrl
+	paths := resp.Info.Paths
+	if len(paths) == 0 {
+		t.Status = "NO_PATH"
+		if resp.TimedOut {
+			t.Status = "TIMED_OUT"
+		}
+		return
+	}
+	p := paths[0]
+	for _, candidate := range paths {
+		if candidate.ForwardingOutcome == "DELIVERED" {
+			p = candidate
+			break
 		}
 	}
-
-	return queries
+	t.ForwardingOutcome, t.SecurityOutcome = p.ForwardingOutcome, p.SecurityOutcome
+	switch {
+	case p.ForwardingOutcome != "DELIVERED":
+		t.Status = "NOT_DELIVERED"
+	case p.SecurityOutcome == "DENIED":
+		t.Status = "DENIED"
+	default:
+		t.Status = "DELIVERED"
+	}
 }
 
-func (s *Service) aggregatePrefixes(prefixInfo []NetworkPrefixInfo, level string) []string {
-	// Simple aggregation logic - in a real implementation, this would be more sophisticated
-	var aggregated []string
-	prefixMap := make(map[string]bool)
-
-	for _, info := range prefixInfo {
-		// Extract network portion based on level
-		network := s.extractNetworkPortion(info.Prefix, level)
-		if network != "" && !prefixMap[network] {
-			aggregated = append(aggregated, network)
-			prefixMap[network] = true
+// parsePrefixLevels turns levels such as "/16" or "16" into sorted, distinct
+// IPv4 prefix lengths, defaulting to /8, /16 and /24.
+func parsePrefixLevels(raw []string) ([]int, error) {
+	if len(raw) == 0 {
+		return []int{8, 16, 24}, nil
+	}
+	seen := map[int]bool{}
+	var levels []int
+	for _, r := range raw {
+		n, err := strconv.Atoi(strings.TrimPrefix(strings.TrimSpace(r), "/"))
+		if err != nil || n < 1 || n > 32 {
+			return nil, fmt.Errorf("prefix level %q is not valid. Use IPv4 prefix lengths from /1 to /32, such as [\"/8\", \"/16\", \"/24\"]", r)
+		}
+		if !seen[n] {
+			seen[n] = true
+			levels = append(levels, n)
 		}
 	}
-
-	return aggregated
+	sort.Ints(levels)
+	return levels, nil
 }
 
-func (s *Service) extractNetworkPortion(prefix, level string) string {
-	// Simple implementation - extract network portion based on CIDR level
-	// In a real implementation, this would use proper IP network calculations
-	if strings.Contains(prefix, "/") {
-		parts := strings.Split(prefix, "/")
-		if len(parts) == 2 {
-			ip := parts[0]
-			// For now, return the IP with the requested level
-			// This is a simplified version - real implementation would calculate proper network addresses
-			return fmt.Sprintf("%s%s", ip, level)
+// prefixMembers parses the address rows, dropping rows that do not parse and
+// repeated device and address pairs.
+func prefixMembers(rows []map[string]interface{}) []prefixMember {
+	seen := map[prefixMember]bool{}
+	var members []prefixMember
+	for _, row := range rows {
+		device, _ := row["device"].(string)
+		ipText, _ := row["ip"].(string)
+		ip, err := netip.ParseAddr(ipText)
+		if device == "" || err != nil || !ip.Is4() {
+			continue
+		}
+		m := prefixMember{device: device, ip: ip}
+		if !seen[m] {
+			seen[m] = true
+			members = append(members, m)
 		}
 	}
-	return prefix
+	return members
 }
 
-func (s *Service) findRepresentativeDevice(prefix string, preferredDevices []string) string {
-	// Find a representative device for the prefix
-	// Prefer devices from the preferredDevices list if available
-	for _, preferred := range preferredDevices {
-		// Simple matching - in real implementation, would check if device is in prefix
-		if strings.Contains(prefix, preferred) {
-			return preferred
+// groupByPrefix groups members by their address masked to level bits, sorted
+// by prefix. Members in a group are sorted by device, then address.
+func groupByPrefix(members []prefixMember, level int) []*prefixGroup {
+	byPrefix := map[netip.Prefix]*prefixGroup{}
+	var keys []netip.Prefix
+	for _, m := range members {
+		p := netip.PrefixFrom(m.ip, level).Masked()
+		g, ok := byPrefix[p]
+		if !ok {
+			g = &prefixGroup{Prefix: p.String()}
+			byPrefix[p] = g
+			keys = append(keys, p)
 		}
+		g.members = append(g.members, m)
 	}
-
-	// Return first device found for this prefix
-	// In real implementation, would parse prefix and find matching devices
-	return ""
+	sort.Slice(keys, func(i, j int) bool { return keys[i].Addr().Less(keys[j].Addr()) })
+	groups := make([]*prefixGroup, 0, len(keys))
+	for _, k := range keys {
+		g := byPrefix[k]
+		sort.Slice(g.members, func(i, j int) bool {
+			if g.members[i].device != g.members[j].device {
+				return g.members[i].device < g.members[j].device
+			}
+			return g.members[i].ip.Less(g.members[j].ip)
+		})
+		devices := map[string]bool{}
+		for _, m := range g.members {
+			devices[m.device] = true
+		}
+		g.Devices, g.Addresses = len(devices), len(g.members)
+		groups = append(groups, g)
+	}
+	return groups
 }
 
-func (s *Service) determineAggregationLevel(prefix string) string {
-	if strings.Contains(prefix, "/8") {
-		return "/8"
-	} else if strings.Contains(prefix, "/16") {
-		return "/16"
-	} else if strings.Contains(prefix, "/24") {
-		return "/24"
+// pickMember returns the first member on a device in allowed (any device when
+// allowed is empty) that is not on avoidDevice. Tracing from a device to its
+// own address says nothing about connectivity, so such pairs are skipped.
+func pickMember(members []prefixMember, allowed map[string]bool, avoidDevice string) (prefixMember, bool) {
+	for _, m := range members {
+		if (len(allowed) == 0 || allowed[m.device]) && m.device != avoidDevice {
+			return m, true
+		}
 	}
-	return "/32"
+	return prefixMember{}, false
 }
 
-func (s *Service) generateConnectivityReport(prefixInfo []NetworkPrefixInfo, connectivityResults []ConnectivityAnalysisResult, prefixLevels []string) string {
-	var report strings.Builder
-
-	report.WriteString("# 🔍 Network Prefix Discovery & Connectivity Analysis Report\n\n")
-
-	// Prefix Discovery Summary
-	report.WriteString("## 📊 Prefix Discovery Summary\n\n")
-	report.WriteString(fmt.Sprintf("**Total Prefixes Discovered:** %d\n\n", len(prefixInfo)))
-
-	report.WriteString("### Device-to-Prefix Mappings:\n")
-	for _, info := range prefixInfo {
-		report.WriteString(fmt.Sprintf("- **%s** → %s (Location: %s)\n", info.Device, info.Prefix, info.Location))
+// requireDevicesPresent fails when a named device has no IPv4 interface address.
+func requireDevicesPresent(field string, names map[string]bool, members []prefixMember) error {
+	if len(names) == 0 {
+		return nil
 	}
-	report.WriteString("\n")
-
-	// Connectivity Analysis Summary
-	report.WriteString("## 🔗 Connectivity Analysis Summary\n\n")
-
-	connected := 0
-	partial := 0
-	disconnected := 0
-
-	for _, result := range connectivityResults {
-		switch result.Connectivity {
-		case "CONNECTED":
-			connected++
-		case "PARTIAL":
-			partial++
-		case "DISCONNECTED":
-			disconnected++
+	present := map[string]bool{}
+	for _, m := range members {
+		present[m.device] = true
+	}
+	var missing []string
+	for n := range names {
+		if !present[n] {
+			missing = append(missing, n)
 		}
 	}
-
-	report.WriteString(fmt.Sprintf("**Total Connectivity Tests:** %d\n", len(connectivityResults)))
-	report.WriteString(fmt.Sprintf("- ✅ **Connected:** %d\n", connected))
-	report.WriteString(fmt.Sprintf("- ⚠️ **Partial:** %d\n", partial))
-	report.WriteString(fmt.Sprintf("- ❌ **Disconnected:** %d\n\n", disconnected))
-
-	// Connectivity Matrix by Aggregation Level
-	for _, level := range prefixLevels {
-		report.WriteString(fmt.Sprintf("### %s Aggregation Level\n\n", level))
-
-		levelResults := s.filterResultsByLevel(connectivityResults, level)
-		if len(levelResults) > 0 {
-			report.WriteString("| From Prefix | To Prefix | Connectivity | Paths |\n")
-			report.WriteString("|-------------|-----------|--------------|-------|\n")
-
-			for _, result := range levelResults {
-				status := "❌"
-				if result.Connectivity == "CONNECTED" {
-					status = "✅"
-				} else if result.Connectivity == "PARTIAL" {
-					status = "⚠️"
-				}
-
-				report.WriteString(fmt.Sprintf("| %s | %s | %s %s | %d |\n",
-					result.FromPrefix, result.ToPrefix, status, result.Connectivity, result.PathCount))
-			}
-			report.WriteString("\n")
-		}
+	if len(missing) == 0 {
+		return nil
 	}
-
-	// Key Insights
-	report.WriteString("## 💡 Key Insights\n\n")
-
-	if connected > 0 {
-		report.WriteString("✅ **Strong Connectivity:** Network shows good connectivity at multiple aggregation levels\n")
-	}
-	if partial > 0 {
-		report.WriteString("⚠️ **Partial Connectivity:** Some paths exist but may have limitations or bottlenecks\n")
-	}
-	if disconnected > 0 {
-		report.WriteString("❌ **Connectivity Gaps:** Some network segments lack connectivity - review routing policies\n")
-	}
-
-	report.WriteString("\n## 🎯 Recommendations\n\n")
-	report.WriteString("1. **Review Disconnected Segments:** Investigate routing policies for disconnected paths\n")
-	report.WriteString("2. **Optimize Partial Connectivity:** Consider adding redundant paths for better reliability\n")
-	report.WriteString("3. **Document Topology:** Use this analysis for network documentation and planning\n")
-	report.WriteString("4. **Monitor Changes:** Re-run analysis after network changes to validate connectivity\n")
-
-	return report.String()
+	sort.Strings(missing)
+	return fmt.Errorf("%s names devices with no IPv4 interface address: %s. Device names are case-sensitive; use list_devices to check them", field, strings.Join(missing, ", "))
 }
 
-func (s *Service) filterResultsByLevel(results []ConnectivityAnalysisResult, level string) []ConnectivityAnalysisResult {
-	var filtered []ConnectivityAnalysisResult
-	for _, result := range results {
-		if result.AggregationLevel == level {
-			filtered = append(filtered, result)
+func stringSet(values []string) map[string]bool {
+	set := map[string]bool{}
+	for _, v := range values {
+		if v = strings.TrimSpace(v); v != "" {
+			set[v] = true
 		}
 	}
-	return filtered
-}
-
-// resolveDeviceToIP attempts to resolve a device name to an IP address
-// If the input looks like an IP address, it returns it as-is
-// If it looks like a device name, it tries to find any IP address bound to the device
-func (s *Service) resolveDeviceToIP(ctx context.Context, networkID, deviceOrIP string) (string, error) {
-	// If it looks like an IP address, return as-is
-	if net.ParseIP(deviceOrIP) != nil {
-		return deviceOrIP, nil
-	}
-
-	// If it looks like a CIDR, return as-is
-	if strings.Contains(deviceOrIP, "/") {
-		_, _, err := net.ParseCIDR(deviceOrIP)
-		if err == nil {
-			return deviceOrIP, nil
-		}
-	}
-
-	// Otherwise, treat as device name and try to get its management IP
-	resolutionID := fmt.Sprintf("%s-%d", deviceOrIP, time.Now().UnixNano())
-	s.logger.Debug("[%s] Resolving device name to IP: %s", resolutionID, deviceOrIP)
-
-	// Get devices and find the one with matching name
-	devices, err := s.forwardClient.GetDevices(ctx, networkID, &domain.DeviceQueryParams{})
-	if err != nil {
-		return "", fmt.Errorf("failed to get devices for network %s: %w", networkID, err)
-	}
-
-	if devices == nil || len(devices.Devices) == 0 {
-		return "", fmt.Errorf("no devices found in network %s", networkID)
-	}
-
-	// Find device by name
-	s.logger.Debug("Searching through %d devices for device name: %s", len(devices.Devices), deviceOrIP)
-	foundDevice := false
-	for _, device := range devices.Devices {
-		s.logger.Debug("Checking device: %s (management IPs: %v, interface count: %d)",
-			device.Name, device.ManagementIPs, len(device.Interfaces))
-
-		if device.Name == deviceOrIP {
-			foundDevice = true
-			s.logger.Info("Found device: %s", deviceOrIP)
-
-			// Try management IPs first
-			if len(device.ManagementIPs) > 0 {
-				// Check if this management IP is already used by another device
-				ipUsedBy := []string{}
-				for _, otherDevice := range devices.Devices {
-					if otherDevice.Name != deviceOrIP {
-						for _, mgmtIP := range otherDevice.ManagementIPs {
-							if mgmtIP == device.ManagementIPs[0] {
-								ipUsedBy = append(ipUsedBy, otherDevice.Name)
-							}
-						}
-					}
-				}
-
-				if len(ipUsedBy) > 0 {
-					s.logger.Warn("Device %s management IP %s is shared with other devices: %v",
-						deviceOrIP, device.ManagementIPs[0], ipUsedBy)
-				}
-
-				s.logger.Info("Using management IP for device %s: %s", deviceOrIP, device.ManagementIPs[0])
-				return device.ManagementIPs[0], nil
-			}
-
-			// Try interface IPs
-			s.logger.Debug("No management IPs, checking %d interfaces", len(device.Interfaces))
-			for i, iface := range device.Interfaces {
-				s.logger.Debug("Interface %d: %s (IP: %s)", i, iface.Name, iface.IPAddress)
-				if iface.IPAddress != "" {
-					// Check if this interface IP is already used by another device
-					ipUsedBy := []string{}
-					for _, otherDevice := range devices.Devices {
-						if otherDevice.Name != deviceOrIP {
-							for _, otherIface := range otherDevice.Interfaces {
-								if otherIface.IPAddress == iface.IPAddress {
-									ipUsedBy = append(ipUsedBy, otherDevice.Name)
-								}
-							}
-						}
-					}
-
-					if len(ipUsedBy) > 0 {
-						s.logger.Warn("Device %s interface IP %s is shared with other devices: %v",
-							deviceOrIP, iface.IPAddress, ipUsedBy)
-					}
-
-					s.logger.Info("Using interface IP for device %s: %s (interface: %s)",
-						deviceOrIP, iface.IPAddress, iface.Name)
-					return iface.IPAddress, nil
-				}
-			}
-
-			s.logger.Warn("Device %s found but has no IP addresses", deviceOrIP)
-			return "", fmt.Errorf("device %s found but has no IP addresses", deviceOrIP)
-		}
-	}
-
-	if !foundDevice {
-		s.logger.Warn("Device %s not found in network %s", deviceOrIP, networkID)
-		// Log some available device names for debugging
-		deviceNames := make([]string, 0, len(devices.Devices))
-		for _, device := range devices.Devices {
-			deviceNames = append(deviceNames, device.Name)
-		}
-		s.logger.Debug("Available devices in network: %v", deviceNames)
-	} else {
-		// Log IP conflict summary for all devices
-		ipConflictMap := make(map[string][]string)
-		for _, device := range devices.Devices {
-			for _, mgmtIP := range device.ManagementIPs {
-				ipConflictMap[mgmtIP] = append(ipConflictMap[mgmtIP], device.Name)
-			}
-			for _, iface := range device.Interfaces {
-				if iface.IPAddress != "" {
-					ipConflictMap[iface.IPAddress] = append(ipConflictMap[iface.IPAddress], device.Name)
-				}
-			}
-		}
-
-		// Report conflicts
-		for ip, deviceList := range ipConflictMap {
-			if len(deviceList) > 1 {
-				s.logger.Warn("IP conflict detected: %s is used by multiple devices: %v", ip, deviceList)
-			}
-		}
-	}
-
-	return "", fmt.Errorf("device %s not found in network %s", deviceOrIP, networkID)
+	return set
 }
