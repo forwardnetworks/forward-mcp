@@ -13,6 +13,12 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// DataDirectory returns the writable directory the stores keep their files in,
+// so other adapters can keep run-time files beside them.
+func DataDirectory() (string, error) {
+	return getWritableDataDirectory()
+}
+
 // getWritableDataDirectory returns a directory where we can write the database
 func getWritableDataDirectory() (string, error) {
 	// Try different locations in order of preference for Claude Desktop compatibility
