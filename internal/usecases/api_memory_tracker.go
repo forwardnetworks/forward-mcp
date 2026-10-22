@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/forward-mcp/internal/ports"
+	"sort"
 	"time"
 
 	"github.com/forward-mcp/internal/domain"
@@ -114,6 +115,7 @@ func (amt *APIMemoryTracker) TrackNetworkQuery(queryID, networkID, snapshotID st
 	if err != nil {
 		amt.logger.Debug("Failed to add performance observation: %v", err)
 	}
+	amt.prunePerformanceObservations(queryEntity.ID)
 
 	amt.logger.Debug("Tracked query execution: %s on network %s (results: %d, time: %dms)",
 		queryID, networkID, len(result.Items), executionTime.Milliseconds())
@@ -342,6 +344,33 @@ func (amt *APIMemoryTracker) GetQueryAnalytics(networkID string) (map[string]int
 	return analytics, nil
 }
 
+// maxPerformanceObservations bounds the run timings kept per query. Older
+// timings are deleted as new runs are tracked, so the store does not grow
+// with every execution.
+const maxPerformanceObservations = 50
+
+// prunePerformanceObservations deletes all but the newest
+// maxPerformanceObservations timings of a query.
+func (amt *APIMemoryTracker) prunePerformanceObservations(queryEntityID string) {
+	observations, err := amt.memorySystem.GetObservations(queryEntityID, "performance")
+	if err != nil || len(observations) <= maxPerformanceObservations {
+		return
+	}
+	// Newest first. created_at has one-second resolution, so ties fall back
+	// to the ID, which embeds a nanosecond timestamp.
+	sort.Slice(observations, func(i, j int) bool {
+		if !observations[i].CreatedAt.Equal(observations[j].CreatedAt) {
+			return observations[i].CreatedAt.After(observations[j].CreatedAt)
+		}
+		return observations[i].ID > observations[j].ID
+	})
+	for _, obs := range observations[maxPerformanceObservations:] {
+		if err := amt.memorySystem.DeleteObservation(obs.ID); err != nil {
+			amt.logger.Debug("Failed to prune performance observation %s: %v", obs.ID, err)
+		}
+	}
+}
+
 // Helper methods for entity management
 
 func (amt *APIMemoryTracker) ensureNetworkEntity(networkID string) (*domain.Entity, error) {
@@ -394,8 +423,13 @@ func (amt *APIMemoryTracker) ensureSnapshotEntity(snapshotID, networkID string) 
 }
 
 func (amt *APIMemoryTracker) createQueryResultEntity(queryID, networkID, snapshotID string, result *domain.NQERunResult, executionTime time.Duration) (*domain.Entity, error) {
-	// Create unique result ID
-	resultID := fmt.Sprintf("result_%s_%s_%d", queryID, networkID, time.Now().Unix())
+	// One result entity per query, network and snapshot: a rerun replaces it
+	// (and, by cascade, its relations) instead of adding another.
+	snapshot := snapshotID
+	if snapshot == "" {
+		snapshot = "latest"
+	}
+	resultID := fmt.Sprintf("result_%s_%s_%s", queryID, networkID, snapshot)
 
 	// Calculate result size
 	resultBytes, _ := json.Marshal(result)
