@@ -184,7 +184,7 @@ func (sc *SemanticCache) compressResult(result *ports.NQERunResult) ([]byte, int
 	}
 
 	if _, err := writer.Write(jsonData); err != nil {
-		writer.Close()
+		_ = writer.Close()
 		return nil, 0, fmt.Errorf("failed to compress data: %w", err)
 	}
 

@@ -2,13 +2,14 @@
   "sessions": {
     "103abbe0-ee9e-49d3-90bd-4ef3976531ed": {
       "files": [
-        "internal/usecases/integration_test.go"
+        "internal/usecases/integration_test.go",
+        "internal/usecases/store_query_result_test.go"
       ],
-      "gate": "gosec -severity medium ./... && go test -race -count=1 -skip TestIntegration ./...",
+      "gate": "gosec ./... && go test -race -count=1 -skip TestIntegration ./...",
       "pid": 4562,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-22T19:37:55.799421+00:00"
+      "updated": "2026-10-22T19:41:20.975927+00:00"
     },
     "1bd7df0e-e11a-49c6-8117-f5231a82fca7": {
       "files": [

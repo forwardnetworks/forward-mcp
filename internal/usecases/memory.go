@@ -201,6 +201,7 @@ func (s *Service) GetRelations(ctx context.Context, args GetRelationsArgs) (*Res
 	var relations []*domain.Relation
 	var totalCount int
 	var hasMore bool
+	var storedInMemory bool
 
 	if args.AllResults {
 		// Store all relations in memory system for large datasets
@@ -209,21 +210,13 @@ func (s *Service) GetRelations(ctx context.Context, args GetRelationsArgs) (*Res
 		hasMore = false
 
 		// Store in memory system if available
-		entity, err := s.memorySystem.CreateEntity("relations_list", "query_result", map[string]interface{}{
+		storedInMemory = s.storeQueryResult("relations_list", map[string]interface{}{
 			"query_type":    "get_relations",
 			"entity_id":     args.EntityID,
 			"relation_type": args.RelationType,
 			"total_count":   totalCount,
 			"timestamp":     time.Now().Unix(),
-		})
-		if err == nil {
-			// Store the relations data
-			relationsJSON, _ := json.Marshal(relations)
-			s.memorySystem.AddObservation(entity.ID, string(relationsJSON), "data", map[string]interface{}{
-				"data_type": "relations_list",
-				"count":     totalCount,
-			})
-		}
+		}, "relations_list", relations, totalCount)
 	} else {
 		// Apply pagination
 		totalCount = len(allRelations)
@@ -263,8 +256,10 @@ func (s *Service) GetRelations(ctx context.Context, args GetRelationsArgs) (*Res
 		}
 	}
 
-	if args.AllResults && s.memorySystem != nil {
+	if storedInMemory {
 		responseText.WriteString(fmt.Sprintf("\n\n💾 Stored %d relations in memory system for future reference.", totalCount))
+	} else if args.AllResults && s.memorySystem != nil {
+		responseText.WriteString("\n\nCould not store these relations in the memory system; the results above are complete. Retry, or check the server log for the cause.")
 	}
 
 	return textResult(responseText.String()), nil
@@ -298,6 +293,7 @@ func (s *Service) GetObservations(ctx context.Context, args GetObservationsArgs)
 	var observations []*domain.Observation
 	var totalCount int
 	var hasMore bool
+	var storedInMemory bool
 
 	if args.AllResults {
 		// Store all observations in memory system for large datasets
@@ -306,21 +302,13 @@ func (s *Service) GetObservations(ctx context.Context, args GetObservationsArgs)
 		hasMore = false
 
 		// Store in memory system if available
-		entity, err := s.memorySystem.CreateEntity("observations_list", "query_result", map[string]interface{}{
+		storedInMemory = s.storeQueryResult("observations_list", map[string]interface{}{
 			"query_type":       "get_observations",
 			"entity_id":        args.EntityID,
 			"observation_type": args.ObservationType,
 			"total_count":      totalCount,
 			"timestamp":        time.Now().Unix(),
-		})
-		if err == nil {
-			// Store the observations data
-			observationsJSON, _ := json.Marshal(observations)
-			s.memorySystem.AddObservation(entity.ID, string(observationsJSON), "data", map[string]interface{}{
-				"data_type": "observations_list",
-				"count":     totalCount,
-			})
-		}
+		}, "observations_list", observations, totalCount)
 	} else {
 		// Apply pagination
 		totalCount = len(allObservations)
@@ -360,8 +348,10 @@ func (s *Service) GetObservations(ctx context.Context, args GetObservationsArgs)
 		}
 	}
 
-	if args.AllResults && s.memorySystem != nil {
+	if storedInMemory {
 		responseText.WriteString(fmt.Sprintf("\n\n💾 Stored %d observations in memory system for future reference.", totalCount))
+	} else if args.AllResults && s.memorySystem != nil {
+		responseText.WriteString("\n\nCould not store these observations in the memory system; the results above are complete. Retry, or check the server log for the cause.")
 	}
 
 	return textResult(responseText.String()), nil
@@ -589,4 +579,32 @@ func (s *Service) AnalyzeNQEResultSQL(ctx context.Context, args AnalyzeNQEResult
 	resultJSON, _ := json.MarshalIndent(resultRows, "", "  ")
 	response := fmt.Sprintf("SQL query result (%d rows, max 100 shown):\n%s", len(resultRows), string(resultJSON))
 	return textResult(response), nil
+}
+
+// storeQueryResult saves a full result set to the memory system as a
+// "query_result" entity whose data is one observation. It reports whether
+// both writes succeeded, so callers only claim the data was stored when it
+// was; failures are logged, since the results are still returned.
+func (s *Service) storeQueryResult(name string, metadata map[string]interface{}, dataType string, data interface{}, count int) bool {
+	if s.memorySystem == nil {
+		return false
+	}
+	entity, err := s.memorySystem.CreateEntity(name, "query_result", metadata)
+	if err != nil {
+		s.logger.Warn("Failed to store %s in memory system: %v", name, err)
+		return false
+	}
+	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		s.logger.Warn("Failed to encode %s for memory system: %v", name, err)
+		return false
+	}
+	if _, err := s.memorySystem.AddObservation(entity.ID, string(dataJSON), "data", map[string]interface{}{
+		"data_type": dataType,
+		"count":     count,
+	}); err != nil {
+		s.logger.Warn("Failed to store %s data in memory system: %v", name, err)
+		return false
+	}
+	return true
 }

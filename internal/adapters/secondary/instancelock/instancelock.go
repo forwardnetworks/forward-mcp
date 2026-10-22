@@ -57,7 +57,7 @@ func (il *InstanceLock) TryAcquire() (bool, error) {
 			}
 		}
 		// Stale lock file, remove it
-		os.Remove(il.lockFilePath)
+		_ = os.Remove(il.lockFilePath)
 
 		// Also check modification time as a safety check
 		if time.Since(info.ModTime()) < 5*time.Minute {
@@ -78,15 +78,15 @@ func (il *InstanceLock) TryAcquire() (bool, error) {
 	// Write current process PID to lock file
 	pid := os.Getpid()
 	if _, err := file.WriteString(fmt.Sprintf("%d", pid)); err != nil {
-		file.Close()
-		os.Remove(il.lockFilePath)
+		_ = file.Close()
+		_ = os.Remove(il.lockFilePath)
 		return false, fmt.Errorf("failed to write PID to lock file: %w", err)
 	}
 
 	// Ensure data is written to disk
 	if err := file.Sync(); err != nil {
-		file.Close()
-		os.Remove(il.lockFilePath)
+		_ = file.Close()
+		_ = os.Remove(il.lockFilePath)
 		return false, fmt.Errorf("failed to sync lock file: %w", err)
 	}
 

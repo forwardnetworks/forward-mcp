@@ -141,7 +141,7 @@ func (c *Client) makeRequest(ctx context.Context, method, endpoint string, body 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// Read the response body for error details
 		errorBody, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// Provide LLM-friendly error messages based on status code
 		switch resp.StatusCode {
@@ -267,7 +267,7 @@ func (c *Client) makeRequestWithRetry(ctx context.Context, method, endpoint stri
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			// Read the response body for error details
 			errorBody, readErr := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			errorMsg := fmt.Sprintf("unexpected status code: %d", resp.StatusCode)
 			if readErr == nil && len(errorBody) > 0 {
