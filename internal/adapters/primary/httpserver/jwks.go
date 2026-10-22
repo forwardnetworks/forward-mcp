@@ -131,7 +131,7 @@ func jwksClientFor(caPath string) (*http.Client, error) {
 	if caPath == "" {
 		return nil, nil
 	}
-	data, err := os.ReadFile(caPath)
+	data, err := os.ReadFile(caPath) // #nosec G304 -- path comes from FORWARD_HTTP_JWKS_CA_CERT
 	if err != nil {
 		return nil, fmt.Errorf("FORWARD_HTTP_JWKS_CA_CERT: %w", err)
 	}

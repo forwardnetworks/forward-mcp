@@ -70,7 +70,7 @@ func (l *Logger) setupFileLogging(logPath string) error {
 
 	// Open log file with append mode
 	// Security: Use restrictive file permissions (owner-only access)
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600) // #nosec G304 -- log path comes from operator configuration
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}

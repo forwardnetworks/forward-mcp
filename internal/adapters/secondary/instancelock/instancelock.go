@@ -163,7 +163,7 @@ func CheckRunningInstance(lockDir string) (bool, int, error) {
 	}
 
 	// Read PID from lock file
-	data, err := os.ReadFile(lockFilePath)
+	data, err := os.ReadFile(lockFilePath) // #nosec G304 -- lock file in the server's own lock directory
 	if err != nil {
 		return false, 0, fmt.Errorf("failed to read lock file: %w", err)
 	}

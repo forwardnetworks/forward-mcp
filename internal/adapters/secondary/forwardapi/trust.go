@@ -123,7 +123,7 @@ func SameFingerprint(a, b string) bool {
 // when the file already holds the certificate. The file is replaced in one
 // rename, so a reader never sees it half written.
 func SaveTrustedCert(path string, cert *x509.Certificate) (bool, error) {
-	existing, err := os.ReadFile(path)
+	existing, err := os.ReadFile(path) // #nosec G304 -- path is the operator's trust --out flag
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("cannot read %s: %w", path, err)
 	}
@@ -160,7 +160,7 @@ func SaveTrustedCert(path string, cert *x509.Certificate) (bool, error) {
 		return false, err
 	}
 	// A certificate is public, so the file is readable like any CA bundle.
-	if err := os.Chmod(tmp.Name(), 0644); err != nil {
+	if err := os.Chmod(tmp.Name(), 0644); err != nil { // #nosec G302 -- certificates are public, readable like any CA bundle
 		return false, err
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {

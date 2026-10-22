@@ -150,7 +150,7 @@ func loadJSONConfig(config *Config) error {
 	var configFile []byte
 	var err error
 	for _, path := range configPaths {
-		configFile, err = os.ReadFile(path)
+		configFile, err = os.ReadFile(path) // #nosec G304 -- fixed list of config file locations
 		if err == nil {
 			break
 		}

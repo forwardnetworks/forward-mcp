@@ -55,7 +55,7 @@ func (RowQuerier) QueryRows(ctx context.Context, data []map[string]interface{}, 
 	if _, err := conn.ExecContext(ctx, createStmt); err != nil {
 		return nil, fmt.Errorf("failed to create table: %w", err)
 	}
-	insertStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", resultTable, strings.Join(quoted, ", "),
+	insertStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", resultTable, strings.Join(quoted, ", "), // #nosec G201 -- identifiers go through quoteIdent and values are ? placeholders
 		strings.TrimRight(strings.Repeat("?,", len(columns)), ","))
 	for _, row := range data {
 		vals := make([]interface{}, len(columns))
