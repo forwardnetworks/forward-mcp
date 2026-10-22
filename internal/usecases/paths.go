@@ -487,7 +487,13 @@ func (s *Service) SearchPathsEntry(ctx context.Context, args SearchPathsArgs) (*
 			},
 		},
 	}
-	return s.searchPathsBulk(ctx, bulkArgs)
+	result, err := s.searchPathsBulk(ctx, bulkArgs)
+	if err != nil {
+		return nil, err
+	}
+	// The single-query tool should not report itself as a bulk search.
+	result.Text = strings.Replace(result.Text, "Bulk path search completed. ", "Path search completed. ", 1)
+	return result, nil
 }
 
 // Update the searchPathsBulk entrypoint to route single queries to searchPaths

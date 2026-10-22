@@ -3,13 +3,17 @@
     "103abbe0-ee9e-49d3-90bd-4ef3976531ed": {
       "files": [
         "internal/usecases/store_query_result_test.go",
-        "internal/usecases/integration_test.go"
+        "internal/usecases/integration_test.go",
+        "/Users/gb/.claude/projects/-Users-gb-Projects-forward-mcp/memory/pr-merge-workflow.md",
+        "/Users/gb/.claude/projects/-Users-gb-Projects-forward-mcp/memory/forward-integration-tests-vpn.md",
+        "/Users/gb/.claude/projects/-Users-gb-Projects-forward-mcp/memory/MEMORY.md",
+        "internal/usecases/nqe_response_test.go"
       ],
-      "gate": "go test -count=1 -run TestIntegrationAllResults ./internal/usecases",
+      "gate": "go test -race -count=1 -skip TestIntegration ./... && gosec ./...",
       "pid": 4562,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-22T19:43:59.495215+00:00"
+      "updated": "2026-10-22T19:56:56.594710+00:00"
     },
     "1bd7df0e-e11a-49c6-8117-f5231a82fca7": {
       "files": [
