@@ -7,13 +7,14 @@
         "/Users/gb/.claude/projects/-Users-gb-Projects-forward-mcp/memory/pr-merge-workflow.md",
         "/Users/gb/.claude/projects/-Users-gb-Projects-forward-mcp/memory/forward-integration-tests-vpn.md",
         "/Users/gb/.claude/projects/-Users-gb-Projects-forward-mcp/memory/MEMORY.md",
-        "internal/usecases/nqe_response_test.go"
+        "internal/usecases/nqe_response_test.go",
+        "internal/usecases/api_memory_tracker.go"
       ],
       "gate": "go test -race -count=1 -skip TestIntegration ./... && gosec ./...",
       "pid": 4562,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-22T19:56:56.594710+00:00"
+      "updated": "2026-10-22T20:02:03.298465+00:00"
     },
     "1bd7df0e-e11a-49c6-8117-f5231a82fca7": {
       "files": [

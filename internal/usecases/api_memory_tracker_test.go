@@ -1,6 +1,7 @@
 package usecases
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/forward-mcp/internal/adapters/secondary/sqlite"
@@ -311,4 +312,68 @@ func createTestMemorySystem(t *testing.T) *sqlite.MemorySystem {
 		t.Fatalf("Failed to open test memory store: %v", err)
 	}
 	return ms
+}
+
+// TestAPIMemoryTracker_RepeatedQueriesDoNotGrowStore checks that rerunning a
+// query replaces its result entity instead of adding one per run, and that
+// only the newest maxPerformanceObservations timings are kept.
+func TestAPIMemoryTracker_RepeatedQueriesDoNotGrowStore(t *testing.T) {
+	memorySystem := createTestMemorySystem(t)
+	defer memorySystem.Close()
+	tracker := NewAPIMemoryTracker(memorySystem, logger.New(), "test-instance")
+	result := &domain.NQERunResult{Items: []map[string]interface{}{{"device": "router1"}}}
+
+	runs := maxPerformanceObservations + 5
+	for i := 1; i <= runs; i++ {
+		if err := tracker.TrackNetworkQuery("test-query", "test-network", "", result, time.Duration(i)*time.Millisecond); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+	}
+	// A different snapshot is a different result.
+	if err := tracker.TrackNetworkQuery("test-query", "test-network", "snap-2", result, time.Millisecond); err != nil {
+		t.Fatalf("snapshot run: %v", err)
+	}
+
+	results, err := memorySystem.SearchEntities("", "query_result", 1000)
+	if err != nil {
+		t.Fatalf("search results: %v", err)
+	}
+	if len(results) != 2 {
+		names := make([]string, len(results))
+		for i, r := range results {
+			names[i] = r.Name
+		}
+		t.Errorf("got %d query_result entities, want 2 (one per snapshot): %v", len(results), names)
+	}
+
+	queryEntity, err := memorySystem.GetEntity("test-query")
+	if err != nil {
+		t.Fatalf("query entity: %v", err)
+	}
+	produced, err := memorySystem.GetRelations(queryEntity.ID, "produced")
+	if err != nil {
+		t.Fatalf("produced relations: %v", err)
+	}
+	if len(produced) != 2 {
+		t.Errorf("got %d produced relations, want 2", len(produced))
+	}
+
+	timings, err := memorySystem.GetObservations(queryEntity.ID, "performance")
+	if err != nil {
+		t.Fatalf("performance observations: %v", err)
+	}
+	if len(timings) != maxPerformanceObservations {
+		t.Fatalf("got %d performance observations, want %d", len(timings), maxPerformanceObservations)
+	}
+	// The oldest runs (1ms .. 6ms; the snapshot run is also 1ms) are the
+	// ones pruned, so the slowest run must survive.
+	found := false
+	for _, o := range timings {
+		if contains(o.Content, fmt.Sprintf("in %dms", runs)) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("newest timing (%dms) was pruned", runs)
+	}
 }
