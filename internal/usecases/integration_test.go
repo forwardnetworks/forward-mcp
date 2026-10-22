@@ -8,6 +8,7 @@ import (
 	"github.com/forward-mcp/internal/adapters/secondary/forwardapi"
 	"github.com/forward-mcp/internal/adapters/secondary/queryindex"
 	"github.com/forward-mcp/internal/adapters/secondary/semcache"
+	"github.com/forward-mcp/internal/adapters/secondary/sqlite"
 	"os"
 	"path/filepath"
 	"strings"
@@ -739,4 +740,79 @@ func TestIntegrationListSnapshots(t *testing.T) {
 
 	content := response.Text
 	t.Logf("Snapshots response: %s", content)
+}
+
+// Integration test for all_results: the full result set is saved to the
+// memory system, and the response says so only because it was.
+func TestIntegrationAllResultsStoredInMemory(t *testing.T) {
+	service := setupIntegrationTest(t)
+
+	// The memory store lives in a temp directory, never in ~/.forward-mcp.
+	memory, err := sqlite.NewMemorySystemAt(filepath.Join(t.TempDir(), "memory.db"), service.logger, service.instanceID)
+	if err != nil {
+		t.Fatalf("memory store: %v", err)
+	}
+	t.Cleanup(func() { _ = memory.Close() })
+	service.memorySystem = memory
+
+	networks, err := service.forwardClient.GetNetworks(context.Background())
+	if err != nil {
+		t.Fatalf("Failed to get networks: %v", err)
+	}
+	if len(networks) == 0 {
+		t.Skip("No networks available for all_results test")
+	}
+	networkID := getTestNetworkID(networks)
+
+	tests := []struct {
+		name       string
+		entityName string
+		call       func() (*Result, error)
+		want       string // must appear in the stored data
+	}{
+		{
+			name:       "list_networks",
+			entityName: "network_list",
+			call: func() (*Result, error) {
+				return service.ListNetworks(context.Background(), ListNetworksArgs{AllResults: true})
+			},
+			want: networkID,
+		},
+		{
+			name:       "list_snapshots",
+			entityName: "snapshot_list",
+			call: func() (*Result, error) {
+				return service.ListSnapshots(context.Background(), ListSnapshotsArgs{NetworkID: networkID, AllResults: true})
+			},
+			want: `"id"`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			response, err := tc.call()
+			if err != nil {
+				skipIfNoAccess(t, networkID, err)
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			if !strings.Contains(response.Text, "Stored") {
+				t.Errorf("response does not report the results as stored:\n%s", response.Text)
+			}
+
+			entity, err := memory.GetEntityByName(tc.entityName)
+			if err != nil {
+				t.Fatalf("no %s entity in memory: %v", tc.entityName, err)
+			}
+			observations, err := memory.GetObservations(entity.ID, "data")
+			if err != nil {
+				t.Fatalf("observations for %s: %v", tc.entityName, err)
+			}
+			if len(observations) != 1 {
+				t.Fatalf("got %d data observations for %s, want 1", len(observations), tc.entityName)
+			}
+			if !strings.Contains(observations[0].Content, tc.want) {
+				t.Errorf("stored %s data does not contain %s", tc.entityName, tc.want)
+			}
+		})
+	}
 }
