@@ -302,7 +302,7 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 	if s.config.Forward.SemanticCache.Enabled && s.semanticCache != nil {
 		if cachedResult, found := s.semanticCache.GetExact(cacheKey, networkID, snapshotID); found {
 			s.logger.Debug("Cache hit for NQE query %s", args.QueryID)
-			return textResult(MarshalCompactJSONString(projectResult(cachedResult, args))), nil
+			return textResult(nqePageResponse(clampNote, cachedResult, args)), nil
 		}
 	}
 
@@ -380,6 +380,9 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 			// Parameter mismatch error, suggest search_nqe_queries
 			return nil, fmt.Errorf("Query parameter mismatch: %s. Try using search_nqe_queries to find working alternatives or check the required parameters for this query.", errorStr)
 		}
+		if strings.Contains(errorStr, "SHA-1 digest") {
+			return nil, fmt.Errorf("query_id %q is not a valid NQE query ID: IDs look like FQ_ followed by 40 hex digits. Use search_nqe_queries or list_nqe_queries to find the query ID", args.QueryID)
+		}
 		return nil, fmt.Errorf("failed to run NQE query: %w", err)
 	}
 
@@ -409,19 +412,24 @@ func (s *Service) RunNQEQueryByID(ctx context.Context, args RunNQEQueryByIDArgs)
 		}
 	}
 
-	resultJSON := MarshalCompactJSONString(projectResult(result, args))
 	s.logger.Debug("NQE query completed with %d items", len(result.Items))
+	return textResult(nqePageResponse(clampNote, result, args)), nil
+}
 
+// nqePageResponse formats one page of NQE results. Fresh and cached results
+// both go through it, so a cached page still carries the row count and the
+// hint that more rows may exist.
+func nqePageResponse(clampNote string, result *domain.NQERunResult, args RunNQEQueryByIDArgs) string {
+	resultJSON := MarshalCompactJSONString(projectResult(result, args))
 	response := clampNote + fmt.Sprintf("NQE query completed. Found %d items:\n%s\n", len(result.Items), resultJSON)
 
 	// Pagination warning if results may be truncated
-	if params.Options != nil && len(result.Items) == params.Options.Limit {
+	if opts := args.Options; opts != nil && opts.Limit > 0 && len(result.Items) == opts.Limit {
 		response += "\n⚠️ Results may be truncated. Use the 'offset' parameter to fetch the next page.\n"
-		response += fmt.Sprintf("Example: set 'offset' to %d to get the next page.\n", params.Options.Offset+params.Options.Limit)
+		response += fmt.Sprintf("Example: set 'offset' to %d to get the next page.\n", opts.Offset+opts.Limit)
 		response += "Or set 'all_results: true' in your request to fetch all results in batches.\n"
 	}
-
-	return textResult(response), nil
+	return response
 }
 
 func (s *Service) ListNQEQueries(ctx context.Context, args ListNQEQueriesArgs) (*Result, error) {

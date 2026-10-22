@@ -243,7 +243,7 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 
 	// Device Management Tools
 	addTool(server, "list_devices",
-		"Tool to list all devices in a network with names, types, and operational status. Use when building device inventory or discovering network devices. Requires network_id. Returns basic device information. Supports pagination with limit and offset.",
+		"Tool to list all devices in a network with names, display names, types, vendors, platforms, and models. Use when building device inventory or discovering network devices. Requires network_id. Returns basic device information. Supports pagination with limit and offset.",
 		s.ListDevices)
 
 	addTool(server, "get_device_locations",
@@ -312,7 +312,7 @@ func registerTools(server *mcp.Server, s *usecases.Service) error {
 
 	// AI-Powered Query Discovery Tools
 	addTool(server, "search_nqe_queries",
-		"Tool to find relevant NQE queries from 6000+ predefined queries using natural language semantic search. Use when discovering queries for specific network analysis tasks without knowing exact query names. Describe what you want to analyze; returns ranked query suggestions with similarity scores. Be specific for best results.",
+		"Tool to find relevant NQE queries in the Forward NQE query library using natural language search. Use when discovering queries for specific network analysis tasks without knowing exact query names. Describe what you want to analyze; returns ranked query suggestions with similarity scores. Be specific for best results.",
 		s.SearchNQEQueries)
 
 	// Bulk location setup workflow (guides bulk upsert using PATCH)
