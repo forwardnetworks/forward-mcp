@@ -289,7 +289,8 @@ func newDeps(cfg *ports.Config, log ports.Logger) usecases.Deps {
 		Skills:     forwardmcp.Skills(),
 	}
 
-	// Auto-hydrate database and embeddings on first run (background, non-blocking)
+	// Hydrate the query database and embeddings in the background: on first run,
+	// and whenever stored queries lack metadata.
 	if queryStore != nil {
 		go autoHydrateDatabase(queryStore, deps.API, deps.QueryIndex, log)
 	}
@@ -305,38 +306,17 @@ func autoHydrateDatabase(queryStore ports.QueryStore, api ports.ForwardAPI, quer
 		return
 	}
 
-	// Create background context with timeout for the hydration operation
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	// Fetching every query's metadata takes about a minute and a half; a run
+	// cut short keeps what it fetched and the next start resumes.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Check current database state
-	queries, err := queryStore.LoadQueries()
-	queryCount := 0
-	if err == nil {
-		queryCount = len(queries)
-	}
-
-	// Hydrate if database is sparse (< 100 queries)
-	if err != nil || queryCount < 100 {
-		log.Info("Auto-hydrating query database: found %d queries, fetching from API...", queryCount)
-
-		// Fetch fresh queries from API (both org and fwd queries)
-		freshQueries, err := api.GetNQEAllQueriesEnhanced(ctx, nil)
-		if err != nil {
-			log.Error("Auto-hydration failed: %v", err)
+	queries, _, err := usecases.HydrateQueryStore(ctx, queryStore, api, log)
+	if err != nil {
+		log.Error("Auto-hydration failed: %v", err)
+		if len(queries) == 0 {
 			return
 		}
-
-		// Save to database
-		if err := queryStore.SaveQueries(freshQueries); err != nil {
-			log.Error("Auto-hydration: failed to save queries: %v", err)
-			return
-		}
-
-		log.Info("Auto-hydration complete: loaded and saved %d queries", len(freshQueries))
-		queries = freshQueries
-	} else {
-		log.Debug("Database has %d queries, skipping auto-hydration", queryCount)
 	}
 
 	// Auto-generate embeddings if they don't exist

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/forward-mcp/internal/ports"
@@ -713,56 +714,8 @@ func (c *Client) GetNQEOrgQueriesEnhanced(ctx context.Context, existingCommitIDs
 
 	debugLogger.Info("📊 Commit comparison results: %d unchanged, %d to fetch", unchangedCount, len(queriesToFetch))
 
-	// For each query that needs updating, fetch the detailed metadata
-	enhancedQueries := make([]NQEQueryDetail, 0, len(queriesToFetch))
-	failedQueries := 0
-	var firstFailureExample string
-
-	for i, querySummary := range queriesToFetch {
-		// Check for context cancellation before processing each query
-		select {
-		case <-ctx.Done():
-			debugLogger.Info("🚫 Org query loading cancelled after processing %d/%d queries", i, len(queriesToFetch))
-			return nil, fmt.Errorf("org query loading cancelled: %w", ctx.Err())
-		default:
-			// Continue processing
-		}
-
-		queryDetail, err := c.GetNQEQueryByCommit(ctx, querySummary.LastCommitId, querySummary.Path, "org")
-		if err != nil {
-			failedQueries++
-			// Log only the first failure as an example, not every single one
-			if firstFailureExample == "" {
-				firstFailureExample = fmt.Sprintf("Example failure: query %s (commit %s): %v", querySummary.Path, querySummary.LastCommitId, err)
-			}
-			// Continue with other queries instead of failing completely
-			continue
-		}
-
-		// Enhance the query detail with path and commit information from the summary
-		queryDetail.QueryID = querySummary.QueryID // Ensure consistency
-		queryDetail.Path = querySummary.Path       // Add path from org summary
-
-		// Add commit tracking information
-		if queryDetail.LastCommit.ID == "" {
-			queryDetail.LastCommit.ID = querySummary.LastCommitId
-		}
-
-		enhancedQueries = append(enhancedQueries, *queryDetail)
-
-		// Log progress for large numbers of queries (every 100 queries) with cancellation check
-		if (i+1)%100 == 0 {
-			// Check for cancellation before logging progress
-			select {
-			case <-ctx.Done():
-				debugLogger.Info("🚫 Org query loading cancelled during progress logging at %d/%d queries", i+1, len(queriesToFetch))
-				return nil, fmt.Errorf("org query loading cancelled: %w", ctx.Err())
-			default:
-				debugLogger.Info("Progress: %d/%d queries processed (%d successful, %d failed)",
-					i+1, len(queriesToFetch), len(enhancedQueries), failedQueries)
-			}
-		}
-	}
+	// Fetch the detailed metadata of each query that needs updating
+	enhancedQueries, failedQueries, firstFailureExample := c.fetchQueryDetails(ctx, "org", queriesToFetch)
 
 	// Final summary with meaningful statistics
 	debugLogger.Info("✅ Enhanced metadata loading complete:")
@@ -859,56 +812,8 @@ func (c *Client) GetNQEFwdQueriesEnhanced(ctx context.Context, existingCommitIDs
 
 	debugLogger.Info("📊 Fwd commit comparison results: %d unchanged, %d to fetch", unchangedCount, len(queriesToFetch))
 
-	// For each query that needs updating, fetch the detailed metadata
-	enhancedQueries := make([]NQEQueryDetail, 0, len(queriesToFetch))
-	failedQueries := 0
-	var firstFailureExample string
-
-	for i, querySummary := range queriesToFetch {
-		// Check for context cancellation before processing each query
-		select {
-		case <-ctx.Done():
-			debugLogger.Info("🚫 Fwd query loading cancelled after processing %d/%d queries", i, len(queriesToFetch))
-			return nil, fmt.Errorf("fwd query loading cancelled: %w", ctx.Err())
-		default:
-			// Continue processing
-		}
-
-		queryDetail, err := c.GetNQEQueryByCommit(ctx, querySummary.LastCommitId, querySummary.Path, "fwd")
-		if err != nil {
-			failedQueries++
-			// Log only the first failure as an example, not every single one
-			if firstFailureExample == "" {
-				firstFailureExample = fmt.Sprintf("Example failure: query %s (commit %s): %v", querySummary.Path, querySummary.LastCommitId, err)
-			}
-			// Continue with other queries instead of failing completely
-			continue
-		}
-
-		// Enhance the query detail with path and commit information from the summary
-		queryDetail.QueryID = querySummary.QueryID // Ensure consistency
-		queryDetail.Path = querySummary.Path       // Add path from fwd summary
-
-		// Add commit tracking information
-		if queryDetail.LastCommit.ID == "" {
-			queryDetail.LastCommit.ID = querySummary.LastCommitId
-		}
-
-		enhancedQueries = append(enhancedQueries, *queryDetail)
-
-		// Log progress for large numbers of queries (every 100 queries) with cancellation check
-		if (i+1)%100 == 0 {
-			// Check for cancellation before logging progress
-			select {
-			case <-ctx.Done():
-				debugLogger.Info("🚫 Fwd query loading cancelled during progress logging at %d/%d queries", i+1, len(queriesToFetch))
-				return nil, fmt.Errorf("fwd query loading cancelled: %w", ctx.Err())
-			default:
-				debugLogger.Info("Progress: %d/%d fwd queries processed (%d successful, %d failed)",
-					i+1, len(queriesToFetch), len(enhancedQueries), failedQueries)
-			}
-		}
-	}
+	// Fetch the detailed metadata of each query that needs updating
+	enhancedQueries, failedQueries, firstFailureExample := c.fetchQueryDetails(ctx, "fwd", queriesToFetch)
 
 	// Final summary with meaningful statistics
 	debugLogger.Info("✅ Enhanced fwd metadata loading complete:")
@@ -925,6 +830,68 @@ func (c *Client) GetNQEFwdQueriesEnhanced(ctx context.Context, existingCommitIDs
 	}
 
 	return enhancedQueries, nil
+}
+
+// queryDetailWorkers bounds the concurrent requests that fetch query details.
+// A repository holds about 2,000 queries at roughly 300 ms per request, so
+// fetching them one at a time takes over ten minutes.
+const queryDetailWorkers = 8
+
+// fetchQueryDetails fetches the detail of each summarized query in repo, at
+// most queryDetailWorkers at a time. A query that fails is counted and
+// skipped. If ctx ends first, it returns the details fetched so far: they
+// carry their commit IDs, so the next load skips them and fetches the rest.
+func (c *Client) fetchQueryDetails(ctx context.Context, repo string, summaries []NQEOrgQuerySummary) (details []NQEQueryDetail, failed int, firstFailure string) {
+	var (
+		mu   sync.Mutex
+		wg   sync.WaitGroup
+		jobs = make(chan NQEOrgQuerySummary)
+	)
+	details = make([]NQEQueryDetail, 0, len(summaries))
+	for w := 0; w < queryDetailWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for summary := range jobs {
+				detail, err := c.GetNQEQueryByCommit(ctx, summary.LastCommitId, summary.Path, repo)
+				mu.Lock()
+				switch {
+				case err != nil && ctx.Err() == nil:
+					failed++
+					if firstFailure == "" {
+						firstFailure = fmt.Sprintf("Example failure: query %s (commit %s): %v", summary.Path, summary.LastCommitId, err)
+					}
+				case err == nil:
+					detail.QueryID = summary.QueryID
+					detail.Path = summary.Path
+					if detail.LastCommit.ID == "" {
+						detail.LastCommit.ID = summary.LastCommitId
+					}
+					details = append(details, *detail)
+					if len(details)%100 == 0 {
+						c.log.Info("Progress: %d/%d %s queries fetched", len(details), len(summaries), repo)
+					}
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+
+feed:
+	for _, summary := range summaries {
+		select {
+		case <-ctx.Done():
+			break feed
+		case jobs <- summary:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	if ctx.Err() != nil {
+		c.log.Info("🚫 %s query loading stopped after %d/%d queries (%v); the next load fetches the rest", repo, len(details), len(summaries), ctx.Err())
+	}
+	return details, failed, firstFailure
 }
 
 func (c *Client) GetNQEAllQueriesEnhanced(ctx context.Context, existingCommitIDs map[string]string) ([]NQEQueryDetail, error) {
@@ -999,12 +966,46 @@ func (c *Client) GetNQEQueryByCommit(ctx context.Context, commitID string, path 
 	}
 	defer resp.Body.Close()
 
-	var queryDetail NQEQueryDetail
-	if err := json.NewDecoder(resp.Body).Decode(&queryDetail); err != nil {
+	var body queryDetailResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
-
+	queryDetail := body.NQEQueryDetail
+	queryDetail.LastCommit = body.LastCommit.commitInfo()
+	queryDetail.FirstCommit = body.FirstCommit.commitInfo()
 	return &queryDetail, nil
+}
+
+// queryDetailResponse is a query detail as the commit endpoint sends it. Its
+// commits carry committedAt as an RFC 3339 string, which NQECommitInfo keeps
+// as Unix seconds; decoding straight into NQEQueryDetail fails on every query.
+type queryDetailResponse struct {
+	NQEQueryDetail
+	LastCommit  commitResponse `json:"lastCommit"`
+	FirstCommit commitResponse `json:"firstCommit"`
+}
+
+type commitResponse struct {
+	ID          string          `json:"id"`
+	AuthorEmail string          `json:"authorEmail"`
+	CommittedAt json.RawMessage `json:"committedAt"`
+	Title       string          `json:"title"`
+	Body        string          `json:"body"`
+}
+
+// commitInfo converts the commit, accepting committedAt as an RFC 3339 string
+// or as Unix seconds. A time it cannot read becomes 0.
+func (c commitResponse) commitInfo() NQECommitInfo {
+	info := NQECommitInfo{ID: c.ID, AuthorEmail: c.AuthorEmail, Title: c.Title, Body: c.Body}
+	var text string
+	if err := json.Unmarshal(c.CommittedAt, &text); err == nil {
+		if t, err := time.Parse(time.RFC3339Nano, text); err == nil {
+			info.CommittedAt = t.Unix()
+		}
+	} else {
+		_ = json.Unmarshal(c.CommittedAt, &info.CommittedAt)
+	}
+	return info
 }
 
 func (c *Client) DiffNQEQuery(ctx context.Context, before, after string, request *NQEDiffRequest) (*NQEDiffResult, error) {

@@ -8,13 +8,18 @@
         "/Users/gb/.claude/projects/-Users-gb-Projects-forward-mcp/memory/forward-integration-tests-vpn.md",
         "/Users/gb/.claude/projects/-Users-gb-Projects-forward-mcp/memory/MEMORY.md",
         "internal/usecases/nqe_response_test.go",
-        "internal/usecases/api_memory_tracker.go"
+        "internal/usecases/api_memory_tracker.go",
+        "internal/ports/forward.go",
+        "internal/usecases/query_loader.go",
+        "cmd/server/main.go",
+        "internal/adapters/secondary/forwardapi/query_details_test.go",
+        "internal/usecases/hydrate_query_store_test.go"
       ],
       "gate": "go test -race -count=1 -skip TestIntegration ./... && gosec ./...",
       "pid": 4562,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-22T20:02:03.298465+00:00"
+      "updated": "2026-10-22T20:12:46.150598+00:00"
     },
     "1bd7df0e-e11a-49c6-8117-f5231a82fca7": {
       "files": [
