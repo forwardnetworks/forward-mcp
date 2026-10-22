@@ -70,7 +70,7 @@ func checkCAFile(setting, path string) error {
 	if path == "" {
 		return nil
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path comes from operator configuration
 	if err != nil {
 		return fmt.Errorf("%s: cannot read %s: %w", setting, path, err)
 	}

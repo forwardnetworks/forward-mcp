@@ -950,7 +950,7 @@ func (sc *SemanticCache) loadFromDisk(filePath string) (*ports.NQERunResult, err
 	}
 
 	// Read file
-	fileBytes, err := os.ReadFile(absPath)
+	fileBytes, err := os.ReadFile(absPath) // #nosec G304 -- path is validated to stay inside the cache directory above
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from disk cache file %s: %w", filePath, err)
 	}

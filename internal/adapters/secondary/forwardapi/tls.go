@@ -14,7 +14,7 @@ import (
 // its own CA. It fails if the file is missing or holds no certificate, so a
 // typo in the path is reported instead of silently ignored.
 func LoadRootCAs(path string) (*x509.CertPool, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path comes from FORWARD_CA_CERT_PATH or the trust command
 	if err != nil {
 		return nil, fmt.Errorf("cannot read CA certificate file %s: %w", path, err)
 	}

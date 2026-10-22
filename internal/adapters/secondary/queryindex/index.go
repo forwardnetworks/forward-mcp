@@ -113,7 +113,7 @@ func (idx *NQEQueryIndex) LoadFromSpec() error {
 
 	idx.logger.Debug("Loading NQE query index from spec file: %s", specPath)
 
-	file, err := os.Open(specPath)
+	file, err := os.Open(specPath) // #nosec G304 -- spec file located by findSpecFile, not user input
 	if err != nil {
 		return fmt.Errorf("failed to open spec file: %w", err)
 	}
@@ -350,7 +350,7 @@ func (idx *NQEQueryIndex) saveEmbeddingsToCache() error {
 		return fmt.Errorf("failed to marshal embeddings cache: %w", err)
 	}
 
-	if err := os.WriteFile(idx.embeddingsCachePath, data, 0644); err != nil {
+	if err := os.WriteFile(idx.embeddingsCachePath, data, 0644); err != nil { // #nosec G306 -- embeddings cache holds public query metadata only
 		return fmt.Errorf("failed to write embeddings cache: %w", err)
 	}
 
@@ -530,7 +530,7 @@ func (idx *NQEQueryIndex) SaveIndex(filename string) error {
 		return fmt.Errorf("failed to marshal index: %w", err)
 	}
 
-	if err := os.WriteFile(filename, data, 0644); err != nil {
+	if err := os.WriteFile(filename, data, 0644); err != nil { // #nosec G306 -- index file holds public query metadata only
 		return fmt.Errorf("failed to write index file: %w", err)
 	}
 
@@ -543,7 +543,7 @@ func (idx *NQEQueryIndex) LoadIndex(filename string) error {
 	idx.mutex.Lock()
 	defer idx.mutex.Unlock()
 
-	data, err := os.ReadFile(filename)
+	data, err := os.ReadFile(filename) // #nosec G304 -- path is supplied by the caller in code, not by tool input
 	if err != nil {
 		return fmt.Errorf("failed to read index file: %w", err)
 	}

@@ -46,7 +46,7 @@ func getWritableDataDirectory() (string, error) {
 		if err := os.MkdirAll(dir, 0700); err == nil {
 			// Test write permission with a temporary file
 			testFile := filepath.Join(dir, ".write_test")
-			if file, err := os.Create(testFile); err == nil {
+			if file, err := os.Create(testFile); err == nil { // #nosec G304 -- probe file in a data directory chosen by the server
 				file.Close()
 				os.Remove(testFile) // Clean up
 				return dir, nil
