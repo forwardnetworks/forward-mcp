@@ -172,7 +172,7 @@ func (l *Logger) Fatalf(format string, args ...interface{}) {
 	message := fmt.Sprintf(format, args...)
 	l.infoLogger.Printf("%s", "[FATAL] "+message)
 	l.logToFile("fatal", message, "", nil, nil)
-	l.Close() // Ensure file is closed before exit
+	_ = l.Close() // Ensure file is closed before exit
 	os.Exit(1)
 }
 

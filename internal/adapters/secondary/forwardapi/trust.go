@@ -153,7 +153,7 @@ func SaveTrustedCert(path string, cert *x509.Certificate) (bool, error) {
 	}
 	defer os.Remove(tmp.Name()) // no-op once renamed
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return false, fmt.Errorf("cannot write %s: %w", tmp.Name(), err)
 	}
 	if err := tmp.Close(); err != nil {

@@ -36,6 +36,7 @@ func (s *Service) ListNetworks(ctx context.Context, args ListNetworksArgs) (*Res
 	var networks []domain.Network
 	var totalCount int
 	var hasMore bool
+	var storedInMemory bool
 
 	if args.AllResults {
 		// Store all networks in memory system for large datasets
@@ -45,19 +46,11 @@ func (s *Service) ListNetworks(ctx context.Context, args ListNetworksArgs) (*Res
 
 		// Store in memory system if available
 		if s.memorySystem != nil {
-			entity, err := s.memorySystem.CreateEntity("network_list", "query_result", map[string]interface{}{
+			storedInMemory = s.storeQueryResult("network_list", map[string]interface{}{
 				"query_type":  "list_networks",
 				"total_count": totalCount,
 				"timestamp":   time.Now().Unix(),
-			})
-			if err == nil {
-				// Store the networks data
-				networksJSON, _ := json.Marshal(networks)
-				s.memorySystem.AddObservation(entity.ID, string(networksJSON), "data", map[string]interface{}{
-					"data_type": "networks_list",
-					"count":     totalCount,
-				})
-			}
+			}, "networks_list", networks, totalCount)
 		}
 	} else {
 		// Apply pagination
@@ -96,8 +89,10 @@ func (s *Service) ListNetworks(ctx context.Context, args ListNetworksArgs) (*Res
 		responseText.WriteString("No networks found.")
 	}
 
-	if args.AllResults && s.memorySystem != nil {
+	if storedInMemory {
 		responseText.WriteString(fmt.Sprintf("\n\n💾 Stored %d networks in memory system for future reference.", totalCount))
+	} else if args.AllResults && s.memorySystem != nil {
+		responseText.WriteString("\n\nCould not store these networks in the memory system; the results above are complete. Retry, or check the server log for the cause.")
 	}
 
 	return textResult(responseText.String()), nil

@@ -74,6 +74,7 @@ func (s *Service) GetDeviceLocations(ctx context.Context, args GetDeviceLocation
 	var locations map[string]string
 	var totalCount int
 	var hasMore bool
+	var storedInMemory bool
 
 	if args.AllResults {
 		// Store all device locations in memory system for large datasets
@@ -83,20 +84,12 @@ func (s *Service) GetDeviceLocations(ctx context.Context, args GetDeviceLocation
 
 		// Store in memory system if available
 		if s.memorySystem != nil {
-			entity, err := s.memorySystem.CreateEntity("device_locations", "query_result", map[string]interface{}{
+			storedInMemory = s.storeQueryResult("device_locations", map[string]interface{}{
 				"query_type":  "get_device_locations",
 				"network_id":  args.NetworkID,
 				"total_count": totalCount,
 				"timestamp":   time.Now().Unix(),
-			})
-			if err == nil {
-				// Store the device locations data
-				locationsJSON, _ := json.Marshal(locations)
-				s.memorySystem.AddObservation(entity.ID, string(locationsJSON), "data", map[string]interface{}{
-					"data_type": "device_locations",
-					"count":     totalCount,
-				})
-			}
+			}, "device_locations", locations, totalCount)
 		}
 	} else {
 		// Apply pagination to map
@@ -140,8 +133,10 @@ func (s *Service) GetDeviceLocations(ctx context.Context, args GetDeviceLocation
 		responseText.WriteString("No device locations found.")
 	}
 
-	if args.AllResults && s.memorySystem != nil {
+	if storedInMemory {
 		responseText.WriteString(fmt.Sprintf("\n\n💾 Stored %d device locations in memory system for future reference.", totalCount))
+	} else if args.AllResults && s.memorySystem != nil {
+		responseText.WriteString("\n\nCould not store these device locations in the memory system; the results above are complete. Retry, or check the server log for the cause.")
 	}
 
 	return textResult(responseText.String()), nil
@@ -173,6 +168,7 @@ func (s *Service) ListSnapshots(ctx context.Context, args ListSnapshotsArgs) (*R
 	var snapshots []domain.Snapshot
 	var totalCount int
 	var hasMore bool
+	var storedInMemory bool
 
 	if args.AllResults {
 		// Store all snapshots in memory system for large datasets
@@ -182,20 +178,12 @@ func (s *Service) ListSnapshots(ctx context.Context, args ListSnapshotsArgs) (*R
 
 		// Store in memory system if available
 		if s.memorySystem != nil {
-			entity, err := s.memorySystem.CreateEntity("snapshot_list", "query_result", map[string]interface{}{
+			storedInMemory = s.storeQueryResult("snapshot_list", map[string]interface{}{
 				"query_type":  "list_snapshots",
 				"network_id":  args.NetworkID,
 				"total_count": totalCount,
 				"timestamp":   time.Now().Unix(),
-			})
-			if err == nil {
-				// Store the snapshots data
-				snapshotsJSON, _ := json.Marshal(snapshots)
-				s.memorySystem.AddObservation(entity.ID, string(snapshotsJSON), "data", map[string]interface{}{
-					"data_type": "snapshots_list",
-					"count":     totalCount,
-				})
-			}
+			}, "snapshots_list", snapshots, totalCount)
 		}
 	} else {
 		// Apply pagination
@@ -234,8 +222,10 @@ func (s *Service) ListSnapshots(ctx context.Context, args ListSnapshotsArgs) (*R
 		responseText.WriteString("No snapshots found.")
 	}
 
-	if args.AllResults && s.memorySystem != nil {
+	if storedInMemory {
 		responseText.WriteString(fmt.Sprintf("\n\n💾 Stored %d snapshots in memory system for future reference.", totalCount))
+	} else if args.AllResults && s.memorySystem != nil {
+		responseText.WriteString("\n\nCould not store these snapshots in the memory system; the results above are complete. Retry, or check the server log for the cause.")
 	}
 
 	return textResult(responseText.String()), nil
@@ -278,6 +268,7 @@ func (s *Service) ListLocations(ctx context.Context, args ListLocationsArgs) (*R
 	var locations []domain.Location
 	var totalCount int
 	var hasMore bool
+	var storedInMemory bool
 
 	if args.AllResults {
 		// Store all locations in memory system for large datasets
@@ -287,20 +278,12 @@ func (s *Service) ListLocations(ctx context.Context, args ListLocationsArgs) (*R
 
 		// Store in memory system if available
 		if s.memorySystem != nil {
-			entity, err := s.memorySystem.CreateEntity("location_list", "query_result", map[string]interface{}{
+			storedInMemory = s.storeQueryResult("location_list", map[string]interface{}{
 				"query_type":  "list_locations",
 				"network_id":  args.NetworkID,
 				"total_count": totalCount,
 				"timestamp":   time.Now().Unix(),
-			})
-			if err == nil {
-				// Store the locations data
-				locationsJSON, _ := json.Marshal(locations)
-				s.memorySystem.AddObservation(entity.ID, string(locationsJSON), "data", map[string]interface{}{
-					"data_type": "locations_list",
-					"count":     totalCount,
-				})
-			}
+			}, "locations_list", locations, totalCount)
 		}
 	} else {
 		// Apply pagination
@@ -339,8 +322,10 @@ func (s *Service) ListLocations(ctx context.Context, args ListLocationsArgs) (*R
 		responseText.WriteString("No locations found.")
 	}
 
-	if args.AllResults && s.memorySystem != nil {
+	if storedInMemory {
 		responseText.WriteString(fmt.Sprintf("\n\n💾 Stored %d locations in memory system for future reference.", totalCount))
+	} else if args.AllResults && s.memorySystem != nil {
+		responseText.WriteString("\n\nCould not store these locations in the memory system; the results above are complete. Retry, or check the server log for the cause.")
 	}
 
 	return textResult(responseText.String()), nil
