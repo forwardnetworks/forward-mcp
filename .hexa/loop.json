@@ -4,11 +4,11 @@
       "files": [
         "internal/usecases/integration_test.go"
       ],
-      "gate": "go test -count=1 -run \"TestIntegration(SearchPaths|PathSearch)\" ./internal/usecases",
+      "gate": "go test -race -count=1 -skip TestIntegration ./... && go run golang.org/x/vuln/cmd/govulncheck@latest ./...",
       "pid": 4562,
       "pid_start": null,
       "stage": "gate",
-      "updated": "2026-10-22T19:28:56.758839+00:00"
+      "updated": "2026-10-22T19:35:54.068854+00:00"
     },
     "1bd7df0e-e11a-49c6-8117-f5231a82fca7": {
       "files": [

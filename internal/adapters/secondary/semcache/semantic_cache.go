@@ -908,7 +908,7 @@ func (sc *SemanticCache) saveToDisk(entry *ports.CacheEntry) error {
 	}
 
 	// Write to file
-	if err := os.WriteFile(filePath, compressedData, 0644); err != nil {
+	if err := os.WriteFile(filePath, compressedData, 0600); err != nil {
 		return fmt.Errorf("failed to write to disk cache file %s: %w", filePath, err)
 	}
 
