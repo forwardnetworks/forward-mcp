@@ -660,8 +660,16 @@ func (s *Service) SearchNQEQueries(ctx context.Context, args SearchNQEQueriesArg
 		if i >= limit {
 			break
 		}
-		response += fmt.Sprintf("**%d. %s** (%.1f%% match)\n   **Intent:** %s\n   **Description:** %s\n   **Category:** %s\n   **Query ID:** `%s`\n\n",
-			i+1, result.Path, result.SimilarityScore*100, result.Intent, result.Description, result.Category, result.QueryID)
+		response += fmt.Sprintf("**%d. %s** (%.1f%% match)\n", i+1, result.Path, result.SimilarityScore*100)
+		// Library queries carry an intent but rarely a description; skip
+		// empty fields rather than print blank lines.
+		if result.Intent != "" {
+			response += fmt.Sprintf("   **Intent:** %s\n", result.Intent)
+		}
+		if result.Description != "" {
+			response += fmt.Sprintf("   **Description:** %s\n", result.Description)
+		}
+		response += fmt.Sprintf("   **Category:** %s\n   **Query ID:** `%s`\n\n", result.Category, result.QueryID)
 	}
 
 	return textResult(response), nil
@@ -838,7 +846,7 @@ func (s *Service) HydrateDatabase(ctx context.Context, args HydrateDatabaseArgs)
 		defer cancel()
 		var queries []domain.NQEQueryDetail
 		var err error
-		if args.EnhancedMode {
+		if args.EnhancedMode == nil || *args.EnhancedMode {
 			existingCommitIDs := make(map[string]string)
 			for _, query := range existingQueries {
 				if query.LastCommit.ID != "" {

@@ -16,6 +16,49 @@ type queryLoader struct {
 	ports.QueryStore
 }
 
+// minHydratedQueries is the query count below which the store counts as empty.
+const minHydratedQueries = 100
+
+// HydrateQueryStore fills the query store from the API when it holds fewer
+// than minHydratedQueries queries or any stored query lacks metadata, as a
+// basic load or an interrupted enhanced load leaves them. Queries already
+// stored with a commit ID are not fetched again, so an interrupted run
+// resumes. It returns the stored queries and whether it fetched any.
+func HydrateQueryStore(ctx context.Context, store ports.QueryStore, api ports.ForwardAPI, log ports.Logger) ([]domain.NQEQueryDetail, bool, error) {
+	existing, err := store.LoadQueries()
+	if err != nil {
+		log.Warn("Failed to load stored queries, hydrating from scratch: %v", err)
+		existing = nil
+	}
+
+	commitIDs := make(map[string]string, len(existing))
+	for _, q := range existing {
+		if q.LastCommit.ID != "" {
+			commitIDs[q.Path] = q.LastCommit.ID
+		}
+	}
+	missing := len(existing) - len(commitIDs)
+	if len(existing) >= minHydratedQueries && missing == 0 {
+		log.Debug("Query database has %d queries with metadata, skipping hydration", len(existing))
+		return existing, false, nil
+	}
+
+	log.Info("Hydrating query database: %d stored, %d without metadata, fetching from API...", len(existing), missing)
+	fetched, err := api.GetNQEAllQueriesEnhanced(ctx, commitIDs)
+	if err != nil {
+		return existing, false, fmt.Errorf("failed to fetch queries from API: %w", err)
+	}
+	all := queryLoader{store}.mergeQueries(existing, fetched)
+	if err := store.SaveQueries(all); err != nil {
+		return existing, false, fmt.Errorf("failed to save queries: %w", err)
+	}
+	if err := store.SetMetadata("last_sync", time.Now().Format(time.RFC3339)); err != nil {
+		log.Warn("Failed to update sync time: %v", err)
+	}
+	log.Info("Query database hydration saved %d queries (%d fetched with metadata)", len(all), len(fetched))
+	return all, len(fetched) > 0, nil
+}
+
 // loadWithSmartCachingContext implements the smart caching strategy with context support
 func (db queryLoader) loadWithSmartCachingContext(ctx context.Context, client ports.ForwardAPI, logger ports.Logger) ([]domain.NQEQueryDetail, error) {
 	logger.Info("Starting smart caching query load...")

@@ -31,7 +31,9 @@ type ForwardAPI interface {
 	GetNQEFwdQueries(ctx context.Context) ([]NQEQuery, error)
 	// GetNQEAllQueriesEnhanced fetches source code and metadata for every query.
 	// existingCommitIDs maps a query path to the commit already stored; queries
-	// whose commit has not changed are not fetched again. It may be nil.
+	// whose commit has not changed are not fetched again. It may be nil. If ctx
+	// ends first, it returns the queries fetched so far, so a caller that saves
+	// them resumes from there on its next call.
 	GetNQEAllQueriesEnhanced(ctx context.Context, existingCommitIDs map[string]string) ([]NQEQueryDetail, error)
 
 	// Devices

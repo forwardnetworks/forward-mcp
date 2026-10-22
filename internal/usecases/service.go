@@ -266,14 +266,14 @@ func New(cfg *domain.Config, logger ports.Logger, deps Deps) *Service {
 				// Count enhanced queries for informational purposes
 				enhancedCount := 0
 				for _, q := range queries {
-					if q.SourceCode != "" || q.Description != "" {
+					if q.Intent != "" || q.SourceCode != "" || q.Description != "" {
 						enhancedCount++
 					}
 				}
 				if enhancedCount > 0 {
 					logger.Info("🚀 Found %d queries with enhanced metadata (source code/descriptions)", enhancedCount)
 				} else {
-					logger.Info("💡 Tip: Run 'hydrate_database' with enhanced_mode for richer query metadata")
+					logger.Info("Stored queries have no metadata yet; it is fetched from the API in the background")
 				}
 			}
 		} else {
